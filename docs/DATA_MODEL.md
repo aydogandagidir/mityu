@@ -31,6 +31,29 @@ Block        { id, type: text|bullet|heading1|heading2, content, color, source_c
 ```
 `source_chunk_id` is our addition and is **mandatory** — every generated block/action links back to the transcript segment + timestamp it came from (HITL + evidence value).
 
+## Client SQLite physical schema (as of migration `20260702000000_add_workspace_and_sync_columns`)
+
+The client's physical table names predate this doc (Meetily heritage) and differ from the logical names. Do **not** rename them (renames on synced tables are two-step); map at the sync/repository layer instead:
+
+| Client table (SQLite) | Logical entity | Synced? | Common columns present |
+|---|---|---|---|
+| `meetings` | `meeting` | yes | `workspace_id`, `created_at`, `updated_at`, `updated_by`, `rev`, `deleted_at` |
+| `transcripts` | `transcript_chunk` (one row per time segment; also carries legacy `summary`/`action_items`/`key_points` TEXT columns) | yes | all of the above (`created_at`/`updated_at` added by 20260702000000, backfilled from the parent meeting) |
+| `summary_processes` | `summary` (status + result JSON per meeting) | yes | all of the above |
+| `transcript_chunks` | `transcript` (full concatenated text per meeting, one row per meeting) | yes | all of the above (`updated_at` added, backfilled from `created_at`) |
+| `meeting_notes` | per-meeting user notes (meeting content) | yes | all of the above |
+| `settings`, `transcript_settings` | `settings` (per-workspace config) | **no** (hold plaintext key columns today — legacy; secrets never sync raw) | `workspace_id`, `created_at`, `updated_at` only — deliberately **no** `updated_by`/`rev`/`deleted_at` |
+| `licensing` | — (device-scoped license activation state, not workspace domain data) | no | none — deliberately untouched |
+
+Notes:
+- `workspace_id TEXT NOT NULL DEFAULT 'local'` everywhere — the default **must equal** `context::LOCAL_WORKSPACE_ID` (`frontend/src-tauri/src/context.rs`). `rev INTEGER NOT NULL DEFAULT 1`; `updated_by`/`deleted_at` nullable TEXT.
+- There is **no dedicated `action_item` client table yet**: extracted actions live in `summary_processes.result` JSON (and the legacy `transcripts.action_items` column). Promoting them to a first-class table (with mandatory `source_chunk_id`) is a future migration.
+- `transcripts.created_at`/`updated_at` and the settings tables' timestamps are nullable at the SQL level (SQLite cannot `ADD COLUMN NOT NULL` without a constant default); the migration backfills existing rows, and the tenant-scoped repositories (B2 phase 2) must populate them on every insert/update.
+- Phase-2 hot-path indexes: `idx_meetings_workspace_created (workspace_id, created_at)`, `idx_transcripts_workspace_meeting (workspace_id, meeting_id)`. The other domain tables are one-row-per-meeting with `meeting_id` as PRIMARY KEY.
+
+### Sync-compatibility note — migration `20260702000000`
+Client-only today: no server or sync protocol exists yet, so no wire compatibility is affected. The change is purely **additive with constant defaults** (`'local'`, `1`, NULL): an older client binary opening an upgraded database keeps working — its INSERTs use explicit column lists (defaults apply) and its reads map rows by column name (new columns ignored). An upgraded binary opening an older database applies the migration on startup via the `_sqlx_migrations` ledger. Nothing was renamed, dropped, or retyped, so no two-step deprecation applies. When sync ships (Phase 2), rows with `rev = 1` and `updated_by IS NULL` are "never synced/never edited remotely" — the correct initial state.
+
 ## SQLite ↔ Postgres compatibility rules
 - Same entity names, same field semantics, compatible types (uuid as TEXT in SQLite, `uuid` in PG; timestamps as ISO-8601 TEXT in SQLite, `timestamptz` in PG).
 - Additive evolution only on synced tables; renames/drops are two-step (deprecate → migrate → drop).
