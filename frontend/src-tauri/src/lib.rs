@@ -35,6 +35,11 @@ pub(crate) use perf_trace;
 // Re-export async logging macros for external use (removed due to macro conflicts)
 
 // Declare audio module
+/// On-device AI agents (follow-ups, action tracking) — DORMANT until EPIC F
+/// (ADR-0013). Registered so it compiles and its tests run; NOT wired to any Tauri
+/// command or the core path. Agents are off by default, produce human-approved
+/// drafts only, and have no network dependency (see `agents::engine`).
+pub mod agents;
 pub mod analytics;
 pub mod api;
 pub mod audio;

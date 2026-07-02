@@ -26,6 +26,12 @@ Local-first first, server-optional later. Each phase has an exit gate; do not sk
 - Harden isolation & scale; per-tenant metering + billing; hosted IdP; EU-region deployment; self-serve onboarding.
 - **Gate:** unit economics positive; isolation & audit verified at scale.
 
+## Phase F — On-device AI agents (optional; only after the Phase 1 gate C8)
+Backs the About-screen "Coming soon: a library of on-device AI agents — automating follow-ups, action tracking." NOT a new step on the linear path: a feature epic that turns on only after **C8**, because it consumes **C1** (source-linked summaries) + **C2** (action items). Local-first, **draft-only (HITL)**, **no autonomous external actions** (`CLAUDE.md` §0.5/§10). A dormant, tested seam is scaffolded now — `frontend/src-tauri/src/agents/` (off by default, ADR-0013, BACKLOG EPIC F).
+- F0 ADR/design → F1 flag-gated framework + `agent_runs` migration → F2 follow-up drafter → F3 action-item tracker → F4 agents panel + transparency labels → F5 (later) opt-in scheduling.
+- **Gate:** fully offline; every output a source-linked draft a human approves; no external side effects; `/security-review` + multitenancy-guardian clean.
+- **Out of scope (by design):** Google Meet/Zoom/Teams *API* integrations. Mityu captures system audio ("works everywhere … online or offline"); it is **not a meeting bot** (`CLAUDE.md` §1).
+
 ## First 30 / 60 / 90 days
 - **0–30:** Phase 0 + start Phase 1 seams. Real-audio transcription validation is the make-or-break task.
 - **30–60:** Phase 1 core (encrypted local store, source-linked HITL summaries, export); onboard 1 pilot.
