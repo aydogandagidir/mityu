@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Mityu">
+  <!-- Mityu app icon (tile) = master for `tauri icon`. bluedev blue tile + white
+       intersection mark; product letters m / y stroked in brand blue on the squircles. -->
+  <defs>
+    <clipPath id="mi-a"><rect x="12" y="14" width="46" height="46" rx="14"/></clipPath>
+    <mask id="mi-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+      <rect width="100" height="100" fill="#fff"/>
+      <rect x="42" y="40" width="46" height="46" rx="14" fill="#000" clip-path="url(#mi-a)"/>
+    </mask>
+  </defs>
+  <rect width="120" height="120" rx="27" fill="#1E56FF"/>
+  <g transform="translate(19,19) scale(0.82)">
+    <g mask="url(#mi-cut)" fill="#FFFFFF">
+      <rect x="12" y="14" width="46" height="46" rx="14"/>
+      <rect x="42" y="40" width="46" height="46" rx="14"/>
+    </g>
+    <g fill="none" stroke="#1E56FF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 46 L20 33 Q20 29 25 29 Q30 29 30 33 L30 46 M30 33 Q30 29 35 29 Q40 29 40 33 L40 46"/>
+      <path d="M58 54 L68 68 M78 54 L60 80"/>
+    </g>
+  </g>
+</svg>

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
-import Image from 'next/image';
 import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch";
 import { UpdateDialog } from "./UpdateDialog";
 import { updateService, UpdateInfo } from '@/services/updateService';
@@ -23,7 +22,7 @@ export function About() {
 
     const handleContactClick = async () => {
         try {
-            await invoke('open_external_url', { url: 'https://github.com/aydogandagidir/mityu' });
+            await invoke('open_external_url', { url: 'https://bluedev.dev' });
         } catch (error) {
             console.error('Failed to open link:', error);
         }
@@ -52,15 +51,15 @@ export function About() {
             {/* Compact Header */}
             <div className="text-center">
                 <div className="mb-3">
-                    <Image
-                        src="icon_128x128.png"
-                        alt="Mityu Logo"
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                        src="/mityu-mark.svg"
+                        alt="Mityu logo"
                         width={64}
                         height={64}
                         className="mx-auto"
                     />
                 </div>
-                {/* <h1 className="text-xl font-bold text-gray-900">Meetily</h1> */}
                 <span className="text-sm text-gray-500"> v{currentVersion}</span>
                 <p className="text-medium text-gray-600 mt-1">
                     Real-time notes and summaries that never leave your machine.
@@ -133,14 +132,14 @@ export function About() {
                     onClick={handleContactClick}
                     className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors duration-200 shadow-sm hover:shadow-md"
                 >
-                    Chat with the Zackriya team
+                    Chat with the bluedev team
                 </button>
             </div>
 
             {/* Footer - Compact */}
             <div className="pt-2 border-t border-gray-200 text-center">
                 <p className="text-xs text-gray-400">
-                    Built by Zackriya Solutions
+                    Built by bluedev
                 </p>
             </div>
             <AnalyticsConsentSwitch />

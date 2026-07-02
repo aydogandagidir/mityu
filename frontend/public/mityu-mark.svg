@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Mityu">
+  <!-- Mityu product mark: inherits the bluedev "Kesisim" (intersection) symbol -
+       two overlapping squircles - and adds the product letters m (top) / y (bottom).
+       Letters are stroked paths (no font dependency) so they rasterize identically. -->
+  <defs>
+    <clipPath id="mt-a"><rect x="12" y="14" width="46" height="46" rx="14"/></clipPath>
+  </defs>
+  <rect x="12" y="14" width="46" height="46" rx="14" fill="#1E56FF"/>
+  <rect x="42" y="40" width="46" height="46" rx="14" fill="#4B78FF"/>
+  <rect x="42" y="40" width="46" height="46" rx="14" fill="#0B1B3A" clip-path="url(#mt-a)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 46 L20 33 Q20 29 25 29 Q30 29 30 33 L30 46 M30 33 Q30 29 35 29 Q40 29 40 33 L40 46"/>
+    <path d="M58 54 L68 68 M78 54 L60 80"/>
+  </g>
+</svg>
