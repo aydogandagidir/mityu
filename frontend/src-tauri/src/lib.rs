@@ -53,6 +53,11 @@ pub mod parakeet_engine;
 pub mod secrets;
 pub mod state;
 pub mod summary;
+/// Optional sync/collaboration client — DORMANT until Phase 2 (`docs/CONTRACTS.md`
+/// §5, ADR-0012). Registered so it compiles and its tests run; NOT wired to any
+/// Tauri command or the capture→transcript→summary→store path. Sync is off by
+/// default and has no network dependency (see `sync::client`).
+pub mod sync;
 pub mod tray;
 pub mod utils;
 pub mod whisper_engine;
