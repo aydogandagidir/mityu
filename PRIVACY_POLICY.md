@@ -1,10 +1,10 @@
-# Meetily Privacy Policy
+# Mityu Privacy Policy
 
-*Last updated: [Current Date]*
+*Last updated: 2026-07-02*
 
 ## Our Privacy-First Commitment
 
-Meetily is built on the principle that your meeting data should remain private and under your control. This privacy policy explains how we handle data in our open-source meeting assistant.
+Mityu is built on the principle that your meeting data should remain private and under your control. This privacy policy explains how we handle data in our local-first meeting assistant.
 
 ## Data Processing Philosophy
 
@@ -23,7 +23,7 @@ Meetily is built on the principle that your meeting data should remain private a
 ## Usage Analytics
 
 ### What We Collect
-Usage analytics is optional and off by default. When you choose to enable it, Meetily collects minimal, anonymized usage data:
+Usage analytics is optional and off by default. When you choose to enable it, Mityu collects minimal, anonymized usage data:
 
 **Application Usage:**
 - Feature usage patterns (which tools you use most)
@@ -64,11 +64,15 @@ When enabled, analytics helps us with:
 
 ## Third-Party Services
 
-### LLM Providers (Optional)
-If you choose to use external LLM providers:
+### LLM Providers (Optional, BYOK)
+If you choose to use external LLM providers with your own API key:
 - **Anthropic Claude**: Subject to Anthropic's privacy policy
+- **OpenAI** (and OpenAI-compatible endpoints): Subject to the provider's privacy policy
 - **Groq**: Subject to Groq's privacy policy
+- **OpenRouter**: Subject to OpenRouter's privacy policy
 - **Local Ollama**: Processed entirely on your device
+
+Your provider API keys are stored in your operating system's secure credential store (keychain) — never in plaintext, and never transmitted anywhere except to the provider you chose.
 
 ### Analytics Service (Optional)
 - **PostHog**: Used for usage analytics when enabled
@@ -110,9 +114,9 @@ We will notify users of any material changes to this privacy policy through:
 ## Contact Us
 
 For privacy-related questions or concerns:
-- **GitHub Issues**: [Create an issue](https://github.com/Zackriya-Solutions/meeting-minutes/issues)
-- **Email**: [Contact form](https://www.zackriya.com/service-interest-form/)
-- **Community**: [Discord](https://discord.gg/crRymMQBFH)
+- **GitHub Issues**: [Create an issue](https://github.com/aydogandagidir/mityu/issues)
+- **Email**: info@bluedev.dev
+- **Website**: [bluedev.dev](https://bluedev.dev)
 
 ## Open Source Commitment
 
@@ -124,4 +128,4 @@ As an open-source project under MIT license, you can:
 
 ---
 
-*This privacy policy applies to Meetily v0.0.5 and later versions. For enterprise deployments, additional privacy controls may be available.*
+*This privacy policy applies to Mityu v0.4.0 and later versions. For enterprise deployments, additional privacy controls may be available.*

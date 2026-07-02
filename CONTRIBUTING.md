@@ -1,41 +1,42 @@
-# Contributing to Meeting Minutes Updates
+# Contributing to Mityu
 
-Thank you for your interest in contributing to Meetily! This document provides guidelines and instructions for contributing to this project.
+Thank you for your interest in contributing to Mityu! This document provides guidelines and instructions for contributing to this project.
 
 ## Development Workflow
 
 ### Branch Strategy
 
-- `main` - Production branch
-- `devtest` - Development and testing branch
-- Feature branches should be created from `devtest`
+- `main` — production branch
+- Feature branches are created from `main`
 
 ### Getting Started
 
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/meeting-minutes.git
+   git clone https://github.com/YOUR_USERNAME/mityu.git
    ```
 3. Add the original repository as upstream:
    ```bash
-   git remote add upstream https://github.com/Zackriya-Solutions/meeting-minutes.git
+   git remote add upstream https://github.com/aydogandagidir/mityu.git
    ```
-4. Create a new branch from `devtest`:
+4. Create a new branch from `main`:
    ```bash
-   git checkout devtest
-   git pull upstream devtest
+   git checkout main
+   git pull upstream main
    git checkout -b feature/your-feature-name
    ```
 
 ### Development Process
 
-1. Always start your work from the `devtest` branch
+1. Always start your work from an up-to-date `main` branch
 2. Create a new branch for each feature/fix
 3. Make your changes
 4. Write or update tests as needed
 5. Ensure all tests pass
 6. Update documentation if necessary
+
+Please also read [`CLAUDE.md`](CLAUDE.md) and the design docs in [`docs/`](docs/) (architecture, conventions, security/privacy, and the decision log) before non-trivial changes — Mityu is local-first and tenant-aware by design, and those invariants are enforced in review.
 
 ### Issue Creation
 
@@ -52,13 +53,13 @@ Before starting work on a new feature or bug fix:
 
 ### Pull Request Process
 
-1. Create a PR from your feature branch to `devtest`
+1. Create a PR from your feature branch to `main`
 2. Link the PR to the related issue using the issue number (e.g., "Fixes #123")
 3. Fill out the PR template completely
 4. Ensure CI checks pass
 5. Request review from at least one maintainer
 6. Address any review comments
-7. Once approved, the PR will be merged into `devtest`
+7. Once approved, the PR will be merged into `main`
 
 ### PR Template
 
@@ -95,7 +96,7 @@ Before starting work on a new feature or bug fix:
 
 ## Code Style
 
-- Follow the existing code style
+- Follow the existing code style (`cargo fmt` + `cargo clippy` for Rust; `pnpm lint` + `pnpm tsc --noEmit` for the frontend)
 - Use meaningful variable and function names
 - Add comments for complex logic
 - Keep functions small and focused
@@ -124,13 +125,13 @@ Types:
 
 - Write unit tests for new features
 - Update existing tests when modifying code
-- Ensure all tests pass before submitting PR
+- Ensure all tests pass before submitting a PR
 - Include integration tests for complex features
 
 ## Documentation
 
 - Update documentation for new features
-- Keep README up to date
+- Keep the README up to date
 - Document API changes
 - Add comments for complex code
 
@@ -138,15 +139,14 @@ Types:
 
 1. PRs require at least one review
 2. Address all review comments
-3. Keep the PR up to date with `devtest`
+3. Keep the PR up to date with `main`
 4. Squash commits if requested
 
 ## Getting Help
 
 - Create an issue for questions
-- Join our community chat
-- Contact maintainers
+- Contact the maintainers at info@bluedev.dev
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the project's MIT License. 
+By contributing, you agree that your contributions will be licensed under the project's MIT License.

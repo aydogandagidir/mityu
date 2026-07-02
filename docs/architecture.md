@@ -2,7 +2,7 @@
 
 The single most important architectural idea: **local-first now, tenant-aware by design, server-optional and additive later.** We never trade away offline capability to gain team/SaaS features; we add a seam that stays dormant until we need it.
 
-## Ground truth (what the Meetily base actually is)
+## Ground truth (what the upstream base actually is)
 
 The supported base is a **Tauri 2 desktop app**. The Rust core (`frontend/src-tauri/`) owns audio capture, transcription (whisper.cpp + Parakeet), LLM/summarization (Rust provider clients, BYOK), and local SQLite. The Next.js UI (`frontend/src/`) talks to the core via Tauri `invoke()`. **The Python `backend/` is archived/legacy** (unauthenticated, dev-only CORS) — reference only, never a runtime dependency.
 

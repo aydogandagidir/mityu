@@ -1,4 +1,4 @@
-# Meetily - Frontend
+# Mityu - Frontend
 
 A modern desktop application for recording, transcribing, and analyzing meetings with AI assistance. Built with Next.js and Tauri for a native desktop experience.
 
@@ -61,7 +61,7 @@ A modern desktop application for recording, transcribing, and analyzing meetings
 
 2. Clone the repository and navigate to the frontend directory:
    ```bash
-   git clone https://github.com/Zackriya-Solutions/meeting-minutes
+   git clone https://github.com/aydogandagidir/mityu
    cd meeting-minutes/frontend
    ```
   
@@ -81,7 +81,7 @@ A modern desktop application for recording, transcribing, and analyzing meetings
 
 2. Clone the repository and navigate to the frontend directory:
    ```cmd
-   git clone https://github.com/Zackriya-Solutions/meeting-minutes
+   git clone https://github.com/aydogandagidir/mityu
    cd meeting-minutes/frontend
    ```
 
@@ -129,7 +129,7 @@ pnpm run tauri:build
 
 ## Local Transcription
 
-Current Meetily does not require a separate FastAPI service, Docker backend, or manually started whisper-server process. Local transcription is handled by the Rust/Tauri desktop app.
+Current Mityu does not require a separate FastAPI service, Docker backend, or manually started whisper-server process. Local transcription is handled by the Rust/Tauri desktop app.
 
 For build and acceleration details, see:
 

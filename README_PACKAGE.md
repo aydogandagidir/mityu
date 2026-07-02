@@ -1,4 +1,4 @@
-# Meetily Enterprise — Claude Code Geliştirme Paketi (Kullanım Kılavuzu)
+# Mityu — Claude Code Geliştirme Paketi (bluedev · Kullanım Kılavuzu)
 
 Bu paket, `Zackriya-Solutions/meetily` (MIT) tabanında **enterprise, local-first** bir masaüstü uygulaması geliştirmen ve bunu ileride **multi-tenant SaaS**'a dönüştürebilmen için Claude Code ajanlarının anlayacağı biçimde hazırlanmış bir "geliştirme anayasası + ajan ekibi + iş akışları + mimari doküman" setidir.
 
