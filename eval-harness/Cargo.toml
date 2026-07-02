@@ -1,0 +1,28 @@
+# Phase-0 transcription evaluation harness (docs/PHASE0_VALIDATION.md).
+# Links the app core crate directly so that WER/CER/latency are measured on the
+# app's OWN engines (whisper via whisper-rs, Parakeet via ort) — never on
+# external whisper CLIs or pip packages.
+
+[package]
+name = "eval-harness"
+version = "0.1.0"
+description = "Phase-0 transcription eval harness — runs Mityu's own STT engines"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+clap = { version = "4.3", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+dirs = "5.0.1"
+chrono = "0.4.31"
+unicode-normalization = "0.1"
+
+# The app core (Tauri lib crate `app_lib`). Engines are consumed as a library;
+# no Tauri runtime / AppHandle is started.
+mityu = { path = "../frontend/src-tauri" }

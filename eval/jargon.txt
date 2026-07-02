@@ -1,0 +1,72 @@
+intralojistik
+depo otomasyonu
+konveyör
+rulolu konveyör
+zincirli konveyör
+bantlı konveyör
+akümülasyon
+sorter
+cross-belt sorter
+mekik
+shuttle sistemi
+miniload
+AS/RS
+otomatik depolama
+AGV
+AMR
+otonom mobil robot
+paletleme
+depaletleme
+robot kol
+kartezyen robot
+gripper
+vakum tutucu
+WMS
+WCS
+WES
+ERP
+SAP entegrasyonu
+PLC
+SCADA
+HMI
+servo motor
+redüktör
+enkoder
+frekans invertörü
+fotoelektrik sensör
+indüktif sensör
+lazer tarayıcı
+emniyet bariyeri
+acil stop
+ışık perdesi
+barkod okuyucu
+RFID
+etiketleme
+el terminali
+pick-to-light
+put-to-wall
+sipariş toplama
+mal kabul
+sevkiyat
+dok
+rampa
+transpalet
+forklift
+reach truck
+dar koridor istifleyici
+VNA
+palet rafı
+konsol raf
+ara kat platformu
+buffer
+throughput
+çevrim süresi
+OEE
+devreye alma
+kalibrasyon
+arıza teşhisi
+kestirimci bakım
+yedek parça
+layout tasarımı
+simülasyon
+dijital ikiz

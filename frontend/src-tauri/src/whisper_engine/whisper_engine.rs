@@ -119,7 +119,7 @@ impl WhisperEngine {
                 dirs::data_dir()
                     .or_else(|| dirs::home_dir())
                     .ok_or_else(|| anyhow!("Could not find system data directory"))?
-                    .join("Meetily")
+                    .join("Mityu")
                     .join("models")
             }
         };
@@ -631,6 +631,20 @@ impl WhisperEngine {
     }
 
     pub async fn transcribe_audio(&self, audio_data: Vec<f32>, language: Option<String>) -> Result<String> {
+        self.transcribe_audio_with_prompt(audio_data, language, None).await
+    }
+
+    /// Transcribe audio with an optional whisper `initial_prompt` (domain vocabulary biasing).
+    ///
+    /// Additive seam used by the Phase-0 eval harness (`eval-harness` workspace bin).
+    /// `initial_prompt = None` preserves the exact previous `transcribe_audio` behavior.
+    /// The prompt only conditions decoding; it is never emitted as output.
+    pub async fn transcribe_audio_with_prompt(
+        &self,
+        audio_data: Vec<f32>,
+        language: Option<String>,
+        initial_prompt: Option<String>,
+    ) -> Result<String> {
         let ctx_lock = self.current_context.read().await;
         let ctx = ctx_lock.as_ref()
             .ok_or_else(|| anyhow!("No model loaded. Please load a model first."))?;
@@ -656,6 +670,15 @@ impl WhisperEngine {
         };
         params.set_language(language_code);
         params.set_translate(should_translate);
+
+        // Optional domain-vocabulary prompt (Phase-0 eval seam). `None` = unchanged behavior.
+        if let Some(prompt) = initial_prompt.as_deref() {
+            // whisper-rs set_initial_prompt panics on interior NUL bytes; sanitize defensively.
+            let prompt = prompt.replace('\0', " ");
+            if !prompt.trim().is_empty() {
+                params.set_initial_prompt(&prompt);
+            }
+        }
 
         // CRITICAL: Disable timestamp tokens to prevent whisper.cpp chunking heuristics
         // The "single timestamp ending - skip entire chunk" optimization incorrectly discards
