@@ -483,7 +483,14 @@ mod tests {
             3840,
             48000,
         );
-        assert_eq!(timeout, Duration::from_millis(160));
+        // f32 headroom math (mul_f32) yields 159.999996ms, not an exact 160ms.
+        // Assert within tolerance — test-only; the production mul_f32 headroom
+        // strategy is intentional and stays unchanged (CLAUDE.md §4).
+        let expected = Duration::from_millis(160);
+        assert!(
+            timeout.abs_diff(expected) < Duration::from_millis(1),
+            "expected ~160ms, got {timeout:?}"
+        );
     }
 
     #[test]
