@@ -51,15 +51,6 @@ impl AudioCaptureBackend {
         }
     }
 
-    /// Convert to string (lowercase)
-    pub fn to_string(&self) -> String {
-        match self {
-            AudioCaptureBackend::ScreenCaptureKit => "screencapturekit".to_string(),
-            #[cfg(target_os = "macos")]
-            AudioCaptureBackend::CoreAudio => "coreaudio".to_string(),
-        }
-    }
-
     /// Get all available backends for current platform
     pub fn available_backends() -> Vec<Self> {
         #[cfg(target_os = "macos")]
@@ -89,9 +80,15 @@ impl Default for AudioCaptureBackend {
     }
 }
 
+/// Formats as the lowercase string ID (round-trips with `from_string`).
+/// `.to_string()` call sites rely on this output via the blanket `ToString` impl.
 impl std::fmt::Display for AudioCaptureBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name())
+        match self {
+            AudioCaptureBackend::ScreenCaptureKit => f.write_str("screencapturekit"),
+            #[cfg(target_os = "macos")]
+            AudioCaptureBackend::CoreAudio => f.write_str("coreaudio"),
+        }
     }
 }
 
