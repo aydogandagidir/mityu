@@ -401,6 +401,8 @@ pub async fn api_process_transcript<R: Runtime>(
     log_info!("✓ Transcript chunks saved for meeting_id: {}", &m_id);
 
     // Spawn background task for actual processing
+    // Phase 2: when context::current() becomes request-scoped, capture the AuthContext
+    // HERE (at command time) and pass it into the task — do not re-resolve inside (ADR-0010).
     let meeting_id_clone = m_id.clone();
     tauri::async_runtime::spawn(async move {
         SummaryService::process_transcript_background(
