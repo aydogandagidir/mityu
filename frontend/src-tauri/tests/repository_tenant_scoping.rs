@@ -28,6 +28,91 @@ use app_lib::database::repositories::{
     transcript::TranscriptsRepository,
     transcript_chunk::{TranscriptChunkData, TranscriptChunksRepository},
 };
+use app_lib::secrets::KEYCHAIN_MARKER;
+
+/// Process-global, persistent, in-memory keychain for tests. keyring's built-in
+/// `mock` backend is `EntryOnly` (a set on one `Entry` is invisible to a later
+/// `Entry` for the same name), which cannot model the repository's separate
+/// set→get `Entry::new` calls, so we install a store that persists secrets keyed
+/// by `(service, entry_name)`. It NEVER touches the real OS credential manager.
+mod mem_keychain {
+    use keyring::credential::{
+        Credential, CredentialApi, CredentialBuilderApi, CredentialPersistence,
+    };
+    use keyring::Error;
+    use std::collections::HashMap;
+    use std::sync::{Mutex, Once, OnceLock};
+
+    type Key = (String, String);
+
+    fn store() -> &'static Mutex<HashMap<Key, Vec<u8>>> {
+        static STORE: OnceLock<Mutex<HashMap<Key, Vec<u8>>>> = OnceLock::new();
+        STORE.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    #[derive(Debug)]
+    struct MemCredential {
+        key: Key,
+    }
+
+    impl CredentialApi for MemCredential {
+        fn set_secret(&self, secret: &[u8]) -> Result<(), Error> {
+            store()
+                .lock()
+                .unwrap()
+                .insert(self.key.clone(), secret.to_vec());
+            Ok(())
+        }
+        fn get_secret(&self) -> Result<Vec<u8>, Error> {
+            match store().lock().unwrap().get(&self.key) {
+                Some(v) => Ok(v.clone()),
+                None => Err(Error::NoEntry),
+            }
+        }
+        fn delete_credential(&self) -> Result<(), Error> {
+            match store().lock().unwrap().remove(&self.key) {
+                Some(_) => Ok(()),
+                None => Err(Error::NoEntry),
+            }
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    struct MemBuilder;
+
+    impl CredentialBuilderApi for MemBuilder {
+        fn build(
+            &self,
+            _target: Option<&str>,
+            service: &str,
+            user: &str,
+        ) -> Result<Box<Credential>, Error> {
+            Ok(Box::new(MemCredential {
+                key: (service.to_string(), user.to_string()),
+            }))
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn persistence(&self) -> CredentialPersistence {
+            CredentialPersistence::UntilDelete
+        }
+    }
+
+    /// Install as the process-wide default. Idempotent per process.
+    pub fn install() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            keyring::set_default_credential_builder(Box::new(MemBuilder));
+        });
+    }
+}
+
+fn install_mock_keychain() {
+    mem_keychain::install();
+}
 
 /// The app's real, compile-time-embedded migration set (same source as
 /// `DatabaseManager::new`).
@@ -538,6 +623,10 @@ async fn deletes_are_workspace_scoped() {
 
 #[tokio::test]
 async fn settings_are_workspace_scoped_and_upsert_guarded() {
+    // BYOK keys now live in the OS credential store; install keyring's in-memory
+    // mock so this test never touches the real machine credential manager.
+    install_mock_keychain();
+
     let tmp = tempfile::tempdir().expect("tempdir");
     let pool = open_migrated_temp_db(&tmp.path().join("settings.sqlite")).await;
     let local = AuthContext::local();
@@ -586,35 +675,84 @@ async fn settings_are_workspace_scoped_and_upsert_guarded() {
             .is_none()
     );
 
-    // The legacy single-row PK (id = '1') collides across workspaces; the upsert
-    // guard must turn the foreign write into a no-op instead of a clobber.
-    SettingsRepository::save_api_key(&pool, &other, "openai", "sk-foreign-key")
+    // Local save round-trips through the keychain, and the SQLite column holds
+    // ONLY the non-secret marker — never the secret (CLAUDE.md §0.7).
+    SettingsRepository::save_api_key(&pool, &local, "openai", "sk-local-key")
         .await
-        .expect("cross-ws save_api_key runs");
-    let config = SettingsRepository::get_model_config(&pool, &local)
-        .await
-        .expect("local config after foreign write")
-        .expect("local config still present");
+        .expect("local save_api_key");
     assert_eq!(
-        config.provider, "ollama",
-        "local provider must be untouched"
+        SettingsRepository::get_api_key(&pool, &local, "openai")
+            .await
+            .expect("local get_api_key"),
+        Some("sk-local-key".to_string()),
+        "local key must round-trip through the OS credential store"
     );
+    let column_value: Option<String> =
+        sqlx::query_scalar("SELECT openaiApiKey FROM settings WHERE id = '1' AND workspace_id = ?")
+            .bind(LOCAL_WORKSPACE_ID)
+            .fetch_one(&pool)
+            .await
+            .expect("openaiApiKey column");
     assert_eq!(
-        config.openai_api_key, None,
-        "foreign workspace must not write a key into the local row"
+        column_value.as_deref(),
+        Some(KEYCHAIN_MARKER),
+        "the DB column must hold the keychain marker, not the secret"
     );
+    assert_ne!(
+        column_value.as_deref(),
+        Some("sk-local-key"),
+        "the plaintext secret must never be persisted in SQLite"
+    );
+
+    // Workspace isolation: a different workspace cannot read the local key (the
+    // keychain entry name is scoped by workspace_id), and the local config row is
+    // untouched by the foreign context.
     assert_eq!(
         SettingsRepository::get_api_key(&pool, &other, "openai")
             .await
             .expect("other get_api_key"),
         None,
-        "foreign workspace must not read back a key either"
+        "a foreign workspace must not read another workspace's key"
+    );
+    let config = SettingsRepository::get_model_config(&pool, &local)
+        .await
+        .expect("local config")
+        .expect("local config present");
+    assert_eq!(
+        config.provider, "ollama",
+        "local provider must be untouched"
+    );
+    assert_eq!(
+        config.openai_api_key.as_deref(),
+        Some(KEYCHAIN_MARKER),
+        "the local row's key column holds only the marker after a keychain save"
     );
 
-    // Foreign delete of a key is scoped: no error, local row untouched.
-    SettingsRepository::save_api_key(&pool, &local, "openai", "sk-local-key")
+    // A foreign save writes into the FOREIGN workspace's own keychain scope only:
+    // the DB upsert guard keeps it out of the local row, and it must not disturb
+    // the local key. The DB write degrades to a no-op (local provider stays).
+    SettingsRepository::save_api_key(&pool, &other, "openai", "sk-foreign-key")
         .await
-        .expect("local save_api_key");
+        .expect("cross-ws save_api_key runs");
+    assert_eq!(
+        SettingsRepository::get_api_key(&pool, &local, "openai")
+            .await
+            .expect("local get_api_key after foreign save"),
+        Some("sk-local-key".to_string()),
+        "a foreign save must not overwrite the local workspace's key"
+    );
+    assert_eq!(
+        SettingsRepository::get_model_config(&pool, &local)
+            .await
+            .expect("local config after foreign save")
+            .expect("local config present")
+            .provider,
+        "ollama",
+        "foreign save must not clobber the local config row"
+    );
+
+    // Foreign delete is scoped: it clears only the foreign workspace's entry; the
+    // local key survives.
     SettingsRepository::delete_api_key(&pool, &other, "openai")
         .await
         .expect("cross-ws delete_api_key runs");
@@ -624,6 +762,100 @@ async fn settings_are_workspace_scoped_and_upsert_guarded() {
             .expect("local get_api_key"),
         Some("sk-local-key".to_string()),
         "foreign delete must not clear the local key"
+    );
+
+    // Same-workspace delete removes both the keychain secret and the column marker.
+    SettingsRepository::delete_api_key(&pool, &local, "openai")
+        .await
+        .expect("local delete_api_key");
+    assert_eq!(
+        SettingsRepository::get_api_key(&pool, &local, "openai")
+            .await
+            .expect("local get_api_key after delete"),
+        None,
+        "local delete must clear the key from the keychain"
+    );
+
+    pool.close().await;
+}
+
+/// One-time migration: a pre-seeded plaintext key in a settings column is moved
+/// into the keychain and the column is overwritten with the marker; a second run
+/// is a no-op (idempotent). Covers both the summary and transcript tables.
+#[tokio::test]
+async fn startup_migration_moves_plaintext_keys_into_keychain() {
+    install_mock_keychain();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("keymigration.sqlite")).await;
+    let local = AuthContext::local();
+
+    // Seed legacy plaintext directly into the columns (pre-fix on-disk state):
+    // an anthropic (summary) key and a whisper (transcript) key, id = '1', local ws.
+    let now = "2026-07-02T10:00:00.000Z";
+    sqlx::query(
+        "INSERT INTO settings (id, workspace_id, provider, model, whisperModel, anthropicApiKey, created_at, updated_at) \
+         VALUES ('1', ?, 'claude', 'claude-3-5', 'large-v3', 'sk-ant-plaintext', ?, ?)",
+    )
+    .bind(LOCAL_WORKSPACE_ID)
+    .bind(now)
+    .bind(now)
+    .execute(&pool)
+    .await
+    .expect("seed settings plaintext");
+    sqlx::query(
+        "INSERT INTO transcript_settings (id, workspace_id, provider, model, whisperApiKey, created_at, updated_at) \
+         VALUES ('1', ?, 'localWhisper', 'large-v3', 'wk-plaintext', ?, ?)",
+    )
+    .bind(LOCAL_WORKSPACE_ID)
+    .bind(now)
+    .bind(now)
+    .execute(&pool)
+    .await
+    .expect("seed transcript_settings plaintext");
+
+    // Run the one-time migration: exactly two keys move.
+    let migrated = SettingsRepository::migrate_plaintext_keys_to_keychain(&pool)
+        .await
+        .expect("migration runs");
+    assert_eq!(migrated, 2, "both seeded plaintext keys must migrate");
+
+    // Columns now hold the marker, never the secret.
+    let summary_col: Option<String> =
+        sqlx::query_scalar("SELECT anthropicApiKey FROM settings WHERE id = '1'")
+            .fetch_one(&pool)
+            .await
+            .expect("anthropicApiKey column");
+    assert_eq!(summary_col.as_deref(), Some(KEYCHAIN_MARKER));
+    assert_ne!(summary_col.as_deref(), Some("sk-ant-plaintext"));
+    let transcript_col: Option<String> =
+        sqlx::query_scalar("SELECT whisperApiKey FROM transcript_settings WHERE id = '1'")
+            .fetch_one(&pool)
+            .await
+            .expect("whisperApiKey column");
+    assert_eq!(transcript_col.as_deref(), Some(KEYCHAIN_MARKER));
+
+    // The secrets are now readable from the keychain via the normal getters.
+    assert_eq!(
+        SettingsRepository::get_api_key(&pool, &local, "claude")
+            .await
+            .expect("get migrated summary key"),
+        Some("sk-ant-plaintext".to_string())
+    );
+    assert_eq!(
+        SettingsRepository::get_transcript_api_key(&pool, &local, "localWhisper")
+            .await
+            .expect("get migrated transcript key"),
+        Some("wk-plaintext".to_string())
+    );
+
+    // Idempotent: a second sweep migrates nothing.
+    let migrated_again = SettingsRepository::migrate_plaintext_keys_to_keychain(&pool)
+        .await
+        .expect("second migration runs");
+    assert_eq!(
+        migrated_again, 0,
+        "re-running the migration must be a no-op"
     );
 
     pool.close().await;

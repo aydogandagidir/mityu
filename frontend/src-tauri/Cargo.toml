@@ -146,6 +146,13 @@ ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", bran
 
 sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "chrono"] }
 
+# OS credential store for BYOK LLM API keys (never SQLite plaintext — CLAUDE.md
+# §0.7/§3, docs/SECURITY_PRIVACY.md "Secrets"). Native backends only: Windows
+# Credential Manager (pure winapi via windows-sys), macOS Keychain, Linux
+# keyutils — no dbus/openssl build-time toolchain. The built-in `mock` backend
+# (no feature required) is used by tests so they never touch the real store.
+keyring = { version = "3.6.3", features = ["windows-native", "apple-native", "linux-native"] }
+
 # Common Tauri configuration
 tauri = { version = "2.6.2", features = [ "macos-private-api", "protocol-asset", "tray-icon"] }
 tauri-plugin-fs = "2.4.0"
@@ -199,6 +206,10 @@ whisper-rs = { version = "0.13.2", features = ["raw-api"] }
 futures-channel = "0.3.31"
 
 [dev-dependencies]
+# Also a runtime dep; declared here so integration tests can install keyring's
+# built-in in-memory `mock` backend (keyring::set_default_credential_builder)
+# and never touch the real OS credential store.
+keyring = { version = "3.6.3", features = ["windows-native", "apple-native", "linux-native"] }
 tempfile = "3.3.0"
 infer = "0.15"
 criterion = { version = "0.5.1", features = ["async_tokio"] }

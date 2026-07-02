@@ -25,7 +25,9 @@ pub async fn initialize_database_on_startup(app: &AppHandle) -> Result<(), Strin
             info!("Emitted first-launch-detected after delay");
         });
     } else {
-        // Normal flow - initialize database immediately
+        // Normal flow - initialize database immediately. The one-time migration of
+        // legacy plaintext BYOK keys into the OS credential store runs inside
+        // DatabaseManager::new (covers every init path), non-fatally.
         let db_manager = DatabaseManager::new_from_app_handle(app)
             .await
             .map_err(|e| format!("Failed to initialize database manager: {}", e))?;

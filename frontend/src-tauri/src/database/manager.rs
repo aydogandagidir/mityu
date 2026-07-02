@@ -34,6 +34,27 @@ impl DatabaseManager {
 
         sqlx::migrate!("./migrations").run(&pool).await?;
 
+        // One-time, idempotent migration of any legacy plaintext BYOK API keys out
+        // of the settings/transcript_settings columns and into the OS credential
+        // store (CLAUDE.md §0.7/§3, docs/SECURITY_PRIVACY.md "Secrets"). Runs on
+        // every init path (fresh, legacy-import, recovery) and fully offline.
+        // NON-FATAL: a locked/unavailable keychain must never block opening the DB
+        // or offline operation (local-first invariant) — unmigrated columns are
+        // retried lazily on next read.
+        match crate::database::repositories::setting::SettingsRepository::migrate_plaintext_keys_to_keychain(&pool)
+            .await
+        {
+            Ok(0) => {}
+            Ok(n) => log::info!(
+                "Migrated {} legacy plaintext API key(s) into the OS credential store",
+                n
+            ),
+            Err(e) => log::warn!(
+                "Non-fatal: could not migrate plaintext API keys into the OS credential store ({}); will retry lazily on next read",
+                e
+            ),
+        }
+
         Ok(DatabaseManager { pool })
     }
 
@@ -104,7 +125,10 @@ impl DatabaseManager {
                             Ok(db_manager)
                         }
                         Err(retry_err) => {
-                            log::error!("Database connection failed even after WAL cleanup: {}", retry_err);
+                            log::error!(
+                                "Database connection failed even after WAL cleanup: {}",
+                                retry_err
+                            );
                             Err(retry_err)
                         }
                     }

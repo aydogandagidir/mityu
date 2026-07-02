@@ -10,12 +10,31 @@
 //! upserts guard their DO UPDATE with `WHERE workspace_id = excluded.workspace_id`
 //! so a foreign workspace can never clobber another workspace's row (the
 //! statement degrades to a no-op instead).
+//!
+//! ## BYOK secrets (CLAUDE.md §0.7/§3, docs/SECURITY_PRIVACY.md "Secrets")
+//! The `*ApiKey` columns of `settings` / `transcript_settings` are NOT the store
+//! of record for LLM/STT keys. The real secret lives in the OS credential store
+//! (see [`crate::secrets`]); the column holds only the non-secret
+//! [`crate::secrets::KEYCHAIN_MARKER`] reference so the row/timestamps and schema
+//! stay intact and older binaries keep parsing the table. `save_api_key` /
+//! `get_api_key` (and the transcript equivalents) round-trip through the keychain;
+//! [`SettingsRepository::migrate_plaintext_keys_to_keychain`] moves any legacy
+//! plaintext still sitting in a column into the keychain on startup.
 
 use crate::context::AuthContext;
 use crate::database::models::{Setting, TranscriptSetting};
+use crate::secrets::{self, SecretDomain, KEYCHAIN_MARKER};
 use crate::summary::CustomOpenAIConfig;
 use chrono::Utc;
 use sqlx::SqlitePool;
+
+/// Map a keychain (`anyhow`) failure onto `sqlx::Error` so the repository keeps
+/// its existing `Result<_, sqlx::Error>` signatures (callers already surface
+/// these to the UI). Fail closed: a keychain failure becomes a real error, never
+/// a silent success or a plaintext fallback. Key *values* are never included.
+fn keychain_err(e: anyhow::Error) -> sqlx::Error {
+    sqlx::Error::Protocol(format!("{e:#}"))
+}
 
 #[derive(serde::Deserialize, Debug)]
 pub struct SaveModelConfigRequest {
@@ -92,6 +111,29 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Column holding the non-secret keychain marker for a summary (`settings`)
+    /// provider. `Ok(None)` for providers that never carry a key (built-in AI) or
+    /// that are handled elsewhere (custom-openai → JSON config). `Err` for an
+    /// unknown provider. The column NO LONGER stores the secret itself.
+    fn summary_key_column(
+        provider: &str,
+    ) -> std::result::Result<Option<&'static str>, sqlx::Error> {
+        Ok(Some(match provider {
+            "openai" => "openaiApiKey",
+            "claude" => "anthropicApiKey",
+            "ollama" => "ollamaApiKey",
+            "groq" => "groqApiKey",
+            "openrouter" => "openRouterApiKey",
+            "builtin-ai" => return Ok(None), // No API key needed
+            _ => {
+                return Err(sqlx::Error::Protocol(format!(
+                    "Invalid provider: {}",
+                    provider
+                )))
+            }
+        }))
+    }
+
     pub async fn save_api_key(
         pool: &SqlitePool,
         ctx: &AuthContext,
@@ -105,19 +147,16 @@ impl SettingsRepository {
             ));
         }
 
-        let api_key_column = match provider {
-            "openai" => "openaiApiKey",
-            "claude" => "anthropicApiKey",
-            "ollama" => "ollamaApiKey",
-            "groq" => "groqApiKey",
-            "openrouter" => "openRouterApiKey",
-            "builtin-ai" => return Ok(()), // No API key needed
-            _ => {
-                return Err(sqlx::Error::Protocol(
-                    format!("Invalid provider: {}", provider).into(),
-                ))
-            }
+        let api_key_column = match Self::summary_key_column(provider)? {
+            Some(col) => col,
+            None => return Ok(()), // builtin-ai: nothing to store
         };
+
+        // Secrets never touch SQLite: write the real key to the OS credential
+        // store first (fail closed — abort before mutating the DB if unavailable),
+        // then persist only the non-secret marker in the column.
+        secrets::set_api_key(ctx, SecretDomain::Summary, provider, api_key)
+            .map_err(keychain_err)?;
 
         let now = Utc::now();
         let query = format!(
@@ -135,7 +174,7 @@ impl SettingsRepository {
             .bind(ctx.tenant_id.as_str())
             .bind(now)
             .bind(now)
-            .bind(api_key)
+            .bind(KEYCHAIN_MARKER)
             .execute(pool)
             .await?;
 
@@ -153,29 +192,17 @@ impl SettingsRepository {
             return Ok(config.and_then(|c| c.api_key));
         }
 
-        let api_key_column = match provider {
-            "openai" => "openaiApiKey",
-            "ollama" => "ollamaApiKey",
-            "groq" => "groqApiKey",
-            "claude" => "anthropicApiKey",
-            "openrouter" => "openRouterApiKey",
-            "builtin-ai" => return Ok(None), // No API key needed
-            _ => {
-                return Err(sqlx::Error::Protocol(
-                    format!("Invalid provider: {}", provider).into(),
-                ))
-            }
-        };
+        // Validate provider + gate builtin-ai / unknowns exactly as before. The
+        // column value is now only a marker; the secret comes from the keychain.
+        if Self::summary_key_column(provider)?.is_none() {
+            return Ok(None); // builtin-ai: no API key
+        }
 
-        let query = format!(
-            "SELECT {} FROM settings WHERE id = '1' AND workspace_id = ? LIMIT 1",
-            api_key_column
-        );
-        let api_key = sqlx::query_scalar(&query)
-            .bind(ctx.tenant_id.as_str())
-            .fetch_optional(pool)
-            .await?;
-        Ok(api_key)
+        // Lazily migrate a legacy plaintext key still sitting in this column, so a
+        // read after upgrade succeeds even before the startup sweep has run.
+        Self::migrate_summary_column_if_plaintext(pool, ctx, provider).await?;
+
+        secrets::get_api_key(ctx, SecretDomain::Summary, provider).map_err(keychain_err)
     }
 
     pub async fn get_transcript_config(
@@ -236,25 +263,42 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Column holding the non-secret keychain marker for a transcript
+    /// (`transcript_settings`) provider. `Ok(None)` for providers that carry no
+    /// key (parakeet). `Err` for an unknown provider.
+    fn transcript_key_column(
+        provider: &str,
+    ) -> std::result::Result<Option<&'static str>, sqlx::Error> {
+        Ok(Some(match provider {
+            "localWhisper" => "whisperApiKey",
+            "parakeet" => return Ok(None), // Parakeet doesn't need an API key
+            "deepgram" => "deepgramApiKey",
+            "elevenLabs" => "elevenLabsApiKey",
+            "groq" => "groqApiKey",
+            "openai" => "openaiApiKey",
+            _ => {
+                return Err(sqlx::Error::Protocol(format!(
+                    "Invalid provider: {}",
+                    provider
+                )))
+            }
+        }))
+    }
+
     pub async fn save_transcript_api_key(
         pool: &SqlitePool,
         ctx: &AuthContext,
         provider: &str,
         api_key: &str,
     ) -> std::result::Result<(), sqlx::Error> {
-        let api_key_column = match provider {
-            "localWhisper" => "whisperApiKey",
-            "parakeet" => return Ok(()), // Parakeet doesn't need an API key, return early
-            "deepgram" => "deepgramApiKey",
-            "elevenLabs" => "elevenLabsApiKey",
-            "groq" => "groqApiKey",
-            "openai" => "openaiApiKey",
-            _ => {
-                return Err(sqlx::Error::Protocol(
-                    format!("Invalid provider: {}", provider).into(),
-                ))
-            }
+        let api_key_column = match Self::transcript_key_column(provider)? {
+            Some(col) => col,
+            None => return Ok(()), // parakeet: no API key needed
         };
+
+        // Secret to the OS credential store first (fail closed), marker to the DB.
+        secrets::set_api_key(ctx, SecretDomain::Transcript, provider, api_key)
+            .map_err(keychain_err)?;
 
         let now = Utc::now();
         let query = format!(
@@ -273,7 +317,7 @@ impl SettingsRepository {
             .bind(ctx.tenant_id.as_str())
             .bind(now)
             .bind(now)
-            .bind(api_key)
+            .bind(KEYCHAIN_MARKER)
             .execute(pool)
             .await?;
 
@@ -285,29 +329,14 @@ impl SettingsRepository {
         ctx: &AuthContext,
         provider: &str,
     ) -> std::result::Result<Option<String>, sqlx::Error> {
-        let api_key_column = match provider {
-            "localWhisper" => "whisperApiKey",
-            "parakeet" => return Ok(None), // Parakeet doesn't need an API key
-            "deepgram" => "deepgramApiKey",
-            "elevenLabs" => "elevenLabsApiKey",
-            "groq" => "groqApiKey",
-            "openai" => "openaiApiKey",
-            _ => {
-                return Err(sqlx::Error::Protocol(
-                    format!("Invalid provider: {}", provider).into(),
-                ))
-            }
-        };
+        if Self::transcript_key_column(provider)?.is_none() {
+            return Ok(None); // parakeet: no API key
+        }
 
-        let query = format!(
-            "SELECT {} FROM transcript_settings WHERE id = '1' AND workspace_id = ? LIMIT 1",
-            api_key_column
-        );
-        let api_key = sqlx::query_scalar(&query)
-            .bind(ctx.tenant_id.as_str())
-            .fetch_optional(pool)
-            .await?;
-        Ok(api_key)
+        // Lazily migrate any legacy plaintext still in this column before reading.
+        Self::migrate_transcript_column_if_plaintext(pool, ctx, provider).await?;
+
+        secrets::get_api_key(ctx, SecretDomain::Transcript, provider).map_err(keychain_err)
     }
 
     pub async fn delete_api_key(
@@ -330,19 +359,15 @@ impl SettingsRepository {
             return Ok(());
         }
 
-        let api_key_column = match provider {
-            "openai" => "openaiApiKey",
-            "ollama" => "ollamaApiKey",
-            "groq" => "groqApiKey",
-            "claude" => "anthropicApiKey",
-            "openrouter" => "openRouterApiKey",
-            "builtin-ai" => return Ok(()), // No API key needed
-            _ => {
-                return Err(sqlx::Error::Protocol(
-                    format!("Invalid provider: {}", provider).into(),
-                ))
-            }
+        let api_key_column = match Self::summary_key_column(provider)? {
+            Some(col) => col,
+            None => return Ok(()), // builtin-ai: nothing to delete
         };
+
+        // Remove the real secret from the OS credential store (no-op if absent),
+        // then clear the column marker. Keychain first so a store failure aborts
+        // before we drop the DB reference (fail closed, no orphaned secret).
+        secrets::delete_api_key(ctx, SecretDomain::Summary, provider).map_err(keychain_err)?;
 
         let query = format!(
             "UPDATE settings SET {} = NULL, updated_at = ? WHERE id = '1' AND workspace_id = ?",
@@ -444,5 +469,187 @@ impl SettingsRepository {
         .await?;
 
         Ok(())
+    }
+
+    // ===== KEYCHAIN MIGRATION (legacy plaintext columns → OS credential store) =====
+
+    /// `(provider, column)` pairs for summary (`settings`) key columns. Drives
+    /// both the sweep and provider→column mapping for migration. `geminiApiKey`
+    /// exists in the schema but is not yet wired to a provider; it is swept
+    /// anyway so no plaintext is left behind if a future column gets populated.
+    const SUMMARY_KEY_COLUMNS: &'static [(&'static str, &'static str)] = &[
+        ("openai", "openaiApiKey"),
+        ("claude", "anthropicApiKey"),
+        ("ollama", "ollamaApiKey"),
+        ("groq", "groqApiKey"),
+        ("openrouter", "openRouterApiKey"),
+        ("gemini", "geminiApiKey"),
+    ];
+
+    /// `(provider, column)` pairs for transcript (`transcript_settings`) columns.
+    const TRANSCRIPT_KEY_COLUMNS: &'static [(&'static str, &'static str)] = &[
+        ("localWhisper", "whisperApiKey"),
+        ("deepgram", "deepgramApiKey"),
+        ("elevenLabs", "elevenLabsApiKey"),
+        ("groq", "groqApiKey"),
+        ("openai", "openaiApiKey"),
+    ];
+
+    /// True when a column value is a real legacy plaintext key (present, non-empty,
+    /// and not already the keychain marker) that still needs migrating.
+    fn is_legacy_plaintext(value: &Option<String>) -> bool {
+        matches!(value, Some(v) if !v.is_empty() && v != KEYCHAIN_MARKER)
+    }
+
+    /// Move the value of one `(table, column)` cell for the given workspace into
+    /// the keychain and overwrite the column with the marker. Idempotent: a
+    /// missing/empty/already-migrated cell is a no-op. Runs fully offline.
+    async fn migrate_column_cell(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        table: &str,
+        column: &str,
+        domain: SecretDomain,
+        provider: &str,
+    ) -> std::result::Result<(), sqlx::Error> {
+        let current: Option<String> = sqlx::query_scalar(&format!(
+            "SELECT \"{column}\" FROM {table} WHERE id = '1' AND workspace_id = ? LIMIT 1"
+        ))
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+
+        if !Self::is_legacy_plaintext(&current) {
+            return Ok(());
+        }
+        let plaintext = current.expect("is_legacy_plaintext guarantees Some");
+
+        // Store to the OS credential store first; only blank the column once the
+        // secret is safely in the keychain (fail closed — never lose the key).
+        secrets::set_api_key(ctx, domain, provider, &plaintext).map_err(keychain_err)?;
+
+        let now = Utc::now();
+        sqlx::query(&format!(
+            "UPDATE {table} SET \"{column}\" = ?, updated_at = ? \
+             WHERE id = '1' AND workspace_id = ?"
+        ))
+        .bind(KEYCHAIN_MARKER)
+        .bind(now)
+        .bind(ctx.tenant_id.as_str())
+        .execute(pool)
+        .await?;
+
+        tracing::info!(
+            provider,
+            domain = ?domain,
+            workspace_id = %ctx.tenant_id,
+            "migrated a legacy plaintext API key from SQLite into the OS credential store"
+        );
+        Ok(())
+    }
+
+    /// Lazy migration for a single summary provider's column (called on read).
+    async fn migrate_summary_column_if_plaintext(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        provider: &str,
+    ) -> std::result::Result<(), sqlx::Error> {
+        if let Some(column) = Self::summary_key_column(provider)? {
+            Self::migrate_column_cell(
+                pool,
+                ctx,
+                "settings",
+                column,
+                SecretDomain::Summary,
+                provider,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Lazy migration for a single transcript provider's column (called on read).
+    async fn migrate_transcript_column_if_plaintext(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        provider: &str,
+    ) -> std::result::Result<(), sqlx::Error> {
+        if let Some(column) = Self::transcript_key_column(provider)? {
+            Self::migrate_column_cell(
+                pool,
+                ctx,
+                "transcript_settings",
+                column,
+                SecretDomain::Transcript,
+                provider,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// One-time startup sweep: move every legacy plaintext API key still stored
+    /// in a `settings` / `transcript_settings` column into the OS credential
+    /// store, then overwrite the column with [`KEYCHAIN_MARKER`]. Iterates over
+    /// **every workspace row** (using each row's own `workspace_id`, not just
+    /// `local`) so a multi-workspace DB migrates correctly, and is fully idempotent
+    /// and offline. Safe to call on every startup.
+    ///
+    /// Returns the number of keys migrated (useful for logging/tests).
+    pub async fn migrate_plaintext_keys_to_keychain(
+        pool: &SqlitePool,
+    ) -> std::result::Result<usize, sqlx::Error> {
+        let mut migrated = 0usize;
+
+        for (table, columns, domain) in [
+            ("settings", Self::SUMMARY_KEY_COLUMNS, SecretDomain::Summary),
+            (
+                "transcript_settings",
+                Self::TRANSCRIPT_KEY_COLUMNS,
+                SecretDomain::Transcript,
+            ),
+        ] {
+            // Every distinct workspace that owns a row in this table.
+            let workspaces: Vec<String> =
+                sqlx::query_scalar(&format!("SELECT DISTINCT workspace_id FROM {table}"))
+                    .fetch_all(pool)
+                    .await?;
+
+            for workspace_id in workspaces {
+                // Build a data-migration context from the persisted workspace id.
+                // (Not identity resolution — we are moving already-owned rows.)
+                let ctx = crate::context::AuthContext {
+                    tenant_id: crate::context::TenantId::new(workspace_id.clone()),
+                    user_id: crate::context::UserId::new(crate::context::LOCAL_USER_ID),
+                    roles: vec![crate::context::Role::Owner],
+                    request_id: crate::context::RequestId::generate(),
+                };
+
+                for (provider, column) in columns {
+                    let before: Option<String> = sqlx::query_scalar(&format!(
+                        "SELECT \"{column}\" FROM {table} WHERE id = '1' AND workspace_id = ? LIMIT 1"
+                    ))
+                    .bind(&workspace_id)
+                    .fetch_optional(pool)
+                    .await?
+                    .flatten();
+
+                    if Self::is_legacy_plaintext(&before) {
+                        Self::migrate_column_cell(pool, &ctx, table, column, domain, provider)
+                            .await?;
+                        migrated += 1;
+                    }
+                }
+            }
+        }
+
+        if migrated > 0 {
+            tracing::info!(
+                count = migrated,
+                "startup: migrated legacy plaintext API keys from SQLite into the OS credential store"
+            );
+        }
+        Ok(migrated)
     }
 }
