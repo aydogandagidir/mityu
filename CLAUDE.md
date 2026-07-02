@@ -1,409 +1,175 @@
-# CLAUDE.md
+# CLAUDE.md — Project Constitution
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> This file governs how Claude Code agents work in this repository. It supersedes generic assumptions.
+> It is a **superset** of the upstream `Zackriya-Solutions/meetily` CLAUDE.md: inherit the upstream engineering notes (audio pipeline, Tauri command patterns, platform quirks) and layer the **enterprise + local-first + future multi-tenant** rules below on top.
 
-## Project Overview
+**Product name (working codename):** `Mityu` — an enterprise, local-first meeting/field-conversation intelligence app derived from Meetily (MIT). Working name; finalize before public launch + trademark filing.
+**Bundle identifier:** `com.bluedev.mityu` (replace with your real reverse-domain if different).
+**Not affiliated with Meetily/Zackriya Solutions, and must NOT use the "Meetily" name or branding.** We ship under our own brand (`Mityu`). The MIT copyright notice for Zackriya Solutions MUST be preserved in `LICENSE` (code license ≠ trademark; keeping the notice is required).
 
-**Meetily** is a privacy-first AI meeting assistant that captures, transcribes, and summarizes meetings entirely on local infrastructure. The supported application is the Tauri desktop app with a Rust core.
+---
 
-1. **Frontend**: Tauri-based desktop application (Rust + Next.js + TypeScript)
-2. **Rust Backend**: Tauri commands, audio capture, transcription, storage, and summarization orchestration
-3. **Legacy Backend Archive**: the old Python/FastAPI, Docker, and standalone whisper-server backend under `backend/` is archived and unsupported
+## 0. Prime Directives (read before every task)
 
-### Key Technology Stack
-- **Desktop App**: Tauri 2.x (Rust) + Next.js 14 + React 18
-- **Audio Processing**: Rust (cpal, whisper-rs, professional audio mixing)
-- **Transcription**: Whisper.cpp / whisper-rs and Parakeet paths in the Tauri app
-- **App API Surface**: Tauri commands and events, not a separate FastAPI service
-- **LLM Integration**: Ollama (local), Claude, Groq, OpenRouter
+1. **Local-first is the product, not a feature.** Capture, transcription, and (by default) summarization run **on the user's device**. The app MUST remain fully functional with **no network and no server**. Never introduce a hard dependency on a remote service into the core capture→transcript→summary→store path.
+2. **Server is optional and additive.** Team/enterprise/SaaS capabilities arrive through an **optional sync/collaboration server**. If the server is unreachable, the desktop app keeps working on local data.
+3. **Tenant-aware by design, single-tenant in practice (for now).** Every persisted domain entity carries a `workspace_id` (local) / `tenant_id` (server) from day one. In local-first mode this is a single implicit workspace. **Do not** scatter code that assumes a global, tenant-less world — that is the #1 thing that makes a future SaaS migration a rewrite. See `docs/MULTITENANCY.md`.
+4. **The Python/FastAPI `backend/` is LEGACY and ARCHIVED.** Per upstream: it had unauthenticated, dev-only CORS. **Do not** build on it, resurrect it as a runtime dependency, or copy its security posture. You MAY read it for data-model/prompt reference only. The future server is a **new, clean, authenticated service** (`server/`), not the archived backend.
+5. **Human-in-the-loop for every AI output.** Summaries, action items, and extracted facts are **drafts** until a human approves. Bind every AI-generated item to its **source transcript segment + timestamp**. This is required for trust, for dispute/claim evidence value, and for EU AI Act Article 50 transparency.
+6. **Privacy & compliance are architectural, not bolt-on.** Encryption at rest, audit trail, retention/redaction policy, and explicit recording consent are first-class. See `docs/SECURITY_PRIVACY.md`.
+7. **Never hardcode secrets or paths.** LLM API keys live in the OS keychain / Tauri secure store, never in source or plaintext config. Use Tauri path APIs for cross-platform paths.
+8. **Small, reversible steps.** Prefer additive changes behind a flag over big-bang refactors. When you touch the audio pipeline or the DB schema, treat it as high-risk (see §4, §6).
 
-## Essential Development Commands
+---
 
-### Frontend Development (Tauri Desktop App)
+## 1. What this app is (and is not)
 
-**Location**: `/frontend`
+**Is:** An offline-capable desktop app that records meetings / on-site conversations, transcribes them locally, produces structured, source-linked summaries and action items, and lets a user search and export them. Designed to grow into a team product (shared workspaces, admin, audit) and later a managed multi-tenant SaaS — **without abandoning local-first**.
+
+**Is not:** A cloud recorder that streams your audio to someone else's servers (that is the competitor category we differentiate from). Not a meeting bot that joins calls. Not an autonomous agent that takes irreversible actions without approval.
+
+---
+
+## 2. Verified architecture (ground truth from the code)
+
+The supported app is a **Tauri 2 desktop app**: a Rust core (`frontend/src-tauri/`) with a **Next.js** UI (`frontend/src/`). The Rust core owns capture, transcription, LLM calls, and local storage. **There is no required server today.**
+
+```mermaid
+graph TD
+  subgraph Desktop["Desktop app (Tauri 2) — LOCAL-FIRST, always works offline"]
+    UI["Next.js UI (React)<br/>src/ — BlockNote editor, shadcn/ui"]
+    subgraph Core["Rust core — src-tauri/src/"]
+      AUD["audio/ + audio_v2/<br/>cpal capture, EBU R128, 48kHz, mic+system"]
+      WSP["whisper_engine/ (whisper-rs → whisper.cpp)"]
+      PAR["parakeet_engine/ (NVIDIA Parakeet)"]
+      SUM["summary/ + providers:<br/>anthropic/ openai/ groq/ ollama/ openrouter/ (BYOK)"]
+      DB["database/ → local SQLite"]
+      SYNC["sync/ (NEW, optional client) → talks to server/"]
+    end
+  end
+  subgraph Server["OPTIONAL sync/collaboration server — server/ (NEW, clean, authenticated)"]
+    API["API gateway (authn/z)"]
+    AUTHZ["OIDC (Keycloak/Authentik/Entra) + RBAC"]
+    PG["PostgreSQL + Row-Level Security (tenant_id)"]
+    AUD2["append-only audit log"]
+    OBJ["object storage (S3/MinIO) — optional"]
+  end
+  UI -->|"Tauri invoke()"| Core
+  SYNC -. "TLS, tenant-scoped, opt-in" .-> API
+  API --> AUTHZ --> PG
+  API --> AUD2
+  API --> OBJ
+```
+
+**Legacy (do not build on):** `backend/` = Python FastAPI + `pydantic-ai` + `aiosqlite` + Ollama, archived. Keep its structured-summary schema (`Block` / `Section` / `MeetingNotes`) as a **reference schema** only.
+
+### Component ownership (who does what — do not blur these)
+| Concern | Owner | Location | Notes |
+|---|---|---|---|
+| Audio capture / mixing / normalization | Rust | `src-tauri/src/audio*`, `recording_manager.rs` | Fragile & critical. See §4. |
+| Transcription | Rust | `whisper_engine/`, `parakeet_engine/` | **whisper-rs** builds whisper.cpp from source (GPU features); models: whisper `large-v3`, Parakeet. The `backend/whisper.cpp` submodule serves only the archived backend |
+| Summarization / extraction | Rust | `summary/`, provider modules, `llama-helper` crate | Provider-agnostic; BYOK; **must be swappable**; embedded local llama.cpp path + in-app model manager |
+| Local persistence | Rust | `database/` → SQLite | Local cache = source of truth in local-first |
+| UI / editor / state | Next.js | `src/` | BlockNote is the canonical editor; TipTap/Remirror are legacy—do not add new deps to them |
+| Sync (client) | Rust | `src-tauri/src/sync/` (NEW) | Opt-in, tenant-scoped |
+| Multi-tenant server | New service | `server/` (NEW) | Phase 2+. Not the legacy backend. |
+
+---
+
+## 3. Tech stack & canonical choices (avoid drift)
+
+- **Desktop shell:** Tauri 2. Plugins in use: `dialog`, `fs`, `log`, `notification`, `process`, `single-instance`, `store`, `updater`. Prefer these over custom native code.
+- **UI:** Next.js + React + Tailwind + shadcn/ui + **BlockNote** (rich text). **Canonical editor = BlockNote.** TipTap and Remirror also appear in deps — treat as **legacy**, do not extend, migrate away when touched.
+- **Rust:** `anyhow::Result` for app errors; `tracing`/`log` for logging with module context; `cpal` for audio; `ebur128` for loudness. Run `cargo fmt` + `cargo clippy` before PR.
+- **LLM providers (BYOK):** OpenAI, Anthropic/Claude, Groq, Ollama (local), OpenRouter — plus an embedded local llama.cpp path (`llama-helper` crate + in-app model manager). Keys stored in OS keychain / Tauri store — never in SQLite plaintext, never in source.
+- **Local STT:** whisper.cpp via **whisper-rs** (`large-v3` default) and Parakeet (faster). Model files are large; load once and cache; changing model requires reload/restart.
+- **DB (client):** SQLite. **DB (server, Phase 2+):** PostgreSQL with Row-Level Security. Client SQLite becomes a local cache that syncs.
+- **Analytics:** PostHog, **opt-in only** (there is an explicit consent switch). Never send transcript/meeting content to analytics. Telemetry must be disableable for enterprise.
+- **Future server language:** default to **Rust/Axum** for one-language cohesion with the Tauri core, OR a clean **FastAPI** service if the team prefers Python; decide in `docs/DECISIONS.md` before writing server code. Either way it is authenticated and multi-tenant from commit #1.
+
+---
+
+## 4. High-risk zone: the audio pipeline (handle with extra care)
+
+Upstream flags this as the most fragile subsystem. Rules:
+- Pipeline expects a **consistent 48kHz** sample rate; resample at capture time.
+- System-audio capture needs a virtual device (BlackHole on macOS, WASAPI loopback on Windows) and **macOS 13+ screen-recording permission**; request permissions early.
+- Devices are named **"microphone"** and **"system"** consistently — never "input"/"output".
+- Do not refactor `audio/` and `audio_v2/` together in one pass. If both exist, first document which is authoritative in `docs/DECISIONS.md`, then converge behind a flag.
+- Any audio change requires a manual smoke test (record → transcript appears) on at least one macOS and one Windows path before merge.
+
+---
+
+## 5. Quality gates (definition of done)
+
+A change is done only when:
+1. **Builds:** `pnpm run tauri:dev` (or `./clean_run.sh`) compiles; Rust `cargo build` clean.
+2. **Lints:** `cargo clippy --all-targets` has no new warnings; `pnpm run lint` + `pnpm tsc --noEmit` clean.
+3. **Local-first invariant holds:** feature works with the network OFF (or, if it is a server feature, the app still starts and core capture works with the server OFF).
+4. **Tenant invariant holds (server code):** no query/read over tenant data without tenant scoping (RLS or explicit `tenant_id`). See `/tenant-check`.
+5. **Secrets/paths:** no hardcoded secrets or paths (hooks enforce a first pass).
+6. **HITL preserved:** no new path publishes AI output without human approval + source link.
+7. **Docs updated:** if you changed architecture or schema, update the relevant file in `docs/` and add an ADR to `docs/DECISIONS.md`.
+8. **Tests:** add/adjust tests for new server endpoints and non-trivial Rust logic.
+
+---
+
+## 6. Database & schema changes (high-risk)
+
+- **Client SQLite** and **server Postgres** schemas must stay **compatible** (same logical entities; see `docs/DATA_MODEL.md`).
+- Every migration is **forward-only, reversible-documented, and idempotent**. Never edit an applied migration; add a new one.
+- Every domain table has: `id` (uuid), `workspace_id`/`tenant_id`, `created_at`, `updated_at`, and (for sync) `updated_by`, `version`/`rev`, `deleted_at` (soft delete).
+- Use `/db-migration` to author migrations. A schema change to a synced table also requires a sync-compatibility note.
+
+---
+
+## 7. How to work (agent workflow)
+
+1. **Orient first.** New to this repo? Start at **`BOOTSTRAP.md`** (the exact startup sequence). For any task: read this file, then the relevant `docs/` doc, then the upstream CLAUDE.md engineering notes, then the actual code you will touch. Do not guess file locations — grep. Document index:
+   - `BOOTSTRAP.md` — ordered startup prompts & gates (run first).
+   - `docs/SETUP.md` — dev environment prerequisites.
+   - `docs/BACKLOG.md` — the ordered, executable task list (work top-to-bottom).
+   - `docs/PHASE0_VALIDATION.md` — the make-or-break transcription gate (human-reviewed).
+   - `docs/ARCHITECTURE.md`, `docs/MULTITENANCY.md`, `docs/DATA_MODEL.md`, `docs/CONTRACTS.md`, `docs/SCAFFOLD.md` — the design + the seams + where code goes.
+   - `docs/CONVENTIONS.md` — coding/testing/commit standards. `docs/SECURITY_PRIVACY.md` — security & compliance. `docs/DECISIONS.md` — ADR log.
+2. **Pick the right subagent.** See `.claude/agents/`. Route audio work to `audio-pipeline-engineer`, server/tenancy work to `sync-server-architect` + `multitenancy-guardian`, etc.
+3. **Use the workflows.** Slash commands in `.claude/commands/` encode the repeatable, safe procedures (feature, fix-bug, add-tauri-command, prep-multitenant, tenant-check, security-review, db-migration, audio-debug, release).
+4. **Stay in your lane.** Do not touch capture internals for a UI ticket. Do not add server calls for a local feature.
+5. **When blocked or ambiguous, state the assumption inline and proceed on the smallest safe interpretation** — do not stall, but do not invent product scope.
+
+---
+
+## 8. Commands cheat-sheet (from upstream, verified)
 
 ```bash
-# macOS Development
-./clean_run.sh              # Clean build and run with info logging
-./clean_run.sh debug        # Run with debug logging
-./clean_build.sh            # Production build
-
-# Windows Development
-clean_run_windows.bat       # Clean build and run
-clean_build_windows.bat     # Production build
-
-# Manual Commands
-pnpm install                # Install dependencies
-pnpm run dev                # Next.js dev server (port 3118)
-pnpm run tauri:dev          # Full Tauri development mode
-pnpm run tauri:build        # Production build
-
-# GPU-Specific Builds (for testing acceleration)
-pnpm run tauri:dev:metal    # macOS Metal GPU
-pnpm run tauri:dev:cuda     # NVIDIA CUDA
-pnpm run tauri:dev:vulkan   # AMD/Intel Vulkan
-pnpm run tauri:dev:cpu      # CPU-only (no GPU)
+# In /frontend
+pnpm install
+pnpm run dev            # Next.js dev server on port 3118
+pnpm run tauri:dev      # full Tauri dev (scripts/tauri-auto.js auto-detects the GPU variant)
+pnpm run tauri:build    # production build
+./clean_run.sh          # clean build + run (macOS); add 'debug' for debug logs
+clean_run_windows.bat   # clean build + run (Windows); build.ps1 / build-gpu.ps1 also available
+# GPU variants: pnpm run tauri:dev:cpu | :cuda | :vulkan | :metal | :coreml | :openblas | :hipblas
 ```
 
-### Legacy Backend Archive
+Dev frontend port: **3118**. Do not reintroduce the legacy backend ports/services as required infrastructure.
 
-**Location**: `/backend`
+---
 
-The Python/FastAPI backend, Docker setup, and standalone whisper-server scripts are archived for historical reference and migration context only. Do not use them for current development, new installs, production deployments, or issue triage for the supported app.
+## 9. Licensing & IP guardrails
 
-The archived FastAPI service had unauthenticated, development-oriented CORS behavior. Treat that behavior as obsolete legacy context, not as a supported production API.
+- Base is **MIT** (Zackriya Solutions) — commercial use, modification, and closed distribution are permitted; **keep the MIT copyright notice**. `whisper.cpp` submodule is also MIT.
+- **Do not** ship under the "Meetily" name/logo. Use our own brand assets.
+- **Model licenses are separate from code:** verify the license/terms of any STT model (whisper weights, NVIDIA Parakeet) and any LLM provider's API terms before commercial distribution. Note this per-model in `docs/DECISIONS.md`.
+- Cloud LLM usage is governed by each provider's ToS; BYOK shifts that responsibility to the customer — surface this in-product.
 
-### Service Endpoints
-- **Frontend Dev**: http://localhost:3118
+---
 
-## High-Level Architecture
+## 10. Definition of "do not do"
 
-### Tauri Desktop Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Frontend (Tauri Desktop App)                  │
-│  ┌──────────────────┐  ┌─────────────────┐  ┌────────────────┐ │
-│  │   Next.js UI     │  │  Rust Backend   │  │ Whisper Engine │ │
-│  │  (React/TS)      │←→│  (Audio + IPC)  │←→│  (Local STT)   │ │
-│  └──────────────────┘  └─────────────────┘  └────────────────┘ │
-│         ↑ Tauri Events           ↑ Audio Pipeline               │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-The current app does not require a separate FastAPI tier. Meeting persistence, local transcription, and summary orchestration are handled through the Rust/Tauri core.
-
-### Audio Processing Pipeline (Critical Understanding)
-
-The audio system has **two parallel paths** with different purposes:
-
-```
-Raw Audio (Mic + System)
-         ↓
-┌────────────────────────────────────────────────────────────┐
-│              Audio Pipeline Manager                         │
-│  (frontend/src-tauri/src/audio/pipeline.rs)                │
-└─────────────┬──────────────────────────┬───────────────────┘
-              ↓                          ↓
-    ┌─────────────────┐        ┌─────────────────────┐
-    │ Recording Path  │        │ Transcription Path  │
-    │ (Pre-mixed)     │        │ (VAD-filtered)      │
-    └─────────────────┘        └─────────────────────┘
-              ↓                          ↓
-    RecordingSaver.save()      WhisperEngine.transcribe()
-```
-
-**Key Insight**: The pipeline performs **professional audio mixing** (RMS-based ducking, clipping prevention) for recording, while simultaneously applying **Voice Activity Detection (VAD)** to send only speech segments to Whisper for transcription.
-
-### Audio Device Modularization (Recently Completed)
-
-**Context**: The audio system was refactored from a monolithic 1028-line `core.rs` file into focused modules. See [AUDIO_MODULARIZATION_PLAN.md](AUDIO_MODULARIZATION_PLAN.md) for details.
-
-```
-audio/
-├── devices/                    # Device discovery and configuration
-│   ├── discovery.rs           # list_audio_devices, trigger_audio_permission
-│   ├── microphone.rs          # default_input_device
-│   ├── speakers.rs            # default_output_device
-│   ├── configuration.rs       # AudioDevice types, parsing
-│   └── platform/              # Platform-specific implementations
-│       ├── windows.rs         # WASAPI logic (~200 lines)
-│       ├── macos.rs           # ScreenCaptureKit logic
-│       └── linux.rs           # ALSA/PulseAudio logic
-├── capture/                   # Audio stream capture
-│   ├── microphone.rs          # Microphone capture stream
-│   ├── system.rs              # System audio capture stream
-│   └── core_audio.rs          # macOS ScreenCaptureKit integration
-├── pipeline.rs                # Audio mixing and VAD processing
-├── recording_manager.rs       # High-level recording coordination
-├── recording_commands.rs      # Tauri command interface
-└── recording_saver.rs         # Audio file writing
-```
-
-**When working on audio features**:
-- Device detection issues → `devices/discovery.rs` or `devices/platform/{windows,macos,linux}.rs`
-- Microphone/speaker problems → `devices/microphone.rs` or `devices/speakers.rs`
-- Audio capture issues → `capture/microphone.rs` or `capture/system.rs`
-- Mixing/processing problems → `pipeline.rs`
-- Recording workflow → `recording_manager.rs`
-
-### Rust ↔ Frontend Communication (Tauri Architecture)
-
-**Command Pattern** (Frontend → Rust):
-```typescript
-// Frontend: src/app/page.tsx
-await invoke('start_recording', {
-  mic_device_name: "Built-in Microphone",
-  system_device_name: "BlackHole 2ch",
-  meeting_name: "Team Standup"
-});
-```
-
-```rust
-// Rust: src/lib.rs
-#[tauri::command]
-async fn start_recording<R: Runtime>(
-    app: AppHandle<R>,
-    mic_device_name: Option<String>,
-    system_device_name: Option<String>,
-    meeting_name: Option<String>
-) -> Result<(), String> {
-    // Implementation delegates to audio::recording_commands
-}
-```
-
-**Event Pattern** (Rust → Frontend):
-```rust
-// Rust: Emit transcript updates
-app.emit("transcript-update", TranscriptUpdate {
-    text: "Hello world".to_string(),
-    timestamp: chrono::Utc::now(),
-    // ...
-})?;
-```
-
-```typescript
-// Frontend: Listen for events
-await listen<TranscriptUpdate>('transcript-update', (event) => {
-  setTranscripts(prev => [...prev, event.payload]);
-});
-```
-
-### Whisper Model Management
-
-**Model Storage Locations**:
-- **Development**: `frontend/models/`
-- **Production (macOS)**: `~/Library/Application Support/Meetily/models/`
-- **Production (Windows)**: `%APPDATA%\Meetily\models\`
-
-**Model Loading** (frontend/src-tauri/src/whisper_engine/whisper_engine.rs):
-```rust
-pub async fn load_model(&self, model_name: &str) -> Result<()> {
-    // Automatically detects GPU capabilities (Metal/CUDA/Vulkan)
-    // Falls back to CPU if GPU unavailable
-}
-```
-
-**GPU Acceleration**:
-- **macOS**: Metal + CoreML (automatically enabled)
-- **Windows/Linux**: CUDA (NVIDIA), Vulkan (AMD/Intel), or CPU
-- Configure via Cargo features: `--features cuda`, `--features vulkan`
-
-## Critical Development Patterns
-
-### 1. Audio Buffer Management
-
-**Ring Buffer Mixing** (pipeline.rs):
-- Mic and system audio arrive asynchronously at different rates
-- Ring buffer accumulates samples until both streams have aligned windows (50ms)
-- Professional mixing applies RMS-based ducking to prevent system audio from drowning out microphone
-- Uses `VecDeque` for efficient windowed processing
-
-### 2. Thread Safety and Async Boundaries
-
-**Recording State** (recording_state.rs):
-```rust
-pub struct RecordingState {
-    is_recording: Arc<AtomicBool>,
-    audio_sender: Arc<RwLock<Option<mpsc::UnboundedSender<AudioChunk>>>>,
-    // ...
-}
-```
-
-**Key Pattern**: Use `Arc<RwLock<T>>` for shared state across async tasks, `Arc<AtomicBool>` for simple flags.
-
-### 3. Error Handling and Logging
-
-**Performance-Aware Logging** (lib.rs):
-```rust
-#[cfg(debug_assertions)]
-macro_rules! perf_debug {
-    ($($arg:tt)*) => { log::debug!($($arg)*) };
-}
-
-#[cfg(not(debug_assertions))]
-macro_rules! perf_debug {
-    ($($arg:tt)*) => {};  // Zero overhead in release builds
-}
-```
-
-**Usage**: Use `perf_debug!()` and `perf_trace!()` for hot-path logging that should be eliminated in production.
-
-### 4. Frontend State Management
-
-**Sidebar Context** (components/Sidebar/SidebarProvider.tsx):
-- Global state for meetings list, current meeting, recording status
-- Communicates with the Rust/Tauri core through Tauri commands and events
-- Keeps React state synchronized with native recording, meeting, transcript, and summary state
-
-**Pattern**: Tauri commands update Rust state → Emit events → Frontend listeners update React state → Context propagates to components
-
-## Common Development Tasks
-
-### Adding a New Audio Device Platform
-
-1. Create platform file: `audio/devices/platform/{platform_name}.rs`
-2. Implement device enumeration for the platform
-3. Add platform-specific configuration in `audio/devices/configuration.rs`
-4. Update `audio/devices/platform/mod.rs` to export new platform functions
-5. Test with `cargo check` and platform-specific device tests
-
-### Adding a New Tauri Command
-
-1. Define command in `src/lib.rs`:
-   ```rust
-   #[tauri::command]
-   async fn my_command(arg: String) -> Result<String, String> { /* ... */ }
-   ```
-2. Register in `tauri::Builder`:
-   ```rust
-   .invoke_handler(tauri::generate_handler![
-       start_recording,
-       my_command,  // Add here
-   ])
-   ```
-3. Call from frontend:
-   ```typescript
-   const result = await invoke<string>('my_command', { arg: 'value' });
-   ```
-
-### Modifying Audio Pipeline Behavior
-
-**Location**: `frontend/src-tauri/src/audio/pipeline.rs`
-
-Key components:
-- `AudioMixerRingBuffer`: Manages mic + system audio synchronization
-- `ProfessionalAudioMixer`: RMS-based ducking and mixing
-- `AudioPipelineManager`: Orchestrates VAD, mixing, and distribution
-
-**Testing Audio Changes**:
-```bash
-# Enable verbose audio logging
-RUST_LOG=app_lib::audio=debug ./clean_run.sh
-
-# Monitor audio metrics in real-time
-# Check Developer Console in the app (Cmd+Shift+I on macOS)
-```
-
-### Tauri Backend Development
-
-Current app behavior should be implemented in the Rust/Tauri core, not in the archived Python backend. Add new frontend-facing behavior through Tauri commands/events and existing Rust services under `frontend/src-tauri/src`.
-
-Do not add new endpoints to `backend/app/main.py`; that FastAPI code is legacy archive material only.
-
-## Testing and Debugging
-
-### Frontend Debugging
-
-**Enable Rust Logging**:
-```bash
-# macOS
-RUST_LOG=debug ./clean_run.sh
-
-# Windows (PowerShell)
-$env:RUST_LOG="debug"; ./clean_run_windows.bat
-```
-
-**Developer Tools**:
-- Open DevTools: `Cmd+Shift+I` (macOS) or `Ctrl+Shift+I` (Windows)
-- Console Toggle: Built into app UI (console icon)
-- View Rust logs: Check terminal output
-
-### Audio Pipeline Debugging
-
-**Key Metrics** (emitted by pipeline):
-- Buffer sizes (mic/system)
-- Mixing window count
-- VAD detection rate
-- Dropped chunk warnings
-
-**Monitor via Developer Console**: The app includes real-time metrics display when recording.
-
-## Platform-Specific Notes
-
-### macOS
-- **Audio Capture**: Uses ScreenCaptureKit for system audio (macOS 13+)
-- **GPU**: Metal + CoreML automatically enabled
-- **Permissions**: Requires microphone + screen recording permissions
-- **System Audio**: Requires virtual audio device (BlackHole) for system capture
-
-### Windows
-- **Audio Capture**: Uses WASAPI (Windows Audio Session API)
-- **GPU**: CUDA (NVIDIA) or Vulkan (AMD/Intel) via Cargo features
-- **Build Tools**: Requires Visual Studio Build Tools with C++ workload
-- **System Audio**: Uses WASAPI loopback for system capture
-
-### Linux
-- **Audio Capture**: ALSA/PulseAudio
-- **GPU**: CUDA (NVIDIA) or Vulkan via Cargo features
-- **Dependencies**: Requires cmake, llvm, libomp
-
-## Performance Optimization Guidelines
-
-### Audio Processing
-- Use `perf_debug!()` / `perf_trace!()` for hot-path logging (zero cost in release)
-- Batch audio metrics using `AudioMetricsBatcher` (pipeline.rs)
-- Pre-allocate buffers with `AudioBufferPool` (buffer_pool.rs)
-- VAD filtering reduces Whisper load by ~70% (only processes speech)
-
-### Whisper Transcription
-- **Model Selection**: Balance accuracy vs speed
-  - Development: `base` or `small` (fast iteration)
-  - Production: `medium` or `large-v3` (best quality)
-- **GPU Acceleration**: 5-10x faster than CPU
-- **Parallel Processing**: Available in `whisper_engine/parallel_processor.rs` for batch workloads
-
-### Frontend Performance
-- React state updates batched via Sidebar context
-- Transcript rendering virtualized for large meetings
-- Audio level monitoring throttled to 60fps
-
-## Important Constraints and Gotchas
-
-1. **Audio Chunk Size**: Pipeline expects consistent 48kHz sample rate. Resampling happens at capture time.
-
-2. **Platform Audio Quirks**:
-   - macOS: ScreenCaptureKit requires macOS 13+, needs screen recording permission
-   - Windows: WASAPI exclusive mode can conflict with other apps
-   - System audio requires virtual device (BlackHole on macOS, WASAPI loopback on Windows)
-
-3. **Whisper Model Loading**: Models are loaded once and cached. Changing models requires app restart or manual unload/reload.
-
-4. **No Separate Backend Dependency**: Meeting persistence, transcription, and LLM features are handled by the Tauri app. Do not reintroduce the archived FastAPI backend as a supported requirement.
-
-5. **Legacy FastAPI Security Context**: The archived FastAPI/CORS behavior is unsupported legacy code and must not be treated as a supported production API.
-
-6. **File Paths**: Use Tauri's path APIs (`downloadDir`, etc.) for cross-platform compatibility. Never hardcode paths.
-
-7. **Audio Permissions**: Request permissions early. macOS requires both microphone AND screen recording for system audio.
-
-## Repository-Specific Conventions
-
-- **Logging Format**: Rust logs should include enough module context to diagnose app behavior
-- **Error Handling**: Rust uses `anyhow::Result`, frontend uses try-catch with user-friendly messages
-- **Naming**: Audio devices use "microphone" and "system" consistently (not "input"/"output")
-- **Git Branches**:
-  - `main`: Stable releases
-  - `fix/*`: Bug fixes
-  - `enhance/*`: Feature enhancements
-  - Current: `fix/audio-mixing` (working on audio pipeline improvements)
-
-## Key Files Reference
-
-**Core Coordination**:
-- [frontend/src-tauri/src/lib.rs](frontend/src-tauri/src/lib.rs) - Main Tauri entry point, command registration
-- [frontend/src-tauri/src/audio/mod.rs](frontend/src-tauri/src/audio/mod.rs) - Audio module exports
-- [frontend/src-tauri/src/database/mod.rs](frontend/src-tauri/src/database/mod.rs) - Local database module
-
-**Audio System**:
-- [frontend/src-tauri/src/audio/recording_manager.rs](frontend/src-tauri/src/audio/recording_manager.rs) - Recording orchestration
-- [frontend/src-tauri/src/audio/pipeline.rs](frontend/src-tauri/src/audio/pipeline.rs) - Audio mixing and VAD
-- [frontend/src-tauri/src/audio/recording_saver.rs](frontend/src-tauri/src/audio/recording_saver.rs) - Audio file writing
-
-**UI Components**:
-- [frontend/src/app/page.tsx](frontend/src/app/page.tsx) - Main recording interface
-- [frontend/src/components/Sidebar/SidebarProvider.tsx](frontend/src/components/Sidebar/SidebarProvider.tsx) - Global state management
-
-**Whisper Integration**:
-- [frontend/src-tauri/src/whisper_engine/whisper_engine.rs](frontend/src-tauri/src/whisper_engine/whisper_engine.rs) - Whisper model management and transcription
+- Do not stream raw audio/transcripts to any third party by default.
+- Do not add cross-tenant queries or a "god mode" that bypasses tenant scoping.
+- Do not resurrect the legacy `backend/` as a production dependency.
+- Do not persist LLM API keys in SQLite plaintext or commit them.
+- Do not publish AI output without human approval + source-segment linkage.
+- Do not refactor the audio pipeline and the DB schema in the same change.

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read", "Edit", "Write", "Grep", "Glob",
+      "Bash(pnpm *)", "Bash(cargo *)", "Bash(rustc *)", "Bash(rustup *)",
+      "Bash(python -m *)", "Bash(uv *)", "Bash(pytest *)", "Bash(ruff *)",
+      "Bash(git status)", "Bash(git diff*)", "Bash(git log*)", "Bash(git add*)",
+      "Bash(./clean_run.sh*)", "Bash(./clean_build.sh*)",
+      "Bash(psql *)", "Bash(docker compose *)"
+    ],
+    "ask": [
+      "Bash(git commit*)", "Bash(git push*)", "Bash(git reset*)", "Bash(git rebase*)",
+      "Bash(rm *)", "Bash(cargo publish*)", "Bash(pnpm publish*)",
+      "Bash(docker *)", "Bash(gh *)"
+    ],
+    "deny": [
+      "Read(./**/.env)", "Read(./**/.env.*)", "Read(./**/*.key)", "Read(./**/*.pem)",
+      "Read(./**/secrets/**)", "Read(./**/*.sqlite)", "Read(./**/*.db)",
+      "Bash(curl * | sh)", "Bash(git push --force*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secrets.sh" },
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/tenant-scope-check.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/rust-quality.sh" },
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/ts-quality.sh" }
+        ]
+      }
+    ]
+  }
+}
