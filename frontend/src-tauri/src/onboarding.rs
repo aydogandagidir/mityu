@@ -177,10 +177,12 @@ pub async fn complete_onboarding<R: Runtime>(
 
     // Step 1: Save model configuration to SQLite database FIRST
     let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
 
     // Onboarding always uses builtin-ai (local LLM)
     if let Err(e) = SettingsRepository::save_model_config(
         pool,
+        &ctx,
         "builtin-ai",
         &model,
         "large-v3",
@@ -194,6 +196,7 @@ pub async fn complete_onboarding<R: Runtime>(
     // Save transcription model config (parakeet provider) - always parakeet
     if let Err(e) = SettingsRepository::save_transcript_config(
         pool,
+        &ctx,
         "parakeet",
         crate::config::DEFAULT_PARAKEET_MODEL,
     ).await {

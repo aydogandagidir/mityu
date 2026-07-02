@@ -1,20 +1,35 @@
-// src/database/repo/transcript_chunks.rs
+//! Tenant-scoped transcript-chunks repository (docs/CONTRACTS.md §2, BACKLOG B2
+//! phase 2). `transcript_chunks.updated_at` is nullable at the SQL level (added
+//! by migration 20260702000000), so every write here MUST populate it; writes
+//! also stamp `rev`/`updated_by`. The upsert guards its DO UPDATE with a
+//! workspace match so a conflicting row from another workspace is never
+//! overwritten.
 
+use crate::context::AuthContext;
 use chrono::Utc;
 use log::info as log_info;
 use sqlx::SqlitePool;
+
+/// One logical `transcript_chunks` record: the full transcript text plus the
+/// processing parameters it was produced with.
+#[derive(Debug, Clone, Copy)]
+pub struct TranscriptChunkData<'a> {
+    pub text: &'a str,
+    pub model: &'a str,
+    pub model_name: &'a str,
+    pub chunk_size: i32,
+    pub overlap: i32,
+}
+
 pub struct TranscriptChunksRepository;
 
 impl TranscriptChunksRepository {
     /// Saves the full transcript text and processing parameters.
     pub async fn save_transcript_data(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         meeting_id: &str,
-        text: &str,
-        model: &str,
-        model_name: &str,
-        chunk_size: i32,
-        overlap: i32,
+        data: TranscriptChunkData<'_>,
     ) -> Result<(), sqlx::Error> {
         log_info!(
             "Saving transcript data to transcript_chunks for meeting_id: {}",
@@ -23,24 +38,31 @@ impl TranscriptChunksRepository {
         let now = Utc::now();
         sqlx::query(
             r#"
-            INSERT INTO transcript_chunks (meeting_id, transcript_text, model, model_name, chunk_size, overlap, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO transcript_chunks (meeting_id, workspace_id, transcript_text, model, model_name, chunk_size, overlap, created_at, updated_at, updated_by, rev)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(meeting_id) DO UPDATE SET
                 transcript_text = excluded.transcript_text,
                 model = excluded.model,
                 model_name = excluded.model_name,
                 chunk_size = excluded.chunk_size,
                 overlap = excluded.overlap,
-                created_at = excluded.created_at
-            "#
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at,
+                updated_by = excluded.updated_by,
+                rev = rev + 1
+            WHERE workspace_id = excluded.workspace_id
+            "#,
         )
         .bind(meeting_id)
-        .bind(text)
-        .bind(model)
-        .bind(model_name)
-        .bind(chunk_size)
-        .bind(overlap)
+        .bind(ctx.tenant_id.as_str())
+        .bind(data.text)
+        .bind(data.model)
+        .bind(data.model_name)
+        .bind(data.chunk_size)
+        .bind(data.overlap)
         .bind(now)
+        .bind(now)
+        .bind(ctx.user_id.as_str())
         .execute(pool)
         .await?;
 

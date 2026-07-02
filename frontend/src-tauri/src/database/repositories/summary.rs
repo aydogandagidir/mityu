@@ -1,3 +1,10 @@
+//! Tenant-scoped summary-process repository (docs/CONTRACTS.md §2, BACKLOG B2
+//! phase 2). Every method takes [`AuthContext`] and scopes each statement with
+//! `workspace_id = ctx.tenant_id`; writes to this synced table bump `rev` and
+//! stamp `updated_by`. The upsert guards its DO UPDATE with a workspace match so
+//! a conflicting row from another workspace can never be overwritten.
+
+use crate::context::AuthContext;
 use crate::database::models::SummaryProcess;
 use chrono::Utc;
 use serde_json::Value;
@@ -10,26 +17,33 @@ impl SummaryProcessesRepository {
     /// Retrieves the current summary process state for a given meeting ID.
     pub async fn get_summary_data(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         meeting_id: &str,
     ) -> Result<Option<SummaryProcess>, sqlx::Error> {
-        sqlx::query_as::<_, SummaryProcess>("SELECT * FROM summary_processes WHERE meeting_id = ?")
-            .bind(meeting_id)
-            .fetch_optional(pool)
-            .await
+        sqlx::query_as::<_, SummaryProcess>(
+            "SELECT * FROM summary_processes WHERE meeting_id = ? AND workspace_id = ?",
+        )
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await
     }
 
     pub async fn update_meeting_summary(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         meeting_id: &str,
         summary: &Value,
     ) -> Result<bool, sqlx::Error> {
         let mut transaction = pool.begin().await?;
 
-        let meeting_exists: bool = sqlx::query("SELECT 1 FROM meetings WHERE id = ?")
-            .bind(meeting_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .is_some();
+        let meeting_exists: bool =
+            sqlx::query("SELECT 1 FROM meetings WHERE id = ? AND workspace_id = ?")
+                .bind(meeting_id)
+                .bind(ctx.tenant_id.as_str())
+                .fetch_optional(&mut *transaction)
+                .await?
+                .is_some();
 
         if !meeting_exists {
             log_info!(
@@ -48,18 +62,28 @@ impl SummaryProcessesRepository {
         }
         let now = Utc::now();
 
-        sqlx::query("UPDATE summary_processes SET result = ?, updated_at = ? WHERE meeting_id = ?")
-            .bind(&result_json.unwrap())
-            .bind(now)
-            .bind(meeting_id)
-            .execute(&mut *transaction)
-            .await?;
+        sqlx::query(
+            "UPDATE summary_processes SET result = ?, updated_at = ?, updated_by = ?, \
+             rev = rev + 1 WHERE meeting_id = ? AND workspace_id = ?",
+        )
+        .bind(&result_json.unwrap())
+        .bind(now)
+        .bind(ctx.user_id.as_str())
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .execute(&mut *transaction)
+        .await?;
 
-        sqlx::query("UPDATE meetings SET updated_at = ? WHERE id = ?")
-            .bind(now)
-            .bind(meeting_id)
-            .execute(&mut *transaction)
-            .await?;
+        sqlx::query(
+            "UPDATE meetings SET updated_at = ?, updated_by = ?, rev = rev + 1 \
+             WHERE id = ? AND workspace_id = ?",
+        )
+        .bind(now)
+        .bind(ctx.user_id.as_str())
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .execute(&mut *transaction)
+        .await?;
 
         transaction.commit().await?;
 
@@ -72,18 +96,24 @@ impl SummaryProcessesRepository {
 
     pub async fn get_summary_data_for_meeting(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         meeting_id: &str,
     ) -> Result<Option<SummaryProcess>, sqlx::Error> {
         sqlx::query_as::<_, SummaryProcess>(
-            "SELECT p.* FROM summary_processes p JOIN transcript_chunks t ON p.meeting_id = t.meeting_id WHERE p.meeting_id = ?",
+            "SELECT p.* FROM summary_processes p \
+             JOIN transcript_chunks t ON p.meeting_id = t.meeting_id \
+             WHERE p.meeting_id = ? AND p.workspace_id = ? AND t.workspace_id = ?",
         )
         .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
         .fetch_optional(pool)
         .await
     }
 
     pub async fn create_or_reset_process(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         meeting_id: &str,
     ) -> Result<(), sqlx::Error> {
         log_info!(
@@ -93,21 +123,26 @@ impl SummaryProcessesRepository {
         let now = Utc::now();
         sqlx::query(
             r#"
-            INSERT INTO summary_processes (meeting_id, status, created_at, updated_at, start_time, result, error)
-            VALUES (?, 'PENDING', ?, ?, ?, NULL, NULL)
+            INSERT INTO summary_processes (meeting_id, workspace_id, status, created_at, updated_at, updated_by, rev, start_time, result, error)
+            VALUES (?, ?, 'PENDING', ?, ?, ?, 1, ?, NULL, NULL)
             ON CONFLICT(meeting_id) DO UPDATE SET
                 status = 'PENDING',
                 updated_at = excluded.updated_at,
+                updated_by = excluded.updated_by,
+                rev = rev + 1,
                 start_time = excluded.start_time,
                 result_backup = result,
                 result_backup_timestamp = excluded.updated_at,
                 result = result,
                 error = NULL
-            "#
+            WHERE workspace_id = excluded.workspace_id
+            "#,
         )
         .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
         .bind(now)
         .bind(now)
+        .bind(ctx.user_id.as_str())
         .bind(now)
         .execute(pool)
         .await?;
@@ -120,6 +155,7 @@ impl SummaryProcessesRepository {
 
     pub async fn update_process_completed(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         meeting_id: &str,
         result: Value, // Keep this as Value to handle both old and new formats if needed
         chunk_count: i64,
@@ -132,16 +168,18 @@ impl SummaryProcessesRepository {
         sqlx::query(
             r#"
             UPDATE summary_processes
-            SET status = 'completed', result = ?, updated_at = ?, end_time = ?, chunk_count = ?, processing_time = ?, error = NULL, result_backup = NULL, result_backup_timestamp = NULL
-            WHERE meeting_id = ?
-            "#
+            SET status = 'completed', result = ?, updated_at = ?, updated_by = ?, rev = rev + 1, end_time = ?, chunk_count = ?, processing_time = ?, error = NULL, result_backup = NULL, result_backup_timestamp = NULL
+            WHERE meeting_id = ? AND workspace_id = ?
+            "#,
         )
         .bind(result_str)
         .bind(now)
+        .bind(ctx.user_id.as_str())
         .bind(now)
         .bind(chunk_count)
         .bind(processing_time)
         .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
         .execute(pool)
         .await?;
         log_info!(
@@ -153,6 +191,7 @@ impl SummaryProcessesRepository {
 
     pub async fn update_process_failed(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         meeting_id: &str,
         error: &str,
     ) -> Result<(), sqlx::Error> {
@@ -166,17 +205,21 @@ impl SummaryProcessesRepository {
                 status = 'failed',
                 error = ?,
                 updated_at = ?,
+                updated_by = ?,
+                rev = rev + 1,
                 end_time = ?,
                 result = COALESCE(result_backup, result),
                 result_backup = NULL,
                 result_backup_timestamp = NULL
-            WHERE meeting_id = ?
+            WHERE meeting_id = ? AND workspace_id = ?
             "#,
         )
         .bind(error)
         .bind(now)
+        .bind(ctx.user_id.as_str())
         .bind(now)
         .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
         .execute(pool)
         .await?;
         log_info!(
@@ -188,6 +231,7 @@ impl SummaryProcessesRepository {
 
     pub async fn update_process_cancelled(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         meeting_id: &str,
     ) -> Result<(), sqlx::Error> {
         let now = Utc::now();
@@ -199,17 +243,21 @@ impl SummaryProcessesRepository {
             SET
                 status = 'cancelled',
                 updated_at = ?,
+                updated_by = ?,
+                rev = rev + 1,
                 end_time = ?,
                 error = 'Generation was cancelled by user',
                 result = COALESCE(result_backup, result),
                 result_backup = NULL,
                 result_backup_timestamp = NULL
-            WHERE meeting_id = ?
+            WHERE meeting_id = ? AND workspace_id = ?
             "#,
         )
         .bind(now)
+        .bind(ctx.user_id.as_str())
         .bind(now)
         .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
         .execute(pool)
         .await?;
         log_info!(

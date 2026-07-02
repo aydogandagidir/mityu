@@ -1,5 +1,20 @@
+//! Tenant-scoped settings repository (docs/CONTRACTS.md §2, BACKLOG B2 phase 2).
+//!
+//! `settings` / `transcript_settings` are per-workspace config tables (NOT
+//! synced: no `rev`/`updated_by`/`deleted_at`), but they carry `workspace_id`
+//! plus nullable `created_at`/`updated_at` — every write here MUST populate the
+//! timestamps and every statement is scoped by `workspace_id = ctx.tenant_id`.
+//!
+//! Legacy single-row shape: both tables keep the historical `id = '1'` primary
+//! key. Until a Phase-2 migration widens the key to (id, workspace_id), the
+//! upserts guard their DO UPDATE with `WHERE workspace_id = excluded.workspace_id`
+//! so a foreign workspace can never clobber another workspace's row (the
+//! statement degrades to a no-op instead).
+
+use crate::context::AuthContext;
 use crate::database::models::{Setting, TranscriptSetting};
 use crate::summary::CustomOpenAIConfig;
+use chrono::Utc;
 use sqlx::SqlitePool;
 
 #[derive(serde::Deserialize, Debug)]
@@ -31,36 +46,46 @@ pub struct SettingsRepository;
 impl SettingsRepository {
     pub async fn get_model_config(
         pool: &SqlitePool,
+        ctx: &AuthContext,
     ) -> std::result::Result<Option<Setting>, sqlx::Error> {
-        let setting = sqlx::query_as::<_, Setting>("SELECT * FROM settings LIMIT 1")
-            .fetch_optional(pool)
-            .await?;
+        let setting =
+            sqlx::query_as::<_, Setting>("SELECT * FROM settings WHERE workspace_id = ? LIMIT 1")
+                .bind(ctx.tenant_id.as_str())
+                .fetch_optional(pool)
+                .await?;
         Ok(setting)
     }
 
     pub async fn save_model_config(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         provider: &str,
         model: &str,
         whisper_model: &str,
         ollama_endpoint: Option<&str>,
     ) -> std::result::Result<(), sqlx::Error> {
+        let now = Utc::now();
         // Using id '1' for backward compatibility
         sqlx::query(
             r#"
-            INSERT INTO settings (id, provider, model, whisperModel, ollamaEndpoint)
-            VALUES ('1', $1, $2, $3, $4)
+            INSERT INTO settings (id, workspace_id, provider, model, whisperModel, ollamaEndpoint, created_at, updated_at)
+            VALUES ('1', ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 provider = excluded.provider,
                 model = excluded.model,
                 whisperModel = excluded.whisperModel,
-                ollamaEndpoint = excluded.ollamaEndpoint
+                ollamaEndpoint = excluded.ollamaEndpoint,
+                updated_at = excluded.updated_at
+            WHERE workspace_id = excluded.workspace_id
             "#,
         )
+        .bind(ctx.tenant_id.as_str())
         .bind(provider)
         .bind(model)
         .bind(whisper_model)
         .bind(ollama_endpoint)
+        .bind(now)
+        .bind(now)
         .execute(pool)
         .await?;
 
@@ -69,6 +94,7 @@ impl SettingsRepository {
 
     pub async fn save_api_key(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         provider: &str,
         api_key: &str,
     ) -> std::result::Result<(), sqlx::Error> {
@@ -93,27 +119,37 @@ impl SettingsRepository {
             }
         };
 
+        let now = Utc::now();
         let query = format!(
             r#"
-            INSERT INTO settings (id, provider, model, whisperModel, "{}")
-            VALUES ('1', 'openai', 'gpt-4o-2024-11-20', 'large-v3', $1)
+            INSERT INTO settings (id, workspace_id, provider, model, whisperModel, created_at, updated_at, "{col}")
+            VALUES ('1', ?, 'openai', 'gpt-4o-2024-11-20', 'large-v3', ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                "{}" = $1
+                "{col}" = excluded."{col}",
+                updated_at = excluded.updated_at
+            WHERE workspace_id = excluded.workspace_id
             "#,
-            api_key_column, api_key_column
+            col = api_key_column
         );
-        sqlx::query(&query).bind(api_key).execute(pool).await?;
+        sqlx::query(&query)
+            .bind(ctx.tenant_id.as_str())
+            .bind(now)
+            .bind(now)
+            .bind(api_key)
+            .execute(pool)
+            .await?;
 
         Ok(())
     }
 
     pub async fn get_api_key(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         provider: &str,
     ) -> std::result::Result<Option<String>, sqlx::Error> {
         // Custom OpenAI uses JSON config - extract API key from there
         if provider == "custom-openai" {
-            let config = Self::get_custom_openai_config(pool).await?;
+            let config = Self::get_custom_openai_config(pool, ctx).await?;
             return Ok(config.and_then(|c| c.api_key));
         }
 
@@ -132,40 +168,68 @@ impl SettingsRepository {
         };
 
         let query = format!(
-            "SELECT {} FROM settings WHERE id = '1' LIMIT 1",
+            "SELECT {} FROM settings WHERE id = '1' AND workspace_id = ? LIMIT 1",
             api_key_column
         );
-        let api_key = sqlx::query_scalar(&query).fetch_optional(pool).await?;
+        let api_key = sqlx::query_scalar(&query)
+            .bind(ctx.tenant_id.as_str())
+            .fetch_optional(pool)
+            .await?;
         Ok(api_key)
     }
 
     pub async fn get_transcript_config(
         pool: &SqlitePool,
+        ctx: &AuthContext,
     ) -> std::result::Result<Option<TranscriptSetting>, sqlx::Error> {
-        let setting =
-            sqlx::query_as::<_, TranscriptSetting>("SELECT * FROM transcript_settings LIMIT 1")
-                .fetch_optional(pool)
-                .await?;
+        let setting = sqlx::query_as::<_, TranscriptSetting>(
+            "SELECT * FROM transcript_settings WHERE workspace_id = ? LIMIT 1",
+        )
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await?;
         Ok(setting)
+    }
 
+    /// Returns `(provider, model)` from the workspace's transcript settings, if
+    /// configured. Thin projection used by the audio import/retranscription
+    /// flows so they do not issue SQL themselves.
+    pub async fn get_transcript_provider_model(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+    ) -> std::result::Result<Option<(String, String)>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT provider, model FROM transcript_settings \
+             WHERE id = '1' AND workspace_id = ? LIMIT 1",
+        )
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await
     }
 
     pub async fn save_transcript_config(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         provider: &str,
         model: &str,
     ) -> std::result::Result<(), sqlx::Error> {
+        let now = Utc::now();
         sqlx::query(
             r#"
-            INSERT INTO transcript_settings (id, provider, model)
-            VALUES ('1', $1, $2)
+            INSERT INTO transcript_settings (id, workspace_id, provider, model, created_at, updated_at)
+            VALUES ('1', ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 provider = excluded.provider,
-                model = excluded.model
+                model = excluded.model,
+                updated_at = excluded.updated_at
+            WHERE workspace_id = excluded.workspace_id
             "#,
         )
+        .bind(ctx.tenant_id.as_str())
         .bind(provider)
         .bind(model)
+        .bind(now)
+        .bind(now)
         .execute(pool)
         .await?;
 
@@ -174,6 +238,7 @@ impl SettingsRepository {
 
     pub async fn save_transcript_api_key(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         provider: &str,
         api_key: &str,
     ) -> std::result::Result<(), sqlx::Error> {
@@ -191,22 +256,33 @@ impl SettingsRepository {
             }
         };
 
+        let now = Utc::now();
         let query = format!(
             r#"
-            INSERT INTO transcript_settings (id, provider, model, "{}")
-            VALUES ('1', 'parakeet', '{}', $1)
+            INSERT INTO transcript_settings (id, workspace_id, provider, model, created_at, updated_at, "{col}")
+            VALUES ('1', ?, 'parakeet', '{model}', ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                "{}" = $1
+                "{col}" = excluded."{col}",
+                updated_at = excluded.updated_at
+            WHERE workspace_id = excluded.workspace_id
             "#,
-            api_key_column, crate::config::DEFAULT_PARAKEET_MODEL, api_key_column
+            col = api_key_column,
+            model = crate::config::DEFAULT_PARAKEET_MODEL
         );
-        sqlx::query(&query).bind(api_key).execute(pool).await?;
+        sqlx::query(&query)
+            .bind(ctx.tenant_id.as_str())
+            .bind(now)
+            .bind(now)
+            .bind(api_key)
+            .execute(pool)
+            .await?;
 
         Ok(())
     }
 
     pub async fn get_transcript_api_key(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         provider: &str,
     ) -> std::result::Result<Option<String>, sqlx::Error> {
         let api_key_column = match provider {
@@ -224,22 +300,33 @@ impl SettingsRepository {
         };
 
         let query = format!(
-            "SELECT {} FROM transcript_settings WHERE id = '1' LIMIT 1",
+            "SELECT {} FROM transcript_settings WHERE id = '1' AND workspace_id = ? LIMIT 1",
             api_key_column
         );
-        let api_key = sqlx::query_scalar(&query).fetch_optional(pool).await?;
+        let api_key = sqlx::query_scalar(&query)
+            .bind(ctx.tenant_id.as_str())
+            .fetch_optional(pool)
+            .await?;
         Ok(api_key)
     }
 
     pub async fn delete_api_key(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         provider: &str,
     ) -> std::result::Result<(), sqlx::Error> {
+        let now = Utc::now();
+
         // Custom OpenAI uses JSON config - clear the entire config
         if provider == "custom-openai" {
-            sqlx::query("UPDATE settings SET customOpenAIConfig = NULL WHERE id = '1'")
-                .execute(pool)
-                .await?;
+            sqlx::query(
+                "UPDATE settings SET customOpenAIConfig = NULL, updated_at = ? \
+                 WHERE id = '1' AND workspace_id = ?",
+            )
+            .bind(now)
+            .bind(ctx.tenant_id.as_str())
+            .execute(pool)
+            .await?;
             return Ok(());
         }
 
@@ -258,10 +345,14 @@ impl SettingsRepository {
         };
 
         let query = format!(
-            "UPDATE settings SET {} = NULL WHERE id = '1'",
+            "UPDATE settings SET {} = NULL, updated_at = ? WHERE id = '1' AND workspace_id = ?",
             api_key_column
         );
-        sqlx::query(&query).execute(pool).await?;
+        sqlx::query(&query)
+            .bind(now)
+            .bind(ctx.tenant_id.as_str())
+            .execute(pool)
+            .await?;
 
         Ok(())
     }
@@ -276,6 +367,7 @@ impl SettingsRepository {
     /// * `Err(sqlx::Error)` - Database error
     pub async fn get_custom_openai_config(
         pool: &SqlitePool,
+        ctx: &AuthContext,
     ) -> std::result::Result<Option<CustomOpenAIConfig>, sqlx::Error> {
         use sqlx::Row;
 
@@ -283,10 +375,11 @@ impl SettingsRepository {
             r#"
             SELECT customOpenAIConfig
             FROM settings
-            WHERE id = '1'
+            WHERE id = '1' AND workspace_id = ?
             LIMIT 1
-            "#
+            "#,
         )
+        .bind(ctx.tenant_id.as_str())
         .fetch_optional(pool)
         .await?;
 
@@ -296,10 +389,9 @@ impl SettingsRepository {
 
                 if let Some(json) = config_json {
                     // Parse JSON into CustomOpenAIConfig
-                    let config: CustomOpenAIConfig = serde_json::from_str(&json)
-                        .map_err(|e| sqlx::Error::Protocol(
-                            format!("Invalid JSON in customOpenAIConfig: {}", e).into()
-                        ))?;
+                    let config: CustomOpenAIConfig = serde_json::from_str(&json).map_err(|e| {
+                        sqlx::Error::Protocol(format!("Invalid JSON in customOpenAIConfig: {}", e))
+                    })?;
 
                     Ok(Some(config))
                 } else {
@@ -314,6 +406,7 @@ impl SettingsRepository {
     ///
     /// # Arguments
     /// * `pool` - Database connection pool
+    /// * `ctx` - Workspace/user identity the write is scoped to
     /// * `config` - CustomOpenAIConfig to save (includes endpoint, apiKey, model, maxTokens, temperature, topP)
     ///
     /// # Returns
@@ -321,25 +414,32 @@ impl SettingsRepository {
     /// * `Err(sqlx::Error)` - Database or JSON serialization error
     pub async fn save_custom_openai_config(
         pool: &SqlitePool,
+        ctx: &AuthContext,
         config: &CustomOpenAIConfig,
     ) -> std::result::Result<(), sqlx::Error> {
         // Serialize config to JSON
-        let config_json = serde_json::to_string(config)
-            .map_err(|e| sqlx::Error::Protocol(
-                format!("Failed to serialize config to JSON: {}", e).into()
-            ))?;
+        let config_json = serde_json::to_string(config).map_err(|e| {
+            sqlx::Error::Protocol(format!("Failed to serialize config to JSON: {}", e))
+        })?;
+
+        let now = Utc::now();
 
         // Upsert into settings table
         sqlx::query(
             r#"
-            INSERT INTO settings (id, provider, model, whisperModel, customOpenAIConfig)
-            VALUES ('1', 'custom-openai', $1, 'large-v3', $2)
+            INSERT INTO settings (id, workspace_id, provider, model, whisperModel, customOpenAIConfig, created_at, updated_at)
+            VALUES ('1', ?, 'custom-openai', ?, 'large-v3', ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                customOpenAIConfig = excluded.customOpenAIConfig
+                customOpenAIConfig = excluded.customOpenAIConfig,
+                updated_at = excluded.updated_at
+            WHERE workspace_id = excluded.workspace_id
             "#,
         )
+        .bind(ctx.tenant_id.as_str())
         .bind(&config.model)
         .bind(config_json)
+        .bind(now)
+        .bind(now)
         .execute(pool)
         .await?;
 

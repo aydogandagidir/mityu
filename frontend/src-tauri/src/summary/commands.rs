@@ -1,14 +1,12 @@
 use crate::database::repositories::{
-    meeting::MeetingsRepository,
-    summary::SummaryProcessesRepository, transcript_chunk::TranscriptChunksRepository,
+    meeting::MeetingsRepository, summary::SummaryProcessesRepository,
+    transcript_chunk::TranscriptChunksRepository,
 };
 use crate::state::AppState;
+use crate::summary::language_detection::{detect_summary_language, SummaryLanguageDetection};
 use crate::summary::metadata::{
     read_detected_summary_language_from_metadata, read_summary_language_from_metadata,
     write_detected_summary_language_to_metadata, write_summary_language_to_metadata,
-};
-use crate::summary::language_detection::{
-    detect_summary_language, SummaryLanguageDetection,
 };
 use crate::summary::service::SummaryService;
 use log::{error as log_error, info as log_info, warn as log_warn};
@@ -85,8 +83,11 @@ pub async fn api_save_meeting_summary<R: Runtime>(
         meeting_id
     );
     let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
 
-    match SummaryProcessesRepository::update_meeting_summary(pool, &meeting_id, &summary).await {
+    match SummaryProcessesRepository::update_meeting_summary(pool, &ctx, &meeting_id, &summary)
+        .await
+    {
         Ok(true) => {
             log_info!("Summary saved successfully for meeting_id: {}", meeting_id);
             Ok(serde_json::json!({
@@ -166,9 +167,11 @@ pub async fn api_get_meeting_detected_summary_language<R: Runtime>(
     );
 
     match resolve_meeting_folder(state.db_manager.pool(), &meeting_id).await? {
-        MeetingFolderResolution::Folder(folder) => read_detected_summary_language_from_metadata(&folder)
-            .map(MeetingSummaryLanguagePreference::metadata)
-            .map_err(|e| e.to_string()),
+        MeetingFolderResolution::Folder(folder) => {
+            read_detected_summary_language_from_metadata(&folder)
+                .map(MeetingSummaryLanguagePreference::metadata)
+                .map_err(|e| e.to_string())
+        }
         MeetingFolderResolution::NoFolder => Ok(MeetingSummaryLanguagePreference::local_fallback()),
     }
 }
@@ -189,8 +192,11 @@ pub async fn api_save_meeting_detected_summary_language<R: Runtime>(
 
     match resolve_meeting_folder(state.db_manager.pool(), &meeting_id).await? {
         MeetingFolderResolution::Folder(folder) => {
-            write_detected_summary_language_to_metadata(&folder, detected_summary_language.as_deref())
-                .map_err(|e| e.to_string())?;
+            write_detected_summary_language_to_metadata(
+                &folder,
+                detected_summary_language.as_deref(),
+            )
+            .map_err(|e| e.to_string())?;
             read_detected_summary_language_from_metadata(&folder)
                 .map(MeetingSummaryLanguagePreference::metadata)
                 .map_err(|e| e.to_string())
@@ -211,7 +217,8 @@ async fn resolve_meeting_folder(
     pool: &sqlx::SqlitePool,
     meeting_id: &str,
 ) -> Result<MeetingFolderResolution, String> {
-    let meeting = MeetingsRepository::get_meeting_metadata(pool, meeting_id)
+    let ctx = crate::context::current();
+    let meeting = MeetingsRepository::get_meeting_metadata(pool, &ctx, meeting_id)
         .await
         .map_err(|e| format!("Failed to load meeting metadata: {}", e))?
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
@@ -238,8 +245,9 @@ pub async fn api_get_summary<R: Runtime>(
         meeting_id
     );
     let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
 
-    match SummaryProcessesRepository::get_summary_data_for_meeting(pool, &meeting_id).await {
+    match SummaryProcessesRepository::get_summary_data_for_meeting(pool, &ctx, &meeting_id).await {
         Ok(Some(process)) => {
             let status = process.status.to_lowercase();
             let error = process.error;
@@ -259,7 +267,8 @@ pub async fn api_get_summary<R: Runtime>(
             };
 
             // Fetch meeting title from database
-            let meeting_name = match MeetingsRepository::get_meeting(pool, &meeting_id).await {
+            let meeting_name = match MeetingsRepository::get_meeting(pool, &ctx, &meeting_id).await
+            {
                 Ok(Some(meeting_details)) => {
                     log_info!("Fetched meeting title: {}", &meeting_details.title);
                     Some(meeting_details.title)
@@ -297,7 +306,8 @@ pub async fn api_get_summary<R: Runtime>(
             log_info!("No summary process found for meeting_id: {}", meeting_id);
 
             // Still fetch meeting title for idle state
-            let meeting_name = match MeetingsRepository::get_meeting(pool, &meeting_id).await {
+            let meeting_name = match MeetingsRepository::get_meeting(pool, &ctx, &meeting_id).await
+            {
                 Ok(Some(meeting_details)) => Some(meeting_details.title),
                 _ => None,
             };
@@ -353,11 +363,17 @@ pub async fn api_process_transcript<R: Runtime>(
     // Normalise empty / whitespace-only to None so "" and null behave identically
     let summary_language = summary_language.and_then(|s| {
         let t = s.trim();
-        if t.is_empty() { None } else { Some(t.to_string()) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
     });
 
+    let ctx = crate::context::current();
+
     // Create or reset the process entry in the database
-    SummaryProcessesRepository::create_or_reset_process(&pool, &m_id)
+    SummaryProcessesRepository::create_or_reset_process(&pool, &ctx, &m_id)
         .await
         .map_err(|e| format!("Failed to initialize process: {}", e))?;
 
@@ -369,12 +385,15 @@ pub async fn api_process_transcript<R: Runtime>(
 
     TranscriptChunksRepository::save_transcript_data(
         &pool,
+        &ctx,
         &m_id,
-        &text,
-        &model,
-        &model_name,
-        chunk_size,
-        overlap,
+        crate::database::repositories::transcript_chunk::TranscriptChunkData {
+            text: &text,
+            model: &model,
+            model_name: &model_name,
+            chunk_size,
+            overlap,
+        },
     )
     .await
     .map_err(|e| format!("Failed to save transcript data: {}", e))?;
@@ -424,18 +443,31 @@ pub async fn api_cancel_summary<R: Runtime>(
     if cancelled {
         // Update database status to cancelled
         let pool = state.db_manager.pool();
-        if let Err(e) = SummaryProcessesRepository::update_process_cancelled(pool, &meeting_id).await {
-            log_error!("Failed to update DB status to cancelled for {}: {}", meeting_id, e);
+        let ctx = crate::context::current();
+        if let Err(e) =
+            SummaryProcessesRepository::update_process_cancelled(pool, &ctx, &meeting_id).await
+        {
+            log_error!(
+                "Failed to update DB status to cancelled for {}: {}",
+                meeting_id,
+                e
+            );
             return Err(format!("Failed to update cancellation status: {}", e));
         }
 
-        log_info!("Successfully cancelled summary generation for meeting_id: {}", meeting_id);
+        log_info!(
+            "Successfully cancelled summary generation for meeting_id: {}",
+            meeting_id
+        );
         Ok(serde_json::json!({
             "message": "Summary generation cancelled successfully",
             "meeting_id": meeting_id,
         }))
     } else {
-        log_warn!("No active summary generation found for meeting_id: {}", meeting_id);
+        log_warn!(
+            "No active summary generation found for meeting_id: {}",
+            meeting_id
+        );
         Ok(serde_json::json!({
             "message": "No active summary generation to cancel",
             "meeting_id": meeting_id,

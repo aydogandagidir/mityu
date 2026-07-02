@@ -48,7 +48,7 @@ The client's physical table names predate this doc (Meetily heritage) and differ
 Notes:
 - `workspace_id TEXT NOT NULL DEFAULT 'local'` everywhere — the default **must equal** `context::LOCAL_WORKSPACE_ID` (`frontend/src-tauri/src/context.rs`). `rev INTEGER NOT NULL DEFAULT 1`; `updated_by`/`deleted_at` nullable TEXT.
 - There is **no dedicated `action_item` client table yet**: extracted actions live in `summary_processes.result` JSON (and the legacy `transcripts.action_items` column). Promoting them to a first-class table (with mandatory `source_chunk_id`) is a future migration.
-- `transcripts.created_at`/`updated_at` and the settings tables' timestamps are nullable at the SQL level (SQLite cannot `ADD COLUMN NOT NULL` without a constant default); the migration backfills existing rows, and the tenant-scoped repositories (B2 phase 2) must populate them on every insert/update.
+- `transcripts.created_at`/`updated_at` and the settings tables' timestamps are nullable at the SQL level (SQLite cannot `ADD COLUMN NOT NULL` without a constant default); the migration backfills existing rows, and the tenant-scoped repositories (B2 phase 2, implemented — see ADR-0010) populate them on every insert/update. Repository writers bind `chrono::DateTime<Utc>` (RFC 3339 with offset, e.g. `2026-07-02T10:00:00.123+00:00`); migration backfills used `STRFTIME('%Y-%m-%dT%H:%M:%fZ')` (`Z` suffix). Readers must accept both (sqlx's chrono decoder does).
 - Phase-2 hot-path indexes: `idx_meetings_workspace_created (workspace_id, created_at)`, `idx_transcripts_workspace_meeting (workspace_id, meeting_id)`. The other domain tables are one-row-per-meeting with `meeting_id` as PRIMARY KEY.
 
 ### Sync-compatibility note — migration `20260702000000`

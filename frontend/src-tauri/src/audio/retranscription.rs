@@ -426,38 +426,19 @@ async fn run_retranscription<R: Runtime>(
         .try_state::<AppState>()
         .ok_or_else(|| anyhow!("App state not available"))?;
 
-    // Wrap delete+insert+update in a transaction to prevent data loss
+    // Delete+insert runs inside one repository transaction to prevent data loss.
+    // Storage goes through the tenant-scoped repository (docs/CONTRACTS.md §2);
+    // no SQL is issued from the audio module.
     let pool = app_state.db_manager.pool();
-    let mut conn = pool.acquire().await.map_err(|e| anyhow!("DB error: {}", e))?;
-    let mut tx = sqlx::Connection::begin(&mut *conn)
-        .await
-        .map_err(|e| anyhow!("Failed to start transaction: {}", e))?;
-
-    sqlx::query("DELETE FROM transcripts WHERE meeting_id = ?")
-        .bind(&meeting_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| anyhow!("Failed to delete existing transcripts: {}", e))?;
-
-    for segment in &segments {
-        sqlx::query(
-            "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&segment.id)
-        .bind(&meeting_id)
-        .bind(&segment.text)
-        .bind(&segment.timestamp)
-        .bind(segment.audio_start_time)
-        .bind(segment.audio_end_time)
-        .bind(segment.duration)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| anyhow!("Failed to insert transcript: {}", e))?;
-    }
-
-    tx.commit().await
-        .map_err(|e| anyhow!("Failed to commit transaction: {}", e))?;
+    let ctx = crate::context::current();
+    crate::database::repositories::transcript::TranscriptsRepository::replace_meeting_transcripts(
+        pool,
+        &ctx,
+        &meeting_id,
+        &segments,
+    )
+    .await
+    .map_err(|e| anyhow!("Failed to replace transcripts: {}", e))?;
 
     info!(
         "Updated {} transcripts for meeting {} in transaction",
@@ -589,16 +570,18 @@ async fn get_configured_whisper_model<R: Runtime>(app: &AppHandle<R>) -> Result<
 
     debug!("Querying transcript_settings table...");
 
-    // Query the transcript settings from the database - get both provider and model
-    let result: Option<(String, String)> = sqlx::query_as(
-        "SELECT provider, model FROM transcript_settings WHERE id = '1'"
-    )
-    .fetch_optional(app_state.db_manager.pool())
-    .await
-    .map_err(|e| {
-        error!("Failed to query transcript config: {}", e);
-        anyhow!("Failed to query transcript config: {}", e)
-    })?;
+    // Query the transcript settings via the tenant-scoped repository - get both provider and model
+    let ctx = crate::context::current();
+    let result: Option<(String, String)> =
+        crate::database::repositories::setting::SettingsRepository::get_transcript_provider_model(
+            app_state.db_manager.pool(),
+            &ctx,
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to query transcript config: {}", e);
+            anyhow!("Failed to query transcript config: {}", e)
+        })?;
 
     match result {
         Some((provider, model)) => {
@@ -689,16 +672,18 @@ async fn get_configured_parakeet_model<R: Runtime>(app: &AppHandle<R>) -> Result
             anyhow!("App state not available")
         })?;
 
-    // Query the transcript settings from the database
-    let result: Option<(String, String)> = sqlx::query_as(
-        "SELECT provider, model FROM transcript_settings WHERE id = '1'"
-    )
-    .fetch_optional(app_state.db_manager.pool())
-    .await
-    .map_err(|e| {
-        error!("Failed to query transcript config: {}", e);
-        anyhow!("Failed to query transcript config: {}", e)
-    })?;
+    // Query the transcript settings via the tenant-scoped repository
+    let ctx = crate::context::current();
+    let result: Option<(String, String)> =
+        crate::database::repositories::setting::SettingsRepository::get_transcript_provider_model(
+            app_state.db_manager.pool(),
+            &ctx,
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to query transcript config: {}", e);
+            anyhow!("Failed to query transcript config: {}", e)
+        })?;
 
     match result {
         Some((provider, model)) => {
