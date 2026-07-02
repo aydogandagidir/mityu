@@ -1,4 +1,5 @@
-use sqlx::{migrate::MigrateDatabase, Result, Sqlite, SqlitePool, Transaction};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
+use sqlx::{Result, Sqlite, SqlitePool, Transaction};
 use std::fs;
 use std::path::Path;
 use tauri::Manager;
@@ -12,25 +13,58 @@ impl DatabaseManager {
     pub async fn new(tauri_db_path: &str, backend_db_path: &str) -> Result<Self> {
         if let Some(parent_dir) = Path::new(tauri_db_path).parent() {
             if !parent_dir.exists() {
-                fs::create_dir_all(parent_dir).map_err(|e| sqlx::Error::Io(e))?;
+                fs::create_dir_all(parent_dir).map_err(sqlx::Error::Io)?;
             }
         }
 
-        if !Path::new(tauri_db_path).exists() {
-            if Path::new(backend_db_path).exists() {
-                log::info!(
-                    "Copying database from {} to {}",
-                    backend_db_path,
-                    tauri_db_path
-                );
-                fs::copy(backend_db_path, tauri_db_path).map_err(|e| sqlx::Error::Io(e))?;
-            } else {
-                log::info!("Creating database at {}", tauri_db_path);
-                Sqlite::create_database(tauri_db_path).await?;
-            }
+        // Legacy import stays plaintext on disk here; the SQLCipher conversion
+        // below encrypts whatever plaintext file we end up with (copied legacy or a
+        // pre-existing plaintext .sqlite) before the keyed pool opens.
+        if !Path::new(tauri_db_path).exists() && Path::new(backend_db_path).exists() {
+            log::info!(
+                "Copying database from {} to {}",
+                backend_db_path,
+                tauri_db_path
+            );
+            fs::copy(backend_db_path, tauri_db_path).map_err(sqlx::Error::Io)?;
         }
 
-        let pool = SqlitePool::connect(tauri_db_path).await?;
+        // At-rest encryption (BACKLOG B3, docs/SECURITY_PRIVACY.md "Encryption",
+        // ADR-0014). The 256-bit DB key lives in the OS keychain; fetch/create it
+        // and FAIL CLOSED — a locked/unavailable store must never open the DB
+        // unencrypted (map the anyhow error onto sqlx::Error to keep the signature).
+        // `Zeroizing<String>` scrubs the key from memory once it drops (below, right
+        // after the pool is opened) so it does not linger in freed heap.
+        let key_hex = crate::secrets::db::get_or_create_hex().map_err(|e| {
+            sqlx::Error::Configuration(format!("database encryption key unavailable: {e:#}").into())
+        })?;
+
+        // One-time plaintext -> SQLCipher conversion, BEFORE the keyed open and
+        // BEFORE migrations. No-op when the file is missing (fresh install) or
+        // already encrypted. Preserves the _sqlx_migrations ledger and every row.
+        crate::database::encryption::ensure_encrypted(Path::new(tauri_db_path), &key_hex)
+            .await
+            .map_err(|e| {
+                sqlx::Error::Configuration(
+                    format!("database encryption conversion failed: {e:#}").into(),
+                )
+            })?;
+
+        // Keyed pool. `PRAGMA key` is a reserved slot that sqlx executes FIRST
+        // (before journal_mode/foreign_keys/any statement), so the cipher is active
+        // for the whole connection. WAL mode is preserved explicitly so the
+        // checkpoint/recovery paths below keep working; a fresh file is created
+        // already-encrypted via create_if_missing.
+        let options = SqliteConnectOptions::new()
+            .filename(tauri_db_path)
+            .create_if_missing(true)
+            .pragma("key", crate::secrets::db::pragma_key_value(&key_hex))
+            .journal_mode(SqliteJournalMode::Wal)
+            .foreign_keys(true);
+        let pool = SqlitePool::connect_with(options).await?;
+        // Key material is no longer needed once the pool holds an open keyed
+        // connection; drop it now to zeroize it promptly (defense in depth).
+        drop(key_hex);
 
         sqlx::migrate!("./migrations").run(&pool).await?;
 

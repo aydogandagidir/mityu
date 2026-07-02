@@ -146,6 +146,22 @@ ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", bran
 
 sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "chrono"] }
 
+# Encryption at rest for the local SQLite DB (BACKLOG B3, docs/SECURITY_PRIVACY.md
+# "Encryption", ADR-0014). `libsqlite3-sys` is already pulled transitively by
+# sqlx-sqlite (0.30.1); declaring it directly ONLY to turn on the vendored
+# SQLCipher amalgamation + vendored OpenSSL. Cargo unifies this with sqlx's
+# `bundled` on the SAME crate version, so sqlx links against a SQLCipher-capable
+# libsqlite3 and its reserved `key` pragma (executed first) activates the cipher.
+# No system OpenSSL/SQLCipher toolchain is required. The DB key lives in the OS
+# keychain (see `secrets::db`), never in SQLite/source/logs.
+libsqlite3-sys = { version = "0.30.1", features = ["bundled-sqlcipher-vendored-openssl"] }
+
+# Zeroize the 32-byte DB encryption key hex in memory (BACKLOG B3, ADR-0014):
+# `secrets::db` returns and `database::manager` holds it as `Zeroizing<String>`, so
+# the key material is scrubbed on drop rather than lingering in freed heap. Already
+# present transitively (1.8.2) — declaring it directly unifies, no new crate.
+zeroize = { version = "1.8", features = ["alloc"] }
+
 # OS credential store for BYOK LLM API keys (never SQLite plaintext — CLAUDE.md
 # §0.7/§3, docs/SECURITY_PRIVACY.md "Secrets"). Native backends only: Windows
 # Credential Manager (pure winapi via windows-sys), macOS Keychain, Linux

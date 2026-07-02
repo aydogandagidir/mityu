@@ -161,6 +161,192 @@ pub fn delete_api_key(ctx: &AuthContext, domain: SecretDomain, provider: &str) -
     }
 }
 
+/// At-rest encryption key for the local SQLite database (BACKLOG B3, SQLCipher).
+///
+/// Unlike BYOK provider keys, the DB key is **device-scoped, not workspace-scoped**:
+/// there is exactly one encrypted DB file per install holding every workspace's
+/// rows, so it is filed under one fixed entry ([`db::ENTRY_NAME`]) in the same OS
+/// store ([`KEYCHAIN_SERVICE`]). It is generated once on first launch, stored as
+/// lowercase hex, and read back on every startup — all fully offline.
+///
+/// Same guarantees as the rest of this module: the key is **never logged** (only a
+/// "generated"/"loaded" event with no value), and every operation **fails closed** —
+/// if the OS store is unavailable we return a user-facing `anyhow` error and the
+/// caller MUST abort rather than fall back to an unencrypted database.
+pub mod db {
+    use anyhow::{anyhow, Context, Result};
+    use keyring::Entry;
+    use rand::RngCore;
+    use zeroize::Zeroizing;
+
+    /// Fixed OS-store entry name for the single device-wide DB key. Not
+    /// workspace-scoped (one encrypted file spans all workspaces). Frozen —
+    /// changing it would orphan the existing key and lock the user out of their DB.
+    pub const ENTRY_NAME: &str = "db-key";
+
+    /// Raw key length in bytes. 32 bytes = 256 bits of entropy, passed to SQLCipher
+    /// as a raw key (`PRAGMA key = "x'<64 hex chars>'"`) so SQLCipher skips key
+    /// derivation and uses the bytes directly.
+    pub const KEY_LEN: usize = 32;
+
+    /// Open the [`Entry`] for the device DB key. A failure here means the OS store
+    /// itself is unreachable → fail closed.
+    fn open_entry() -> Result<Entry> {
+        Entry::new(super::KEYCHAIN_SERVICE, ENTRY_NAME).with_context(|| {
+            format!(
+                "secrets: could not open the OS credential store for the database \
+                 encryption key (entry '{ENTRY_NAME}'). Your system keychain may be \
+                 locked or unavailable."
+            )
+        })
+    }
+
+    /// Encode raw key bytes as lowercase hex (the on-store and SQLCipher wire form).
+    /// Wrapped in [`Zeroizing`] so the derived hex is scrubbed on drop, same as the
+    /// raw key bytes.
+    fn to_hex(bytes: &[u8]) -> Zeroizing<String> {
+        let mut s = String::with_capacity(bytes.len() * 2);
+        for b in bytes {
+            use std::fmt::Write as _;
+            let _ = write!(s, "{b:02x}");
+        }
+        Zeroizing::new(s)
+    }
+
+    /// Validate that a stored string is exactly `KEY_LEN` bytes of lowercase hex.
+    /// A malformed value must fail closed (never silently regenerate — that would
+    /// throw away the key that can still decrypt the user's data).
+    fn validate_hex(hex: &str) -> Result<()> {
+        if hex.len() != KEY_LEN * 2 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(anyhow!(
+                "secrets: the stored database key is malformed ({} chars); refusing to \
+                 proceed so existing encrypted data is not lost. Restore the OS keychain \
+                 entry or the pre-encryption backup.",
+                hex.len()
+            ));
+        }
+        Ok(())
+    }
+
+    /// Generate a fresh 32-byte key from the OS CSPRNG and return it as lowercase hex.
+    /// The transient raw-byte buffer and the returned hex are both zeroized on drop.
+    fn generate_hex() -> Zeroizing<String> {
+        let mut key = Zeroizing::new([0u8; KEY_LEN]);
+        rand::thread_rng().fill_bytes(key.as_mut());
+        to_hex(key.as_ref())
+    }
+
+    /// Return the database encryption key as lowercase hex, **generating and
+    /// persisting** it on first use. Subsequent calls read the same key back.
+    ///
+    /// Wrapped in [`Zeroizing`] so the key material is scrubbed from memory on drop
+    /// (the caller should not keep it alive past the pool-open call). Runs fully
+    /// offline. The key value is never logged. Fails closed: if the OS store cannot
+    /// be read or written, an error is returned and the caller MUST abort (no
+    /// unencrypted fallback).
+    pub fn get_or_create_hex() -> Result<Zeroizing<String>> {
+        let entry = open_entry()?;
+        match entry.get_password() {
+            Ok(existing) => {
+                let existing = Zeroizing::new(existing);
+                validate_hex(&existing)?;
+                tracing::debug!("loaded database encryption key from OS credential store");
+                Ok(existing)
+            }
+            Err(keyring::Error::NoEntry) => {
+                let hex = generate_hex();
+                entry.set_password(&hex).with_context(|| {
+                    "secrets: failed to store a newly generated database encryption key in \
+                     the OS credential store"
+                        .to_string()
+                })?;
+                tracing::info!(
+                    "generated a new database encryption key and stored it in the OS \
+                     credential store"
+                );
+                Ok(hex)
+            }
+            Err(e) => Err(e).with_context(|| {
+                "secrets: failed to read the database encryption key from the OS credential \
+                 store (it may be locked or unavailable); refusing to open the database \
+                 unencrypted"
+                    .to_string()
+            }),
+        }
+    }
+
+    /// Read the database key hex **without** creating it. Returns `Ok(None)` when no
+    /// key has ever been stored (fresh install before first open). Any other store
+    /// failure is surfaced (fail closed). The key is [`Zeroizing`]-wrapped.
+    pub fn get_hex() -> Result<Option<Zeroizing<String>>> {
+        let entry = open_entry()?;
+        match entry.get_password() {
+            Ok(existing) => {
+                let existing = Zeroizing::new(existing);
+                validate_hex(&existing)?;
+                Ok(Some(existing))
+            }
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(e).with_context(|| {
+                "secrets: failed to read the database encryption key from the OS credential store"
+                    .to_string()
+            }),
+        }
+    }
+
+    /// The SQLCipher `PRAGMA key` value for a raw (non-derived) key.
+    ///
+    /// sqlx emits `PRAGMA key = {value};`, so the value must be a **double-quoted**
+    /// string whose content is the raw-key literal `x'<hex>'` (empirically the only
+    /// form this libsqlite3-sys/SQLCipher build accepts — an unquoted `x'…'` is
+    /// parsed as a blob literal and rejected with a syntax error). SQLCipher then
+    /// reads the 32 raw key bytes directly (no KDF). The same value is used for the
+    /// live pool and for opening the encrypted side during conversion.
+    pub fn pragma_key_value(hex: &str) -> String {
+        format!("\"x'{hex}'\"")
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn generated_key_is_64_hex_chars() {
+            let hex = generate_hex();
+            assert_eq!(hex.len(), KEY_LEN * 2);
+            assert!(hex.bytes().all(|b| b.is_ascii_hexdigit()));
+            validate_hex(&hex).expect("generated key must validate");
+            // Two generations must differ (CSPRNG, not a constant).
+            assert_ne!(hex, generate_hex());
+        }
+
+        #[test]
+        fn pragma_value_is_raw_key_form() {
+            // Double-quoted so sqlx's `PRAGMA key = {value}` yields a string whose
+            // content is the raw-key literal x'…' (the accepted SQLCipher form).
+            assert_eq!(pragma_key_value("00ff"), "\"x'00ff'\"");
+        }
+
+        #[test]
+        fn malformed_hex_is_rejected() {
+            assert!(validate_hex("").is_err());
+            assert!(validate_hex("zz").is_err());
+            assert!(validate_hex(&"a".repeat(KEY_LEN * 2 - 1)).is_err());
+            validate_hex(&"a".repeat(KEY_LEN * 2)).expect("well-formed hex accepted");
+        }
+
+        #[test]
+        fn get_or_create_round_trips_through_store() {
+            super::super::test_store::install();
+            let first = get_or_create_hex().expect("first get_or_create");
+            let second = get_or_create_hex().expect("second get_or_create");
+            assert_eq!(first, second, "key must be stable across calls");
+            let stored = get_hex().expect("get_hex");
+            assert_eq!(stored.as_deref().map(String::as_str), Some(first.as_str()));
+        }
+    }
+}
+
 /// Process-global, persistent, in-memory credential store for tests.
 ///
 /// keyring's built-in `mock` backend is `EntryOnly` (each `Entry::new` gets a
