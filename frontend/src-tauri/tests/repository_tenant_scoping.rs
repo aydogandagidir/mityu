@@ -19,7 +19,7 @@ use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
-use app_lib::api::TranscriptSegment;
+use app_lib::api::{SearchMatchField, TranscriptSegment};
 use app_lib::context::{AuthContext, RequestId, Role, TenantId, UserId, LOCAL_WORKSPACE_ID};
 use app_lib::database::repositories::{
     meeting::MeetingsRepository,
@@ -897,6 +897,119 @@ async fn imported_meetings_preserve_segment_ids_and_fill_columns() {
     assert_eq!(updated_by.as_deref(), Some("local-user"));
     assert_rfc3339(&created_at, "imported transcripts.created_at");
     assert_rfc3339(&updated_at, "imported transcripts.updated_at");
+
+    pool.close().await;
+}
+
+/// BACKLOG C3: `search_transcripts` now matches a query in either a meeting's
+/// transcript OR its generated summary, still one tenant-scoped query path.
+/// Proves:
+///   (a) a transcript-only term returns the meeting with matched_in=Transcript,
+///   (b) a summary-only term returns it with matched_in=Summary,
+///   (c) both searches under a foreign workspace return ZERO rows (isolation —
+///       every joined table is workspace-scoped; a summary hit must not leak
+///       across tenants any more than a transcript hit),
+///   (d) a whitespace query returns empty.
+#[tokio::test]
+async fn search_covers_transcripts_and_summaries_scoped_by_workspace() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("search.sqlite")).await;
+    let local = AuthContext::local();
+    let other = other_ws_ctx();
+
+    // Seed ONE local meeting: transcript carries "alpha-transcript-term", and
+    // its summary (stored in summary_processes.result) carries
+    // "beta-summary-term". The two terms are disjoint so each search can only
+    // match via exactly one field.
+    let meeting_id = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "Quarterly review",
+        &[segment(
+            "transcript-c3",
+            "discussion about alpha-transcript-term and next steps",
+            0.0,
+            3.0,
+        )],
+        None,
+    )
+    .await
+    .expect("local save_transcript");
+
+    SummaryProcessesRepository::create_or_reset_process(&pool, &local, &meeting_id)
+        .await
+        .expect("create summary process");
+    let summary = serde_json::json!({
+        "markdown": "# Summary\nThe team agreed on beta-summary-term as the priority."
+    });
+    assert!(
+        SummaryProcessesRepository::update_meeting_summary(&pool, &local, &meeting_id, &summary)
+            .await
+            .expect("store summary"),
+        "seeding the local summary must succeed"
+    );
+
+    // (a) Transcript-only term -> one row, matched_in = Transcript, snippet from
+    // the transcript.
+    let hits = TranscriptsRepository::search_transcripts(&pool, &local, "alpha-transcript-term")
+        .await
+        .expect("local transcript search");
+    assert_eq!(
+        hits.len(),
+        1,
+        "exactly one meeting matches the transcript term"
+    );
+    assert_eq!(hits[0].id, meeting_id);
+    assert_eq!(hits[0].matched_in, SearchMatchField::Transcript);
+    assert!(
+        hits[0].match_context.contains("alpha-transcript-term"),
+        "transcript snippet must contain the matched term, got {:?}",
+        hits[0].match_context
+    );
+
+    // (b) Summary-only term -> one row, matched_in = Summary, snippet from the
+    // summary text (NOT the unmatched transcript).
+    let hits = TranscriptsRepository::search_transcripts(&pool, &local, "beta-summary-term")
+        .await
+        .expect("local summary search");
+    assert_eq!(
+        hits.len(),
+        1,
+        "exactly one meeting matches the summary term"
+    );
+    assert_eq!(hits[0].id, meeting_id);
+    assert_eq!(hits[0].matched_in, SearchMatchField::Summary);
+    assert!(
+        hits[0].match_context.contains("beta-summary-term"),
+        "summary snippet must contain the matched term, got {:?}",
+        hits[0].match_context
+    );
+
+    // (c) Both terms are invisible to a foreign workspace (transcript AND summary
+    // joins are workspace-scoped).
+    assert!(
+        TranscriptsRepository::search_transcripts(&pool, &other, "alpha-transcript-term")
+            .await
+            .expect("foreign transcript search")
+            .is_empty(),
+        "other-ws must not see the local transcript match"
+    );
+    assert!(
+        TranscriptsRepository::search_transcripts(&pool, &other, "beta-summary-term")
+            .await
+            .expect("foreign summary search")
+            .is_empty(),
+        "other-ws must not see the local summary match"
+    );
+
+    // (d) Whitespace query -> empty (no query path executed).
+    assert!(
+        TranscriptsRepository::search_transcripts(&pool, &local, "   ")
+            .await
+            .expect("whitespace search")
+            .is_empty(),
+        "a whitespace-only query must return no results"
+    );
 
     pool.close().await;
 }
