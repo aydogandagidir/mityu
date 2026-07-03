@@ -12,6 +12,36 @@ pub struct DatabaseCheckResult {
     pub size: u64,
 }
 
+/// At-rest encryption status of the currently-open local database (ADR-0014
+/// follow-up). Kept as a struct rather than a bare bool so it can grow (e.g. a
+/// cipher name or a "reason" for the plaintext fallback) without breaking the
+/// frontend contract.
+#[derive(Serialize)]
+pub struct DbEncryptionStatus {
+    /// `true` = opened with the SQLCipher key (encrypted at rest); `false` = the
+    /// fail-open plaintext branch ran because the keychain key was unavailable on a
+    /// plaintext/fresh DB, so the UI should warn the user.
+    pub encrypted: bool,
+}
+
+/// Report whether the local database opened ENCRYPTED at rest or fell back to
+/// PLAINTEXT, so the UI can surface a downgrade warning (ADR-0014 follow-up).
+///
+/// Reads the flag recorded by `DatabaseManager::new` from managed `AppState`;
+/// fully offline, no network. Errors as a serializable string if the database has
+/// not been initialized yet (e.g. first launch before setup completes).
+#[tauri::command]
+pub async fn get_db_encryption_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<DbEncryptionStatus, String> {
+    let encrypted = state.db_manager.is_at_rest_encrypted();
+    info!(
+        "get_db_encryption_status: local database at-rest encryption = {}",
+        encrypted
+    );
+    Ok(DbEncryptionStatus { encrypted })
+}
+
 /// Check if this is the first launch (no database exists yet)
 #[tauri::command]
 pub async fn check_first_launch(app: AppHandle) -> Result<bool, String> {

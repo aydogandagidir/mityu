@@ -741,6 +741,8 @@ pub fn run() {
             // Database and Models path commands
             database::commands::get_database_directory,
             database::commands::open_database_folder,
+            // At-rest encryption status (ADR-0014 follow-up: UI plaintext-fallback warning)
+            database::commands::get_db_encryption_status,
             whisper_engine::commands::open_models_folder,
             // Onboarding commands
             onboarding::get_onboarding_status,

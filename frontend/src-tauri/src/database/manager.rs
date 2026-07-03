@@ -7,6 +7,13 @@ use tauri::Manager;
 #[derive(Clone)]
 pub struct DatabaseManager {
     pool: SqlitePool,
+    /// Records which branch of the ADR-0014 at-rest encryption decision actually ran
+    /// for this open, so the UI can warn on a plaintext fallback (follow-up to
+    /// ADR-0014). `true` = the pool was opened with the SQLCipher key (data encrypted
+    /// at rest); `false` = a fail-open plaintext branch was taken because the keychain
+    /// key was unavailable on a plaintext/fresh DB. This does NOT influence the open
+    /// logic; it only mirrors the outcome recorded in `DatabaseManager::new`.
+    at_rest_encrypted: bool,
 }
 
 impl DatabaseManager {
@@ -139,6 +146,13 @@ impl DatabaseManager {
         if let Some(k) = &key_hex {
             options = options.pragma("key", crate::secrets::db::pragma_key_value(k));
         }
+        // Record the encryption outcome BEFORE `key_hex` is dropped. A key in hand
+        // means the pool is opening keyed (encrypted file + good key, or a
+        // freshly created/converted file); `None` is only ever the fail-open plaintext
+        // branch (both keyless-open paths above logged loudly). This is purely a
+        // read-out of the decision already made — it does not alter the open logic.
+        let at_rest_encrypted = key_hex.is_some();
+
         let pool = SqlitePool::connect_with(options).await?;
         // Key material is no longer needed once the pool holds an open connection;
         // drop it now to zeroize it promptly (defense in depth).
@@ -167,7 +181,10 @@ impl DatabaseManager {
             ),
         }
 
-        Ok(DatabaseManager { pool })
+        Ok(DatabaseManager {
+            pool,
+            at_rest_encrypted,
+        })
     }
 
     // NOTE: So for the first time users they needs to start the application
@@ -295,6 +312,15 @@ impl DatabaseManager {
 
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    /// Whether the local database was opened ENCRYPTED at rest (SQLCipher key applied)
+    /// for this session. `false` means the ADR-0014 fail-open plaintext branch was
+    /// taken (keychain key unavailable on a plaintext/fresh DB), so the file is
+    /// plaintext at rest and the UI should warn. Reflects the decision made in `new`;
+    /// it does not re-check the file on disk.
+    pub fn is_at_rest_encrypted(&self) -> bool {
+        self.at_rest_encrypted
     }
 
     pub async fn with_transaction<T, F, Fut>(&self, f: F) -> Result<T>
