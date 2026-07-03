@@ -18,7 +18,19 @@
 //!       harness copies it first). Asserts row counts, the ledger, backup-deleted,
 //!       and no stale plaintext WAL/SHM;
 //!   (f) a source DB with a POPULATED `-wal` converts with all committed rows
-//!       preserved AND leaves no stale plaintext `-wal`/`-shm`.
+//!       preserved AND leaves no stale plaintext `-wal`/`-shm`;
+//!   (g) the GUARDRAILED manager fallback (ADR-0014): an ENCRYPTED file with the key
+//!       PRESENT opens through `DatabaseManager::new` and rows read back;
+//!   (h) an ENCRYPTED file with the key MISSING FAILS CLOSED — `DatabaseManager::new`
+//!       errors, the ciphertext file is byte-for-byte UNMODIFIED, NO new key is
+//!       minted, and it is NOT opened as plaintext;
+//!   (i) a PLAINTEXT file with the key store unavailable FAILS OPEN — the manager
+//!       opens it plaintext and rows read back (local-first: never lock the user out
+//!       of a still-plaintext file).
+//!
+//! Tests (g)–(i) drive the real `DatabaseManager::new` against a PERSISTENT in-memory
+//! keyring installed via `keyring::set_default_credential_builder` (never the machine
+//! store), and serialize on the single process-wide `db-key` entry.
 //!
 //! These tests use temp dirs and, for (e), a Bash-made copy — they NEVER open the
 //! live database.
@@ -29,7 +41,148 @@ use sqlx::{ConnectOptions, Connection, Row, SqlitePool};
 use std::path::Path;
 
 use app_lib::database::encryption;
+use app_lib::database::manager::DatabaseManager;
 use app_lib::secrets::db as dbkey;
+
+/// Persistent, process-wide in-memory keyring for the manager-fallback tests
+/// (g)–(i). keyring's built-in `mock` backend is `EntryOnly` — a set on one
+/// `Entry::new` is invisible to a later `Entry::new` for the same name — so it cannot
+/// model the manager's set-then-read of the `db-key` entry across separate `Entry`
+/// opens. This mirrors the crate-internal `secrets::test_store` (which is
+/// `#[cfg(test)]` and thus unreachable from an integration test) with a shared
+/// `(service, entry)` map, faithfully modelling a real OS store while NEVER touching
+/// the machine credential manager.
+mod mock_keyring {
+    use keyring::credential::{
+        Credential, CredentialApi, CredentialBuilderApi, CredentialPersistence,
+    };
+    use keyring::Error;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Mutex, OnceLock};
+
+    type Key = (String, String); // (service, entry_name)
+
+    fn store() -> &'static Mutex<HashMap<Key, Vec<u8>>> {
+        static STORE: OnceLock<Mutex<HashMap<Key, Vec<u8>>>> = OnceLock::new();
+        STORE.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    /// When set, every credential op errors — models a locked/unavailable OS store so
+    /// `secrets::db::get_or_create_hex()` returns `Err` and the manager's PLAINTEXT
+    /// fail-open branch executes. Set/cleared only while holding [`db_key_lock`].
+    fn unavailable() -> &'static AtomicBool {
+        static FLAG: OnceLock<AtomicBool> = OnceLock::new();
+        FLAG.get_or_init(|| AtomicBool::new(false))
+    }
+
+    /// Serializes tests that mutate the single process-wide `db-key` entry / mode so
+    /// they do not race on shared keyring state. A `tokio::sync::Mutex` (not
+    /// `std::sync`) so the guard can be safely held across the `DatabaseManager::new`
+    /// `.await` without tripping clippy's `await_holding_lock`.
+    pub fn db_key_lock() -> &'static tokio::sync::Mutex<()> {
+        static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+    }
+
+    /// Make the store report "unavailable" (every op errors). Reset with
+    /// [`set_available`]. Only call under the [`db_key_lock`] guard.
+    pub fn set_unavailable() {
+        unavailable().store(true, Ordering::SeqCst);
+    }
+
+    /// Restore normal in-memory store behavior.
+    pub fn set_available() {
+        unavailable().store(false, Ordering::SeqCst);
+    }
+
+    fn store_unavailable_err() -> Error {
+        // A platform-ish failure that is NOT `NoEntry`, so `get_or_create_hex` maps it
+        // to an `Err` (store unavailable) rather than "not set".
+        Error::PlatformFailure(Box::new(std::io::Error::other(
+            "mock keyring: store unavailable",
+        )))
+    }
+
+    #[derive(Debug)]
+    struct MemCredential {
+        key: Key,
+    }
+
+    impl CredentialApi for MemCredential {
+        fn set_secret(&self, secret: &[u8]) -> Result<(), Error> {
+            if unavailable().load(Ordering::SeqCst) {
+                return Err(store_unavailable_err());
+            }
+            store()
+                .lock()
+                .unwrap()
+                .insert(self.key.clone(), secret.to_vec());
+            Ok(())
+        }
+        fn get_secret(&self) -> Result<Vec<u8>, Error> {
+            if unavailable().load(Ordering::SeqCst) {
+                return Err(store_unavailable_err());
+            }
+            match store().lock().unwrap().get(&self.key) {
+                Some(v) => Ok(v.clone()),
+                None => Err(Error::NoEntry),
+            }
+        }
+        fn delete_credential(&self) -> Result<(), Error> {
+            if unavailable().load(Ordering::SeqCst) {
+                return Err(store_unavailable_err());
+            }
+            match store().lock().unwrap().remove(&self.key) {
+                Some(_) => Ok(()),
+                None => Err(Error::NoEntry),
+            }
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    struct MemBuilder;
+
+    impl CredentialBuilderApi for MemBuilder {
+        fn build(
+            &self,
+            _target: Option<&str>,
+            service: &str,
+            user: &str,
+        ) -> Result<Box<Credential>, Error> {
+            Ok(Box::new(MemCredential {
+                key: (service.to_string(), user.to_string()),
+            }))
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn persistence(&self) -> CredentialPersistence {
+            CredentialPersistence::UntilDelete
+        }
+    }
+
+    /// Install this store as the process-wide keyring default. Idempotent per process.
+    pub fn install() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            keyring::set_default_credential_builder(Box::new(MemBuilder));
+        });
+    }
+
+    /// Remove the device `db-key` entry from the mock store (simulate "key missing").
+    /// Bypasses the availability flag (direct store mutation) so a test can clear the
+    /// key regardless of mode.
+    pub fn clear_db_key() {
+        store().lock().unwrap().remove(&(
+            app_lib::secrets::KEYCHAIN_SERVICE.to_string(),
+            app_lib::secrets::db::ENTRY_NAME.to_string(),
+        ));
+    }
+}
 
 /// The app's real, compile-time-embedded migration set (same source as
 /// `DatabaseManager::new`).
@@ -549,4 +702,194 @@ async fn real_copy_conversion_when_env_set() {
         .expect("migrator no-op on real copy");
     assert_eq!(applied_versions(&enc).await, pre_versions);
     enc.close().await;
+}
+
+// --- Guardrailed manager fallback (ADR-0014): tests (g)–(i) ----------------------
+//
+// These drive the REAL `DatabaseManager::new` through its key path (which reads the
+// OS keychain via `secrets::db`) against a PERSISTENT in-memory mock keyring — never
+// the machine store. They serialize on the single process-wide `db-key` entry.
+
+/// FNV-1a digest of a file's bytes — used to prove the ciphertext file is not mutated
+/// by a fail-closed open (no rewrite, no key regeneration touching the file).
+fn file_digest(path: &Path) -> (u64, u64) {
+    let bytes = std::fs::read(path).expect("read db file for digest");
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in &bytes {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    (bytes.len() as u64, h)
+}
+
+/// Build a real ENCRYPTED DB at `db_path`: migrate a plaintext DB, seed it, then run
+/// the true conversion path with `TEST_KEY_HEX`. Leaves a verified cipher file on
+/// disk (no plaintext residue), exactly like a converted user DB.
+async fn make_encrypted_db(db_path: &Path) {
+    let plain = open_plaintext(db_path).await;
+    MIGRATOR.run(&plain).await.expect("migrations (plaintext)");
+    seed_minimal(&plain).await;
+    plain.close().await;
+    encryption::ensure_encrypted(db_path, TEST_KEY_HEX)
+        .await
+        .expect("seed conversion to encrypted");
+    // Sanity: it really is ciphertext now.
+    assert!(
+        !encryption::is_plaintext_db(db_path).expect("state probe"),
+        "precondition: seeded DB must be encrypted"
+    );
+}
+
+/// (g) ENCRYPTED file + key PRESENT → `DatabaseManager::new` opens keyed and rows read.
+#[tokio::test]
+async fn manager_encrypted_with_key_present_opens_and_reads() {
+    mock_keyring::install();
+    let _guard = mock_keyring::db_key_lock().lock().await;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db_path = tmp.path().join("meeting_minutes.sqlite");
+    let backend = tmp.path().join("meeting_minutes.db"); // absent legacy path
+
+    make_encrypted_db(&db_path).await;
+    // Store the SAME key the file was encrypted with under the device `db-key` entry.
+    let entry = keyring::Entry::new(app_lib::secrets::KEYCHAIN_SERVICE, dbkey::ENTRY_NAME)
+        .expect("open mock db-key entry");
+    entry.set_password(TEST_KEY_HEX).expect("seed db-key");
+
+    let db_path_s = db_path.to_string_lossy().to_string();
+    let backend_s = backend.to_string_lossy().to_string();
+    let mgr = DatabaseManager::new(&db_path_s, &backend_s)
+        .await
+        .expect("encrypted DB with key present must open");
+
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM meetings")
+        .fetch_one(mgr.pool())
+        .await
+        .expect("read meetings through the keyed pool");
+    assert_eq!(
+        n, 2,
+        "seeded rows must be readable via the keyed manager pool"
+    );
+    mgr.cleanup().await.ok();
+}
+
+/// (h) ENCRYPTED file + key MISSING → FAIL CLOSED. `DatabaseManager::new` errors, the
+/// ciphertext file is byte-for-byte UNMODIFIED, NO new key is minted, and the DB is
+/// NOT opened as plaintext.
+#[tokio::test]
+async fn manager_encrypted_with_key_missing_fails_closed() {
+    mock_keyring::install();
+    let _guard = mock_keyring::db_key_lock().lock().await;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db_path = tmp.path().join("meeting_minutes.sqlite");
+    let backend = tmp.path().join("meeting_minutes.db");
+
+    make_encrypted_db(&db_path).await;
+    let before = file_digest(&db_path);
+
+    // No key in the store: a missing entry must NOT be minted over ciphertext.
+    mock_keyring::clear_db_key();
+    assert!(
+        dbkey::get_hex().expect("non-creating read").is_none(),
+        "precondition: the db-key entry must be absent"
+    );
+
+    let db_path_s = db_path.to_string_lossy().to_string();
+    let backend_s = backend.to_string_lossy().to_string();
+    let res = DatabaseManager::new(&db_path_s, &backend_s).await;
+
+    // 1) It FAILS CLOSED (does not open).
+    let err = res
+        .err()
+        .expect("encrypted-but-keyless open must fail closed");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("encrypted") && msg.contains("key"),
+        "error must explain the encrypted-but-keyless refusal, got: {msg}"
+    );
+
+    // 2) The ciphertext file is byte-for-byte UNMODIFIED (no rewrite/conversion).
+    assert_eq!(
+        file_digest(&db_path),
+        before,
+        "the encrypted file must not be modified by a fail-closed open"
+    );
+
+    // 3) NO new key was minted (the fail-closed path used the non-creating read).
+    assert!(
+        dbkey::get_hex()
+            .expect("non-creating read after fail-closed")
+            .is_none(),
+        "a fail-closed open must NOT create a new db-key over ciphertext"
+    );
+
+    // 4) It was NOT opened as plaintext: the file is still ciphertext AND only the
+    //    original key reads it (a regenerated key would not).
+    assert!(
+        !encryption::is_plaintext_db(&db_path).expect("state probe"),
+        "the file must remain encrypted (never opened/rewritten as plaintext)"
+    );
+    assert!(
+        encryption::opens_with_key(&db_path, TEST_KEY_HEX)
+            .await
+            .expect("right-key probe"),
+        "the original key must still decrypt the untouched file"
+    );
+
+    // Restore a key so a later serialized test starts clean.
+    let entry = keyring::Entry::new(app_lib::secrets::KEYCHAIN_SERVICE, dbkey::ENTRY_NAME)
+        .expect("reopen mock db-key entry");
+    entry.set_password(TEST_KEY_HEX).expect("restore db-key");
+}
+
+/// (i) PLAINTEXT file + key store UNAVAILABLE → FAIL OPEN. The key store errors (as a
+/// locked/unavailable OS keychain would), so the manager opens the still-plaintext
+/// file rather than lock the user out of their own local data (CLAUDE.md §0.1). Rows
+/// read back and there is no crash. The file remains plaintext (heals on the next
+/// keyed launch once the store is back).
+#[tokio::test]
+async fn manager_plaintext_with_store_unavailable_fails_open() {
+    mock_keyring::install();
+    let _guard = mock_keyring::db_key_lock().lock().await;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db_path = tmp.path().join("meeting_minutes.sqlite");
+    let backend = tmp.path().join("meeting_minutes.db");
+
+    // Build a PLAINTEXT, migrated, seeded DB.
+    let plain = open_plaintext(&db_path).await;
+    MIGRATOR.run(&plain).await.expect("migrations (plaintext)");
+    seed_minimal(&plain).await;
+    plain.close().await;
+    assert!(
+        encryption::is_plaintext_db(&db_path).expect("state probe"),
+        "precondition: DB must be plaintext"
+    );
+
+    // Model a locked/unavailable OS keychain: every credential op errors, so
+    // `get_or_create_hex()` returns Err and the PLAINTEXT fail-open branch runs.
+    mock_keyring::clear_db_key();
+    mock_keyring::set_unavailable();
+
+    let db_path_s = db_path.to_string_lossy().to_string();
+    let backend_s = backend.to_string_lossy().to_string();
+    let opened = DatabaseManager::new(&db_path_s, &backend_s).await;
+    mock_keyring::set_available(); // restore before asserting so cleanup is normal
+
+    let mgr = opened.expect("plaintext DB must open (fail-open) when the key store is unavailable");
+
+    // Rows read back, no crash.
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM meetings")
+        .fetch_one(mgr.pool())
+        .await
+        .expect("read meetings after a plaintext fail-open");
+    assert_eq!(n, 2, "seeded rows must be readable after a plaintext open");
+
+    // It stayed PLAINTEXT (no key was available to encrypt it) — heals next launch.
+    assert!(
+        encryption::is_plaintext_db(&db_path).expect("state probe after fail-open"),
+        "with the store unavailable the file must remain plaintext (no keyless encryption)"
+    );
+    mgr.cleanup().await.ok();
 }

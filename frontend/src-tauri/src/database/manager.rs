@@ -30,40 +30,118 @@ impl DatabaseManager {
         }
 
         // At-rest encryption (BACKLOG B3, docs/SECURITY_PRIVACY.md "Encryption",
-        // ADR-0014). The 256-bit DB key lives in the OS keychain; fetch/create it
-        // and FAIL CLOSED — a locked/unavailable store must never open the DB
-        // unencrypted (map the anyhow error onto sqlx::Error to keep the signature).
-        // `Zeroizing<String>` scrubs the key from memory once it drops (below, right
-        // after the pool is opened) so it does not linger in freed heap.
-        let key_hex = crate::secrets::db::get_or_create_hex().map_err(|e| {
-            sqlx::Error::Configuration(format!("database encryption key unavailable: {e:#}").into())
-        })?;
+        // ADR-0014) with a GUARDRAILED local-first fallback. The 256-bit DB key lives
+        // in the OS keychain (`secrets::db`). The posture depends on the on-disk state
+        // of the file, decided BEFORE the key is touched:
+        //
+        //   * ENCRYPTED file  → FAIL CLOSED. Read the key with the NON-creating
+        //     `get_hex()` (a missing entry must NEVER mint a fresh key over live
+        //     ciphertext — that would strand the data behind a key that cannot decrypt
+        //     it). If the key is present we open keyed as normal; if it is missing or
+        //     the store errored we return an error and DO NOT open — never a keyless
+        //     open of ciphertext, never a regenerated key. Local-first is preserved by
+        //     "retry next launch / restore the key", not by exposing plaintext.
+        //
+        //   * PLAINTEXT or ABSENT file → fail-open is permitted (CLAUDE.md §0.1: the
+        //     capture→transcript→summary→store path must stay functional). Use
+        //     `get_or_create_hex()` (mint-on-first-run is correct here), then convert
+        //     via `ensure_encrypted`. If the key store is unavailable, or the one-time
+        //     conversion fails (e.g. a SQLCipher-less runtime where `sqlcipher_export`
+        //     is missing), we log LOUDLY and open the file UNENCRYPTED, retried next
+        //     launch. This is safe because the file was plaintext anyway — no
+        //     confidentiality is lost relative to the pre-B3 state, and no ciphertext
+        //     is ever opened keyless.
+        //
+        // Net accepted tradeoff: brand-new plaintext data is possible ONLY on a
+        // machine that was never successfully encrypted (first run with a broken
+        // keychain); it heals on the next keyed launch. An in-app downgrade WARNING is
+        // tracked as follow-up (ADR-0014). `Zeroizing<String>` scrubs the key from
+        // memory on drop (below, right after the pool opens).
+        let db_path = Path::new(tauri_db_path);
+        let is_plaintext = crate::database::encryption::is_plaintext_db(db_path)
+            .map_err(|e| sqlx::Error::Io(std::io::Error::other(format!("{e:#}"))))?;
+        let on_disk_encrypted = db_path.exists() && !is_plaintext;
 
-        // One-time plaintext -> SQLCipher conversion, BEFORE the keyed open and
-        // BEFORE migrations. No-op when the file is missing (fresh install) or
-        // already encrypted. Preserves the _sqlx_migrations ledger and every row.
-        crate::database::encryption::ensure_encrypted(Path::new(tauri_db_path), &key_hex)
-            .await
-            .map_err(|e| {
-                sqlx::Error::Configuration(
-                    format!("database encryption conversion failed: {e:#}").into(),
-                )
-            })?;
+        // `key_hex` holds the key material only if a keyed open is actually happening;
+        // `None` means "open plaintext" (fail-open branch only, never for ciphertext).
+        let key_hex: Option<zeroize::Zeroizing<String>> = if on_disk_encrypted {
+            // FAIL CLOSED path: non-creating read; a missing/errored key must abort.
+            match crate::secrets::db::get_hex() {
+                Ok(Some(key)) => {
+                    // `ensure_encrypted` is a no-op on an already-encrypted file; call
+                    // it for symmetry, then open keyed.
+                    crate::database::encryption::ensure_encrypted(db_path, &key)
+                        .await
+                        .map_err(|e| {
+                            sqlx::Error::Configuration(
+                                format!("database encryption conversion failed: {e:#}").into(),
+                            )
+                        })?;
+                    Some(key)
+                }
+                Ok(None) | Err(_) => {
+                    // Encrypted on disk but no usable key: DO NOT open, DO NOT
+                    // regenerate. This is NOT corruption — return a distinct
+                    // Configuration error so the recovery path in
+                    // `new_from_app_handle` does not misclassify it and delete the WAL.
+                    return Err(sqlx::Error::Configuration(
+                        "local database is encrypted but its key is unavailable (the OS keychain \
+                         is locked, or the 'db-key' entry is missing); refusing to open — retry \
+                         once the keychain is unlocked, or restore the key"
+                            .into(),
+                    ));
+                }
+            }
+        } else {
+            // FAIL OPEN path (plaintext or absent file only). Mint-on-first-run is
+            // correct here; a store/conversion failure degrades to a plaintext open.
+            match crate::secrets::db::get_or_create_hex() {
+                Ok(key) => match crate::database::encryption::ensure_encrypted(db_path, &key).await
+                {
+                    Ok(()) => Some(key),
+                    Err(e) => {
+                        // The file is still plaintext (conversion failed); open it
+                        // UNENCRYPTED for now. Do NOT claim it is encrypted/safe.
+                        log::error!(
+                            "At-rest DB encryption conversion FAILED ({e:#}); opening the local \
+                             database UNENCRYPTED (plaintext at rest) for now — will retry the \
+                             conversion on the next launch. No data is lost; the file was already \
+                             plaintext."
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    // Keychain unavailable on a fresh/plaintext file: open plaintext,
+                    // retry next launch. Accurate wording — this is UNENCRYPTED.
+                    log::error!(
+                        "DB encryption key unavailable ({e:#}); opening the local database \
+                         UNENCRYPTED (plaintext at rest) for now — will retry acquiring the key \
+                         and encrypting on the next launch."
+                    );
+                    None
+                }
+            }
+        };
 
-        // Keyed pool. `PRAGMA key` is a reserved slot that sqlx executes FIRST
-        // (before journal_mode/foreign_keys/any statement), so the cipher is active
-        // for the whole connection. WAL mode is preserved explicitly so the
-        // checkpoint/recovery paths below keep working; a fresh file is created
-        // already-encrypted via create_if_missing.
-        let options = SqliteConnectOptions::new()
+        // Keyed pool ONLY when a key is in hand (encrypted file with a good key, or a
+        // freshly converted/created file); otherwise a plaintext open on the fail-open
+        // branch so a first-run encryption hiccup never locks the user out of their
+        // own local data. A keyless open of an ENCRYPTED file cannot happen here — that
+        // branch returned above. `PRAGMA key` is a reserved slot sqlx executes FIRST
+        // when present. WAL mode is preserved explicitly; a fresh file is created
+        // already-encrypted (or plaintext) via create_if_missing.
+        let mut options = SqliteConnectOptions::new()
             .filename(tauri_db_path)
             .create_if_missing(true)
-            .pragma("key", crate::secrets::db::pragma_key_value(&key_hex))
             .journal_mode(SqliteJournalMode::Wal)
             .foreign_keys(true);
+        if let Some(k) = &key_hex {
+            options = options.pragma("key", crate::secrets::db::pragma_key_value(k));
+        }
         let pool = SqlitePool::connect_with(options).await?;
-        // Key material is no longer needed once the pool holds an open keyed
-        // connection; drop it now to zeroize it promptly (defense in depth).
+        // Key material is no longer needed once the pool holds an open connection;
+        // drop it now to zeroize it promptly (defense in depth).
         drop(key_hex);
 
         sqlx::migrate!("./migrations").run(&pool).await?;

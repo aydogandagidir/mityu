@@ -73,6 +73,29 @@ const BACKUP_SUFFIX: &str = "pre-encryption";
 /// Suffix for the in-progress encrypted file (promoted to the real path on success).
 const ENCRYPTING_SUFFIX: &str = "encrypting";
 
+/// Whether the file at `path` is a **plaintext** SQLite database (carries the
+/// `"SQLite format 3\0"` header).
+///
+/// This is the single, shared on-disk state probe used both by [`ensure_encrypted`]
+/// (to decide whether a one-time conversion is needed) and by
+/// [`crate::database::manager::DatabaseManager`] (to decide fail-open vs fail-closed
+/// on the key path — ADR-0014). It returns:
+///   * `Ok(false)` for a **missing**, empty, short (< 16 byte), or **encrypted** file
+///     (a SQLCipher file starts with an encrypted salt, not the header);
+///   * `Ok(true)` only for a readable plaintext SQLite DB.
+///
+/// IO errors other than not-found are surfaced. It never opens a keyed/SQLCipher
+/// connection — it only inspects the first 16 bytes — so it is safe to call before
+/// any key is fetched. Callers distinguish `absent` from `encrypted` (both `false`
+/// here) via [`Path::exists`].
+///
+/// `pub` (not `pub(crate)`) so the encryption integration tests can classify a temp
+/// file's on-disk state with the exact same probe the manager uses, alongside the
+/// already-public [`opens_with_key`] — rather than duplicate the header logic.
+pub fn is_plaintext_db(path: &Path) -> Result<bool> {
+    has_plaintext_header(path)
+}
+
 /// Does `path` begin with the plaintext `"SQLite format 3\0"` header?
 ///
 /// `Ok(false)` for a missing/empty file or an encrypted file; `Ok(true)` only for a
