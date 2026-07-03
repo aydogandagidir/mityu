@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Analytics from '@/lib/analytics';
 import { invoke } from '@tauri-apps/api/core';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
+import { searchService, type TranscriptSearchResult } from '@/services/search';
 
 
 interface SidebarItem {
@@ -19,13 +20,9 @@ export interface CurrentMeeting {
   title: string;
 }
 
-// Search result type for transcript search
-interface TranscriptSearchResult {
-  id: string;
-  title: string;
-  matchContext: string;
-  timestamp: string;
-};
+// Search result type for transcript search: single typed definition lives in
+// '@/services/search' (re-exported here for consumers of this provider).
+export type { TranscriptSearchResult };
 
 interface SidebarContextType {
   currentMeeting: CurrentMeeting | null;
@@ -174,7 +171,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       setIsSearching(true);
 
 
-      const results = await invoke('api_search_transcripts', { query }) as TranscriptSearchResult[];
+      const results = await searchService.searchMeetings(query);
       setSearchResults(results);
     } catch (error) {
       console.error('Error searching transcripts:', error);

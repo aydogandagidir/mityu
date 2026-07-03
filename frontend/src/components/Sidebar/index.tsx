@@ -644,8 +644,32 @@ const Sidebar: React.FC = () => {
 
               {/* Show transcript match snippet if available */}
               {hasTranscriptMatch && (
-                <div className="mt-1 ml-8 text-xs text-gray-500 bg-yellow-50 p-1.5 rounded border border-yellow-100 line-clamp-2">
-                  <span className="font-medium text-yellow-600">Match:</span> {matchingResult.matchContext}
+                <div className="mt-1 ml-8 text-xs text-gray-500 bg-yellow-50 p-1.5 rounded border border-yellow-100">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    {/* Source badge: where the hit was found (transcript vs. summary) */}
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-yellow-100 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 text-[10px] font-medium leading-none"
+                      title={
+                        matchingResult.matchedIn === 'summary'
+                          ? 'Matched in the AI summary'
+                          : 'Matched in the transcript'
+                      }
+                    >
+                      {matchingResult.matchedIn === 'summary' ? (
+                        <StickyNote className="w-2.5 h-2.5" />
+                      ) : (
+                        <File className="w-2.5 h-2.5" />
+                      )}
+                      {matchingResult.matchedIn}
+                    </span>
+                    {/* Timestamp only for transcript hits; summary-only hits have timestamp === "" */}
+                    {matchingResult.timestamp && (
+                      <span className="text-gray-400 leading-none">{matchingResult.timestamp}</span>
+                    )}
+                  </div>
+                  <div className="line-clamp-2">
+                    <span className="font-medium text-yellow-600">Match:</span> {matchingResult.matchContext}
+                  </div>
                 </div>
               )}
             </div>
