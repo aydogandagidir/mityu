@@ -24,6 +24,7 @@ import { UpdateCheckProvider } from '@/components/UpdateCheckProvider'
 import { RecordingPostProcessingProvider } from '@/contexts/RecordingPostProcessingProvider'
 import { ImportAudioDialog, ImportDropOverlay } from '@/components/ImportAudio'
 import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
+import { EncryptionStatusBanner } from '@/components/consent/EncryptionStatusBanner'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 
 
@@ -253,7 +254,14 @@ export default function RootLayout({
                               ) : (
                                 <div className="flex">
                                   <Sidebar />
-                                  <MainContent>{children}</MainContent>
+                                  <MainContent>
+                                    {/* ADR-0014: warns when the local DB opened UNENCRYPTED at rest.
+                                        Renders nothing in the normal (encrypted) case. Sits above
+                                        every main-app view and the recording indicator; not shown
+                                        during onboarding (DB may not be initialized yet). */}
+                                    <EncryptionStatusBanner />
+                                    {children}
+                                  </MainContent>
                                 </div>
                               )}
                               {/* Import audio overlay and dialog */}
