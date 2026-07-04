@@ -261,13 +261,15 @@ async fn ledger_rows(pool: &SqlitePool) -> Vec<(i64, Vec<u8>)> {
         .collect()
 }
 
-/// The eight domain/config/licensing tables the real DB carries after migration.
-const ALL_TABLES: [&str; 8] = [
+/// The ten domain/config/licensing tables the real DB carries after migration.
+const ALL_TABLES: [&str; 10] = [
     "meetings",
     "transcripts",
     "summary_processes",
     "transcript_chunks",
     "meeting_notes",
+    "summaries",
+    "action_items",
     "settings",
     "transcript_settings",
     "licensing",

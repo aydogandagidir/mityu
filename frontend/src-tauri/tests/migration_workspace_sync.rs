@@ -24,8 +24,9 @@ use app_lib::context::LOCAL_WORKSPACE_ID;
 /// `DatabaseManager::new`).
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
-/// Version under test — must stay the maximum version in ./migrations until a
-/// newer migration is added.
+/// Version under test (B2). Newer migrations now exist above it (redaction
+/// `20260704000000`, C1 summaries/action_items `20260706000000`); every
+/// assertion below counts migrations at/after this version, so it stays valid.
 const NEW_VERSION: i64 = 20260702000000;
 
 /// Tables that sync in Phase 2 → full common-column set.
