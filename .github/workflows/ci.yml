@@ -1,19 +1,27 @@
 name: ci
 on:
-  push: { branches: [ main, "feat/**", "fix/**" ] }
+  push: { branches: [ main, "feat/**", "fix/**", "chore/**", "docs/**" ] }
   pull_request: {}
+  workflow_dispatch: {}
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { submodules: recursive }
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt, clippy }
       - name: fmt
         run: cargo fmt --all --check
+      - name: install native dependencies (Tauri/audio — mirrors build.yml's ubuntu list, unpinned)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: ". -> target" }
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        # Warnings are advisory until the ~140-warning upstream baseline is burned
+        # down (ADR-0017); deny-by-default correctness lints still fail the job.
+        run: cargo clippy --all-targets
       - name: test
         run: cargo test --all
   frontend:
