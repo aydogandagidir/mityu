@@ -9,7 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with: { components: rustfmt, clippy }
+        with: { components: "rustfmt, clippy" }
       - name: fmt
         run: cargo fmt --all --check
       - name: install native dependencies (Tauri/audio — mirrors build.yml's ubuntu list, unpinned)
@@ -37,11 +37,13 @@ jobs:
       - run: pnpm tsc --noEmit
   server-isolation:
     # Enable once server/ exists (Phase 2). Fails the build if the cross-tenant test is missing.
+    # hashFiles() is steps-context only (evaluated on the runner): a job-level `if` using it
+    # fails GitHub's workflow validation and kills the WHOLE file — guard the step instead.
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('server/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: cross-tenant isolation test present & passing
+        if: ${{ hashFiles('server/**') != '' }}
         run: |
           test -n "$(find server -iname '*cross_tenant*')" || (echo "Missing mandatory cross-tenant isolation test" && exit 1)
           echo "Run the server test suite here (cargo test / pytest) including cross_tenant_isolation_test."
