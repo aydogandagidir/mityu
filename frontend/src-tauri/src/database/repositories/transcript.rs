@@ -155,6 +155,12 @@ impl TranscriptsRepository {
     /// Atomically replaces every transcript segment of a meeting (retranscription
     /// flow). Delete + inserts run in one transaction so a failure cannot lose
     /// the existing transcript. Segment ids are preserved.
+    ///
+    /// ADR-0019 decision 2: after a successful replace, the meeting's
+    /// structured summary and action items are downgraded to `draft` — the
+    /// segment rows their approved evidence links (`source_chunk_id`) point at
+    /// were just deleted and re-inserted, so a human must re-review them
+    /// against the changed segments.
     pub async fn replace_meeting_transcripts(
         pool: &SqlitePool,
         ctx: &AuthContext,
@@ -203,6 +209,27 @@ impl TranscriptsRepository {
             meeting_id,
             segments.len()
         );
+
+        // Return the checked-out connection to the pool BEFORE the downgrade
+        // hook below re-acquires from the same pool (a 1-connection pool would
+        // otherwise deadlock into PoolTimedOut).
+        drop(conn);
+
+        // ADR-0019 decision 2 (retranscription downgrade): approved evidence
+        // links must be re-reviewed against the changed segments, so any
+        // approved/edited HITL state for this meeting drops back to draft
+        // (original content/text preserved). `Ok(false)` — no summary row / no
+        // touched items — is the normal no-op case. The replace above is
+        // already committed; an error here means only the downgrade could not
+        // be applied and is surfaced to the caller.
+        use super::action_item::ActionItemsRepository;
+        use super::summary_draft::{SummariesRepository, SummaryDraftError};
+        SummariesRepository::downgrade_to_draft(pool, ctx, meeting_id)
+            .await
+            .map_err(SummaryDraftError::into_sqlx)?;
+        ActionItemsRepository::downgrade_to_draft(pool, ctx, meeting_id)
+            .await
+            .map_err(SummaryDraftError::into_sqlx)?;
 
         Ok(())
     }
