@@ -2,23 +2,22 @@
 
 Operational steps that must pass before Mityu's first public release. Complements the `/release` command and the BACKLOG gates (C8/D5). Local-first + HITL invariants are enforced elsewhere; this file covers the brand / keys / supply-chain items surfaced during the bluedev rebrand (ADR-0006 / 0009 / 0013).
 
-## 1. Updater signing key (CRITICAL) — regenerate, replace upstream's
+## 1. Updater signing key (CRITICAL) — secrets + release verification still open
 
-The app auto-updates by verifying a signature against the public key baked into `frontend/src-tauri/tauri.conf.json` (`plugins.updater.pubkey`). It currently holds **upstream's** key (ADR-0009) — we cannot sign updates until we own the keypair.
-
-1. Generate a Mityu keypair (keep the private key OUT of git):
+The app auto-updates by verifying a signature against the public key baked into `frontend/src-tauri/tauri.conf.json` (`plugins.updater.pubkey`). **Done already (2026-07-02):** the Mityu keypair was generated (private key at `~/.tauri/mityu_updater.key`, password-protected — keep it OUT of git; losing it or its password breaks the update chain for every existing install) and the baked pubkey was replaced with Mityu's in commit `3468a04`, so the config no longer trusts upstream's key. If it ever needs regenerating:
    ```bash
    # from the mityu-app repo root (NOT the docs-only ../mityu folder):
    cd mityu-app/frontend
    mkdir -p "$HOME/.tauri"    # PowerShell: New-Item -ItemType Directory -Force "$HOME\.tauri" | Out-Null
    pnpm tauri signer generate -w "$HOME/.tauri/mityu_updater.key"
    # prompts for a password; prints the PUBLIC key (also written to <path>.pub)
+   # then paste the printed PUBLIC key into tauri.conf.json → plugins.updater.pubkey
    ```
-2. Paste the printed **public key** into `tauri.conf.json` → `plugins.updater.pubkey` (replace the existing value).
-3. Add GitHub repo secrets (Settings → Secrets and variables → Actions):
+Still OPEN before the first release:
+1. Add GitHub repo secrets (Settings → Secrets and variables → Actions):
    - `TAURI_SIGNING_PRIVATE_KEY` = full contents of `~/.tauri/mityu_updater.key`
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = the password you chose
-4. Verify: a release build emits `*.sig` files; `latest.json` URLs point to `aydogandagidir/mityu` (already fixed in `scripts/generate-update-manifest-github.js`); an older build updates to the new one.
+2. Verify: a release build emits `*.sig` files; `latest.json` URLs point to `aydogandagidir/mityu` (already fixed in `scripts/generate-update-manifest-github.js`); an older build updates to the new one.
 
 ## 2. Upstream PRO licensing (decide — currently dormant)
 
