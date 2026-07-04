@@ -254,25 +254,29 @@ pub fn chunk_text(text: &str, chunk_size_tokens: usize, overlap_tokens: usize) -
     chunks
 }
 
-/// Cleans markdown output from LLM by removing thinking tags and code fences
+/// Shared LLM-output cleaner (generalized from `clean_llm_markdown_output` for
+/// BACKLOG C1.4 — one implementation, no duplication): removes
+/// `<think>`/`<thinking>` blocks, then strips a single wrapping code fence whose
+/// language tag is one of `fence_languages` (checked in order, then a bare
+/// ```` ``` ```` fence).
 ///
-/// # Arguments
-/// * `markdown` - Raw markdown output from LLM
-///
-/// # Returns
-/// Cleaned markdown string
-pub fn clean_llm_markdown_output(markdown: &str) -> String {
+/// The legacy markdown path delegates here with `["markdown"]` and is
+/// byte-identical to the pre-C1.4 behavior; the structured JSON path uses
+/// `["json"]`.
+pub(crate) fn clean_llm_fenced_output(raw: &str, fence_languages: &[&str]) -> String {
     // Remove <think>...</think> or <thinking>...</thinking> blocks using cached regex
-    let without_thinking = THINKING_TAG_REGEX.replace_all(markdown, "");
+    let without_thinking = THINKING_TAG_REGEX.replace_all(raw, "");
 
     let trimmed = without_thinking.trim();
 
-    // List of possible language identifiers for code blocks
-    const PREFIXES: &[&str] = &["```markdown\n", "```\n"];
     const SUFFIX: &str = "```";
+    let prefixes = fence_languages
+        .iter()
+        .map(|language| format!("```{language}\n"))
+        .chain(std::iter::once("```\n".to_string()));
 
-    for prefix in PREFIXES {
-        if trimmed.starts_with(prefix) && trimmed.ends_with(SUFFIX) {
+    for prefix in prefixes {
+        if trimmed.starts_with(&prefix) && trimmed.ends_with(SUFFIX) {
             // Extract content between the fences
             let content = &trimmed[prefix.len()..trimmed.len() - SUFFIX.len()];
             return content.trim().to_string();
@@ -281,6 +285,17 @@ pub fn clean_llm_markdown_output(markdown: &str) -> String {
 
     // If no fences found, return the trimmed string
     trimmed.to_string()
+}
+
+/// Cleans markdown output from LLM by removing thinking tags and code fences
+///
+/// # Arguments
+/// * `markdown` - Raw markdown output from LLM
+///
+/// # Returns
+/// Cleaned markdown string
+pub fn clean_llm_markdown_output(markdown: &str) -> String {
+    clean_llm_fenced_output(markdown, &["markdown"])
 }
 
 /// Extracts meeting name from the first heading in markdown
@@ -323,6 +338,7 @@ pub fn extract_meeting_name_from_markdown(markdown: &str) -> Option<String> {
 /// Tuple of (final_summary_markdown, english_summary_markdown, number_of_chunks_processed)
 /// where english_summary_markdown is the canonical AI-generated English summary
 /// (equals final_summary_markdown when target language is English)
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_meeting_summary(
     client: &Client,
     provider: &LLMProvider,

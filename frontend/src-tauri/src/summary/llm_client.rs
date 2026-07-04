@@ -25,6 +25,14 @@ pub struct ChatRequest {
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
+    /// OpenAI-compatible structured-output control (BACKLOG C1.4, ADR-0019
+    /// decision 4). `None` — the legacy default at every pre-C1.4 call site —
+    /// is skipped by serde, so the serialized request bytes are IDENTICAL to
+    /// the pre-C1.4 wire format (pinned by a test in `summary::structured`).
+    /// Claude requests use [`ClaudeRequest`] and never carry this field;
+    /// BuiltInAI short-circuits before any HTTP body is built and ignores it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<serde_json::Value>,
 }
 
 // Generic structure for OpenAI-compatible API chat responses
@@ -77,6 +85,9 @@ pub enum LLMProvider {
 
 impl LLMProvider {
     /// Parse provider from string (case-insensitive)
+    // Pre-dates C1.4; renaming to the `FromStr` trait would churn every call
+    // site for zero behavior gain, so the inherent name is kept.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s.to_lowercase().as_str() {
             "openai" => Ok(Self::OpenAI),
@@ -110,6 +121,7 @@ impl LLMProvider {
 ///
 /// # Returns
 /// The generated summary text or an error message
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_summary(
     client: &Client,
     provider: &LLMProvider,
@@ -124,6 +136,55 @@ pub async fn generate_summary(
     top_p: Option<f32>,
     app_data_dir: Option<&PathBuf>,
     cancellation_token: Option<&CancellationToken>,
+) -> Result<String, String> {
+    // Legacy entry point — delegates with `response_format: None`, which keeps
+    // the serialized request bytes identical to the pre-C1.4 wire format (the
+    // field is skipped by serde). Every pre-C1.4 call site goes through here.
+    generate_summary_with_response_format(
+        client,
+        provider,
+        model_name,
+        api_key,
+        system_prompt,
+        user_prompt,
+        ollama_endpoint,
+        custom_openai_endpoint,
+        max_tokens,
+        temperature,
+        top_p,
+        app_data_dir,
+        cancellation_token,
+        None,
+    )
+    .await
+}
+
+/// [`generate_summary`] plus an optional OpenAI-compatible `response_format`
+/// value (BACKLOG C1.4, ADR-0019 decision 4 — structured output modes).
+///
+/// * `response_format: None` — behavior and wire bytes identical to
+///   [`generate_summary`] (the legacy path).
+/// * `Some(...)` — serialized into the OpenAI-compatible request body (e.g.
+///   `{"type":"json_object"}` or a strict `{"type":"json_schema",...}`).
+///   **Claude ignores it** (its request shape has no such field — prompt-only
+///   JSON mode) and **BuiltInAI ignores it** (local sidecar short-circuit; no
+///   constrained decoding in llama-helper).
+#[allow(clippy::too_many_arguments)]
+pub async fn generate_summary_with_response_format(
+    client: &Client,
+    provider: &LLMProvider,
+    model_name: &str,
+    api_key: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    ollama_endpoint: Option<&str>,
+    custom_openai_endpoint: Option<&str>,
+    max_tokens: Option<u32>,
+    temperature: Option<f32>,
+    top_p: Option<f32>,
+    app_data_dir: Option<&PathBuf>,
+    cancellation_token: Option<&CancellationToken>,
+    response_format: Option<serde_json::Value>,
 ) -> Result<String, String> {
     // Check if cancelled before starting
     if let Some(token) = cancellation_token {
@@ -244,6 +305,7 @@ pub async fn generate_summary(
             max_tokens: max_tokens_val,
             temperature: temperature_val,
             top_p: top_p_val,
+            response_format,
         })
     } else {
         serde_json::json!(ClaudeRequest {
@@ -277,7 +339,7 @@ pub async fn generate_summary(
             result = request_future => {
                 result.map_err(|e| {
                     if e.is_timeout() {
-                        format!("LLM request timed out after 60 seconds")
+                        "LLM request timed out after 60 seconds".to_string()
                     } else {
                         format!("Failed to send request to LLM: {}", e)
                     }
@@ -290,7 +352,7 @@ pub async fn generate_summary(
     } else {
         request_future.await.map_err(|e| {
             if e.is_timeout() {
-                format!("LLM request timed out after 60 seconds")
+                "LLM request timed out after 60 seconds".to_string()
             } else {
                 format!("Failed to send request to LLM: {}", e)
             }
@@ -316,7 +378,7 @@ pub async fn generate_summary(
 
         let content = chat_response
             .content
-            .get(0)
+            .first()
             .ok_or("No content in LLM response")?
             .text
             .trim();
@@ -331,7 +393,7 @@ pub async fn generate_summary(
 
         let content = chat_response
             .choices
-            .get(0)
+            .first()
             .ok_or("No content in LLM response")?
             .message
             .content

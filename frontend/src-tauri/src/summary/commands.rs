@@ -332,6 +332,17 @@ pub async fn api_get_summary<R: Runtime>(
 /// Processes transcript and generates summary (Native SQLx implementation)
 ///
 /// Spawns a background task and returns immediately with process_id
+///
+/// `structured` (BACKLOG C1.4, serde-default `None` → false): when `true`,
+/// the background task first runs the structured, source-linked draft branch
+/// (ADR-0019), degrading to the legacy markdown path on failure. Absent or
+/// `false` leaves the legacy path byte-identical.
+///
+/// TS binding note: `invoke("api_process_transcript", { text, model,
+/// modelName, meetingId?, customPrompt?, templateId?, summaryLanguage?,
+/// structured?: boolean })` — the new key is optional; omitting it preserves
+/// today's behavior.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn api_process_transcript<R: Runtime>(
     app: AppHandle<R>,
@@ -345,6 +356,7 @@ pub async fn api_process_transcript<R: Runtime>(
     custom_prompt: Option<String>,
     template_id: Option<String>,
     summary_language: Option<String>,
+    structured: Option<bool>,
     _auth_token: Option<String>,
 ) -> Result<ProcessTranscriptResponse, String> {
     use uuid::Uuid;
@@ -357,8 +369,10 @@ pub async fn api_process_transcript<R: Runtime>(
     );
 
     let pool = state.db_manager.pool().clone();
-    let final_prompt = custom_prompt.unwrap_or_else(|| "".to_string());
+    let final_prompt = custom_prompt.unwrap_or_default();
     let final_template_id = template_id.unwrap_or_else(|| "daily_standup".to_string());
+    // C1.4 flag: absent/None → false (legacy path untouched).
+    let structured = structured.unwrap_or(false);
 
     // Normalise empty / whitespace-only to None so "" and null behave identically
     let summary_language = summary_language.and_then(|s| {
@@ -444,6 +458,7 @@ pub async fn api_process_transcript<R: Runtime>(
             final_prompt,
             final_template_id,
             summary_language,
+            structured,
         )
         .await;
     });

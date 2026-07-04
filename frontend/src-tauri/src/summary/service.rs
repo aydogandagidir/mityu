@@ -1,19 +1,24 @@
 use crate::database::repositories::{
-    meeting::MeetingsRepository, setting::SettingsRepository, summary::SummaryProcessesRepository,
+    action_item::ActionItemsRepository, meeting::MeetingsRepository, setting::SettingsRepository,
+    summary::SummaryProcessesRepository, summary_draft::SummariesRepository,
 };
 use crate::ollama::metadata::ModelMetadataCache;
+use crate::summary::draft::{BlockType, MeetingNotesDraft};
 use crate::summary::language_detection::detect_summary_language;
 use crate::summary::llm_client::LLMProvider;
 use crate::summary::metadata::read_detected_summary_language_from_metadata;
 use crate::summary::processor::{
     extract_meeting_name_from_markdown, generate_meeting_summary, language_name_from_code,
 };
+use crate::summary::structured::{
+    generate_structured_draft, ProviderParams, SegmentInput, StructuredMode,
+};
 use crate::summary::templates::{self, Template};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
@@ -149,6 +154,46 @@ fn build_summary_result_json(
     })
 }
 
+/// How the C1.4 structured branch ended, from the caller's point of view
+/// (`process_transcript_background`). Terminal states have ALREADY written the
+/// final `summary_processes` status (completed / failed / cancelled); Degrade
+/// means "fall through to the legacy path and complete normally".
+enum StructuredOutcome {
+    /// The process row is final — clean up and return.
+    Terminal,
+    /// Structured generation could not produce a persisted draft; the legacy
+    /// markdown path takes over (ADR-0019 decision 1 rollback shape). Carries
+    /// a content-free reason for tracing.
+    Degrade(String),
+}
+
+/// Deterministic markdown view of a structured draft (ADR-0019 decision 1):
+/// written into the legacy `summary_processes.result` shape so
+/// `api_get_summary` and the existing export keep working while the structured
+/// `summaries` row is authoritative. Section titles render as `##`; block
+/// kinds map 1:1 (`heading1` → `#`, `heading2` → `##`, `bullet` → `- `,
+/// `text` → paragraph). The structured branch never runs the legacy
+/// meeting-name extraction (the model is not asked for a title), and NO
+/// `english_cache` field is attached to the result — the structured path
+/// never feeds the legacy translation cache (ADR-0019 decision 3).
+fn render_draft_markdown(draft: &MeetingNotesDraft) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for section in &draft.sections {
+        let mut part = format!("## {}\n", section.title);
+        for block in &section.blocks {
+            let rendered = match block.block_type {
+                BlockType::Heading1 => format!("\n# {}\n", block.content),
+                BlockType::Heading2 => format!("\n## {}\n", block.content),
+                BlockType::Text => format!("\n{}\n", block.content),
+                BlockType::Bullet => format!("- {}\n", block.content),
+            };
+            part.push_str(&rendered);
+        }
+        parts.push(part);
+    }
+    parts.join("\n").trim_end().to_string()
+}
+
 /// Parses a `summary_processes.result` JSON blob and extracts a cached English
 /// summary only when it was produced from exactly the same source inputs and
 /// the user is switching to a different non-English target language.
@@ -250,9 +295,7 @@ impl SummaryService {
             }
         };
 
-        let Some(folder_path) = meeting.folder_path.filter(|p| !p.trim().is_empty()) else {
-            return None;
-        };
+        let folder_path = meeting.folder_path.filter(|p| !p.trim().is_empty())?;
 
         match read_detected_summary_language_from_metadata(Path::new(&folder_path)) {
             Ok(language) => language,
@@ -300,6 +343,10 @@ impl SummaryService {
     /// * `model_name` - Specific model (e.g., "gpt-4", "llama3.2:latest")
     /// * `custom_prompt` - Optional user-provided context
     /// * `template_id` - Template identifier (e.g., "daily_standup", "standard_meeting")
+    /// * `structured` - BACKLOG C1.4 flag: `true` runs the source-linked
+    ///   structured draft branch first (degrading to the legacy path on
+    ///   failure); `false` (the default) leaves the legacy path untouched
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_transcript_background<R: tauri::Runtime>(
         _app: AppHandle<R>,
         pool: SqlitePool,
@@ -310,6 +357,7 @@ impl SummaryService {
         custom_prompt: String,
         template_id: String,
         summary_language: Option<String>,
+        structured: bool,
     ) {
         let start_time = Instant::now();
         info!(
@@ -510,6 +558,54 @@ impl SummaryService {
                 return;
             }
         };
+
+        // --- BACKLOG C1.4: structured, source-linked draft generation -------
+        // Runs ONLY when the opt-in `structured` flag is set; with the flag
+        // off, everything below this block is the pre-C1.4 legacy path,
+        // untouched. On success the structured branch has already persisted
+        // the §4 draft (summaries + action_items) AND the legacy result shape
+        // (ADR-0019 decision 1) — nothing left to do. On failure after the
+        // engine's own fallback ladder it DEGRADES to the legacy path below
+        // and completes normally. v1 structured mode deliberately SKIPS the
+        // translate/normalize passes (ADR-0019 decision 3): those passes
+        // operate on the legacy markdown text path, so `summary_language` /
+        // `detected_summary_language` are ignored here.
+        if structured {
+            let outcome = Self::run_structured_generation(
+                &pool,
+                &ctx,
+                &meeting_id,
+                &provider,
+                &model_name,
+                &final_api_key,
+                &template,
+                &template_id,
+                token_threshold,
+                ollama_endpoint.as_deref(),
+                custom_openai_endpoint.as_deref(),
+                custom_openai_max_tokens,
+                custom_openai_temperature,
+                custom_openai_top_p,
+                app_data_dir.as_ref(),
+                &cancellation_token,
+                start_time,
+            )
+            .await;
+            match outcome {
+                StructuredOutcome::Terminal => {
+                    Self::cleanup_cancellation_token(&meeting_id);
+                    return;
+                }
+                StructuredOutcome::Degrade(reason) => {
+                    warn!(
+                        meeting_id = %meeting_id,
+                        "structured generation degraded to the legacy summary path: {}",
+                        reason
+                    );
+                }
+            }
+        }
+
         let template_fingerprint = template_cache_fingerprint(&template);
 
         let cache_source = build_summary_cache_source(
@@ -651,6 +747,204 @@ impl SummaryService {
                     Self::update_process_failed(&pool, &ctx, &meeting_id, &e).await;
                 }
             }
+        }
+    }
+
+    /// The C1.4 structured branch (ADR-0019 decisions 1/3/4). Loads the
+    /// meeting's persisted transcript segments through the EXISTING repository
+    /// read (`MeetingsRepository::get_meeting_transcripts_paginated`, ordered
+    /// by `audio_start_time` — no new SQL in service code; `i64::MAX` = all
+    /// segments), re-applies redaction per segment, runs the
+    /// [`crate::summary::structured`] engine, persists the §4 draft via
+    /// `SummariesRepository::upsert_draft` (which FORCES summary status to
+    /// draft — HITL) + `ActionItemsRepository::insert_drafts`, and ALSO writes
+    /// a deterministic markdown view into the legacy `summary_processes`
+    /// result shape so `api_get_summary`/export keep working.
+    ///
+    /// Redaction idempotence: segments were already redacted at the
+    /// transcript WRITE boundary whenever redaction was active then, and the
+    /// built-in patterns never re-match their own placeholders (`[EMAIL]`
+    /// etc.), so re-applying the same policy here is a no-op on
+    /// already-redacted rows — it exists as defense-in-depth for rows
+    /// persisted BEFORE the user enabled redaction. Fail-safe semantics match
+    /// the assembled-text boundary above: a config-read failure marks the
+    /// process FAILED (never sends possibly-unredacted text to a provider)
+    /// and is Terminal — it must NOT degrade to the legacy path.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_structured_generation(
+        pool: &SqlitePool,
+        ctx: &crate::context::AuthContext,
+        meeting_id: &str,
+        provider: &LLMProvider,
+        model_name: &str,
+        api_key: &str,
+        template: &Template,
+        template_id: &str,
+        token_threshold: usize,
+        ollama_endpoint: Option<&str>,
+        custom_openai_endpoint: Option<&str>,
+        max_tokens: Option<u32>,
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+        app_data_dir: Option<&PathBuf>,
+        cancellation_token: &CancellationToken,
+        start_time: Instant,
+    ) -> StructuredOutcome {
+        let segments = match MeetingsRepository::get_meeting_transcripts_paginated(
+            pool,
+            ctx,
+            meeting_id,
+            i64::MAX,
+            0,
+        )
+        .await
+        {
+            Ok((segments, _total)) => segments,
+            Err(e) => {
+                return StructuredOutcome::Degrade(format!(
+                    "failed to load transcript segments: {}",
+                    e
+                ));
+            }
+        };
+        if segments.is_empty() {
+            return StructuredOutcome::Degrade(
+                "no persisted transcript segments to ground a structured draft".to_string(),
+            );
+        }
+
+        // Per-segment redaction (see method docs for idempotence + fail-safe).
+        let redaction_config = match SettingsRepository::get_redaction_config(pool, ctx).await {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                let err_msg = format!("Failed to load redaction configuration: {}", e);
+                Self::update_process_failed(pool, ctx, meeting_id, &err_msg).await;
+                return StructuredOutcome::Terminal;
+            }
+        };
+        let redaction_active = redaction_config.is_active();
+        let segment_inputs: Vec<SegmentInput> = segments
+            .into_iter()
+            .map(|segment| SegmentInput {
+                chunk_id: segment.id,
+                display_time: segment.timestamp,
+                text: if redaction_active {
+                    crate::redaction::redact(&segment.transcript, &redaction_config)
+                } else {
+                    segment.transcript
+                },
+            })
+            .collect();
+
+        let client = reqwest::Client::new();
+        let params = ProviderParams {
+            client: &client,
+            provider,
+            model_name,
+            api_key,
+            ollama_endpoint,
+            custom_openai_endpoint,
+            max_tokens,
+            temperature,
+            top_p,
+            app_data_dir,
+            cancellation_token: Some(cancellation_token),
+        };
+        // ADR-0019 decision 4: JSON mode is auto-selected per provider — never
+        // a user-facing setting.
+        let mode = StructuredMode::for_provider(provider);
+
+        match generate_structured_draft(
+            meeting_id,
+            &segment_inputs,
+            template,
+            &params,
+            mode,
+            token_threshold,
+        )
+        .await
+        {
+            Ok((draft, action_items, stats)) => {
+                info!(
+                    meeting_id = %meeting_id,
+                    mode_used = stats.mode_used.as_str(),
+                    dropped_blocks = stats.dropped_blocks,
+                    repaired_ids = stats.repaired_ids,
+                    action_items = action_items.len(),
+                    "structured draft generated"
+                );
+
+                if let Err(e) = SummariesRepository::upsert_draft(
+                    pool,
+                    ctx,
+                    &draft,
+                    Some(model_name),
+                    Some(template_id),
+                )
+                .await
+                {
+                    return StructuredOutcome::Degrade(format!(
+                        "failed to persist structured summary draft: {}",
+                        e
+                    ));
+                }
+                if let Err(e) =
+                    ActionItemsRepository::insert_drafts(pool, ctx, meeting_id, &action_items).await
+                {
+                    // The summaries row is already written (draft status,
+                    // reviewable); degrading still gives the user a legacy
+                    // summary while the drafts await review.
+                    return StructuredOutcome::Degrade(format!(
+                        "failed to persist action item drafts: {}",
+                        e
+                    ));
+                }
+
+                // ADR-0019 decision 1: the legacy result shape stays written
+                // as the rollback/read path. chunk_count is a legacy display
+                // field; structured details live in the tracing counts above.
+                let markdown = render_draft_markdown(&draft);
+                let result_json = serde_json::json!({ "markdown": markdown });
+                let duration = start_time.elapsed().as_secs_f64();
+                if let Err(e) = SummaryProcessesRepository::update_process_completed(
+                    pool,
+                    ctx,
+                    meeting_id,
+                    result_json,
+                    1,
+                    duration,
+                )
+                .await
+                {
+                    error!(
+                        "Failed to save completed structured process for {}: {}",
+                        meeting_id, e
+                    );
+                } else {
+                    info!(
+                        "Structured summary saved successfully for meeting_id: {}",
+                        meeting_id
+                    );
+                }
+                StructuredOutcome::Terminal
+            }
+            Err(e) if e.contains("cancelled") => {
+                info!(
+                    "Summary generation was cancelled for meeting_id: {}",
+                    meeting_id
+                );
+                if let Err(db_err) =
+                    SummaryProcessesRepository::update_process_cancelled(pool, ctx, meeting_id)
+                        .await
+                {
+                    error!(
+                        "Failed to update DB status to cancelled for {}: {}",
+                        meeting_id, db_err
+                    );
+                }
+                StructuredOutcome::Terminal
+            }
+            Err(e) => StructuredOutcome::Degrade(e),
         }
     }
 
@@ -1046,5 +1340,62 @@ mod tests {
     fn test_extract_cached_english_from_malformed_json_errors() {
         let raw = r#"{ not valid json"#;
         assert!(extract_cached_english_markdown(raw, &sample_cache_source(), Some("de")).is_err());
+    }
+
+    // --- render_draft_markdown (C1.4, ADR-0019 decision 1) -------------------
+
+    /// The structured-branch markdown view is deterministic, preserves the
+    /// draft's section order, renders section titles as `##`, and maps block
+    /// kinds 1:1 (bullet → `- `, text → paragraph, heading1 → `#`,
+    /// heading2 → `##`). Pinned byte-for-byte.
+    #[test]
+    fn test_render_draft_markdown_pins_the_legacy_result_view() {
+        use crate::summary::draft::{BlockStatus, DraftBlock, DraftSection, SummaryStatus};
+        let block = |block_type: BlockType, content: &str| DraftBlock {
+            id: "b".to_string(),
+            block_type,
+            content: content.to_string(),
+            source_chunk_id: "c1".to_string(),
+            status: BlockStatus::Draft,
+            original_content: None,
+        };
+        let draft = MeetingNotesDraft {
+            meeting_id: "m1".to_string(),
+            status: SummaryStatus::Draft,
+            sections: vec![
+                DraftSection {
+                    title: "Key Decisions".to_string(),
+                    blocks: vec![
+                        block(BlockType::Bullet, "Adopt SQLite"),
+                        block(BlockType::Bullet, "Ship Friday"),
+                        block(BlockType::Text, "Everyone agreed."),
+                        block(BlockType::Heading2, "Budget"),
+                        block(BlockType::Heading1, "Big Heading"),
+                    ],
+                },
+                DraftSection {
+                    title: "Open Questions".to_string(),
+                    blocks: vec![],
+                },
+            ],
+        };
+
+        assert_eq!(
+            render_draft_markdown(&draft),
+            "## Key Decisions\n- Adopt SQLite\n- Ship Friday\n\nEveryone agreed.\n\n## Budget\n\n# Big Heading\n\n## Open Questions"
+        );
+        // Determinism: same input, same bytes.
+        assert_eq!(render_draft_markdown(&draft), render_draft_markdown(&draft));
+    }
+
+    #[test]
+    fn test_render_draft_markdown_empty_draft_renders_empty() {
+        use crate::summary::draft::SummaryStatus;
+        let draft = MeetingNotesDraft {
+            meeting_id: "m1".to_string(),
+            status: SummaryStatus::Draft,
+            sections: vec![],
+        };
+        assert_eq!(render_draft_markdown(&draft), "");
     }
 }
