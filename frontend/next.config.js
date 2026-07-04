@@ -1,4 +1,6 @@
 const path = require('path');
+// @tiptap/pm stays a direct dependency solely for the ProseMirror aliases below
+// (BlockNote is TipTap/ProseMirror-based; aliasing prevents duplicate PM instances).
 const tiptapPmResolveBase = path.dirname(require.resolve('@tiptap/pm/model'));
 const resolveFromTiptapPm = (pkg) =>
   require.resolve(pkg, { paths: [tiptapPmResolveBase] });
