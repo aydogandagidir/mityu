@@ -52,3 +52,37 @@ The Rust core builds whisper.cpp from source, needing a C toolchain:
   pnpm exec tauri dev --no-watch   # GUI smoke; --no-watch because the repo path contains a space
   ```
 - Manual smoke (audio path is the highest-risk subsystem): record → transcript appears → summary drafts → About/tray show Mityu branding.
+
+## 5. Running & packaging on Windows (dev-mode caveats, standalone build, MAX_PATH)
+
+Surfaced during the 2026-07-03 data-visibility debug. `pnpm exec tauri dev` (the dev server) is **slow and flaky on this machine**: Next.js compiles routes on demand (~11 s for `/`), and in that window the meeting-list fetch sometimes never fires — so the UI looks empty even though the backend opened the (encrypted) DB and read the rows (`Database opened successfully` → `Successfully got N meetings` in the log). It is **not** a data or code bug, just dev-mode compilation friction. For **actually using** the app, build a standalone binary that embeds the production frontend.
+
+### Fast standalone binary (recommended for local use)
+```powershell
+# env from §4 first, then:
+cd mityu-app/frontend
+pnpm exec tauri build --debug --no-bundle
+# → target\debug\mityu.exe  (production frontend EMBEDDED; no dev server / no port 3118)
+```
+- `--debug` reuses the already-compiled **debug** whisper.cpp (`target/debug/build/whisper-rs-sys-*`) → ~3–4 min, and keeps the path short (see MAX_PATH below). The heavy compute (whisper.cpp, ONNX) is natively optimized regardless of the Rust profile, so runtime is fine.
+- `--no-bundle` skips installer creation and thus **updater signing** (no `TAURI_SIGNING_PRIVATE_KEY` needed for a local build).
+- Launch by double-clicking `Desktop\Mityu.bat` (a one-line `start "" "<repo>\target\debug\mityu.exe"`) — single-instance, no terminal, no port, no exe-lock.
+
+### Producing a real installer (.msi/.exe) — the MAX_PATH gotcha
+A full `pnpm run tauri:build:cpu` (release profile) FAILS in whisper.cpp's CMake step here:
+```
+error MSB6003: link.exe … DirectoryNotFoundException:
+  '…\target\release\build\whisper-rs-sys-<hash>\out\build\CMakeFiles\CMakeScratch\TryCompile-<x>\…\<x>.tlog'
+```
+That `TryCompile-…\…tlog` path exceeds Windows **MAX_PATH (260)** — the repo path is already deep and contains a space, and `release` is 2 chars longer than `debug`, tipping it over. Fix: build the release into a **short target dir**:
+```powershell
+$env:CARGO_TARGET_DIR = "C:\t\mr"
+pnpm run tauri:build:cpu      # installer lands in C:\t\mr\release\bundle\{nsis,msi}\
+```
+(Same MAX_PATH workaround used for the SQLCipher/B3 build.) It is a fresh from-scratch compile (~30–40 min) since the short target dir has no cache.
+
+### The B3 one-time-conversion lock (first launch after SQLCipher landed)
+The plaintext→SQLCipher conversion (`encryption::ensure_encrypted`) checkpoints the plaintext WAL, which needs an **exclusive** open. If a **stale `mityu.exe` still holds the DB** (a previous `tauri dev`/run not fully closed — orphans are common here), that checkpoint open fails and the conversion aborts. The ADR-0014 guardrailed fallback then degrades to a loud plaintext open (data stays visible) rather than hiding it — but a clean process state lets the conversion complete on the first try. Always clear lingering processes before a build or a first post-B3 launch:
+```powershell
+taskkill /F /IM mityu.exe 2>$null ; taskkill /F /IM cargo.exe 2>$null
+```
