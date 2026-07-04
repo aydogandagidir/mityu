@@ -18,6 +18,11 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
       - uses: swatinem/rust-cache@v2
         with: { workspaces: ". -> target" }
+      - name: build llama-helper sidecar (tauri-build fails without binaries/llama-helper-<target>)
+        run: |
+          cargo build -p llama-helper
+          mkdir -p frontend/src-tauri/binaries
+          cp target/debug/llama-helper "frontend/src-tauri/binaries/llama-helper-$(rustc -vV | grep 'host:' | awk '{print $2}')"
       - name: clippy
         # Warnings are advisory until the ~140-warning upstream baseline is burned
         # down (ADR-0017); deny-by-default correctness lints still fail the job.
