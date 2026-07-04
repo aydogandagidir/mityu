@@ -42,6 +42,25 @@ export interface RecordingPreferences {
 }
 
 /**
+ * Per-workspace opt-in PII/keyword redaction policy (BACKLOG C6).
+ *
+ * OFF by default (`enabled: false`) — existing local data and flows are unchanged
+ * unless the user turns this on. When enabled, transcript text is scrubbed both
+ * before it is persisted and before it is sent to a summary LLM provider.
+ *
+ * NOTE: the field names are snake_case to match the Rust `RedactionConfig` struct
+ * (which has no serde rename); send them exactly as declared here.
+ */
+export interface RedactionConfig {
+  /** Master switch. When false, redaction is a verbatim no-op. */
+  enabled: boolean;
+  /** Apply built-in PII patterns (email/phone/card/IBAN/TR TC Kimlik No). */
+  use_default_patterns: boolean;
+  /** Extra case-insensitive literal terms to redact (each -> `[REDACTED]`). */
+  custom_terms: string[];
+}
+
+/**
  * Configuration Service
  * Singleton service for managing app configuration
  */
@@ -111,6 +130,26 @@ export class ConfigService {
       apiKey,
       model,
     });
+  }
+
+  /**
+   * Get the current workspace's redaction policy (BACKLOG C6).
+   * Returns the disabled default when none has been configured.
+   * @returns Promise with the RedactionConfig
+   */
+  async getRedactionConfig(): Promise<RedactionConfig> {
+    return invoke<RedactionConfig>('api_get_redaction_config');
+  }
+
+  /**
+   * Save the current workspace's redaction policy (BACKLOG C6).
+   * Enabling is opt-in; when enabled, transcript text is redacted before
+   * persistence and before it reaches a summary LLM provider.
+   * @param config - RedactionConfig to persist (snake_case keys, see interface)
+   * @returns Promise with result status
+   */
+  async setRedactionConfig(config: RedactionConfig): Promise<{ status: string; message: string }> {
+    return invoke<{ status: string; message: string }>('api_set_redaction_config', { config });
   }
 }
 

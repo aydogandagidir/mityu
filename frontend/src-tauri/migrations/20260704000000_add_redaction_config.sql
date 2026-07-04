@@ -1,0 +1,33 @@
+-- Migration: add per-workspace redaction config column to `settings` (BACKLOG C6).
+--
+-- Purpose (docs/SECURITY_PRIVACY.md "Retention/redaction", docs/DATA_MODEL.md
+--   settings row: "...retention_days, redaction"): store an opt-in PII/keyword
+--   redaction policy per workspace as a small JSON blob. Absent/NULL == redaction
+--   DISABLED (the non-breaking, local-first default), matching
+--   `redaction::RedactionConfig::default()` in Rust. This column holds NO secret
+--   (unlike the `*ApiKey` marker columns), so it is a plain nullable TEXT column.
+--
+-- Scope: ADDITIVE ONLY — a single nullable column. No renames, drops, or type
+--   changes. Existing rows keep working unchanged: `settings` is written with
+--   explicit column lists and read either via `SELECT *` (extra columns not mapped
+--   by the `Setting` struct are ignored by sqlx `FromRow`) or via targeted
+--   `SELECT redactionConfig` (SettingsRepository::get_redaction_config). The
+--   `settings` table already carries `workspace_id` (migration 20260702000000), so
+--   every read/write of this column is workspace-scoped.
+--
+-- Idempotency: executed exactly once per database by the app's sqlx::migrate!
+--   ledger (`_sqlx_migrations`; see database/manager.rs) — the same guarantee every
+--   prior ALTER-based migration here relies on. The column name `redactionConfig`
+--   exists in no prior schema lineage (verified against the initial 20250916100000
+--   schema, all later migrations, and the legacy meeting_minutes.db import), so an
+--   unguarded `ADD COLUMN` is safe by construction (SQLite has no
+--   `ADD COLUMN IF NOT EXISTS`).
+--
+-- Sync-compatibility note (docs/DATA_MODEL.md): `settings` is PER-SCOPE and NOT
+--   synced (it carries local-only config and, historically, plaintext key columns).
+--   This redaction policy is intentionally client-local for now; if/when a policy
+--   sync is introduced it will be a deliberate, separate change. An older client
+--   binary opening an upgraded DB ignores the unknown column; a newer binary opening
+--   an older DB applies this migration first. Nothing is renamed or dropped.
+
+ALTER TABLE settings ADD COLUMN redactionConfig TEXT;

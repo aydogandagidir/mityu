@@ -629,12 +629,38 @@ async fn run_import<R: Runtime>(
     emit_progress(&app, "saving", 85, "Creating meeting...");
 
     // Create transcript segments
-    let segments = create_transcript_segments(&all_transcripts);
+    let mut segments = create_transcript_segments(&all_transcripts);
 
     // Save to database
     let app_state = app
         .try_state::<AppState>()
         .ok_or_else(|| anyhow!("App state not available"))?;
+
+    // Opt-in PII/keyword redaction BEFORE persistence (BACKLOG C6). Applied here,
+    // at the text-persist boundary, so BOTH the DB rows and the on-disk
+    // transcripts.json written below stay consistent. Disabled (the default) leaves
+    // segments verbatim; only `text` is rewritten, ids/timestamps are preserved.
+    {
+        let ctx = crate::context::current();
+        match crate::database::repositories::setting::SettingsRepository::get_redaction_config(
+            app_state.db_manager.pool(),
+            &ctx,
+        )
+        .await
+        {
+            Ok(cfg) if cfg.is_active() => {
+                for seg in segments.iter_mut() {
+                    seg.text = crate::redaction::redact(&seg.text, &cfg);
+                }
+                info!(
+                    "Applied redaction to {} imported transcript segment(s) before persistence",
+                    segments.len()
+                );
+            }
+            Ok(_) => {} // disabled/no-op
+            Err(e) => return Err(anyhow!("Failed to load redaction configuration: {}", e)),
+        }
+    }
 
     let meeting_id = create_meeting_with_transcripts(
         app_state.db_manager.pool(),

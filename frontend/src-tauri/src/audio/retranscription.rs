@@ -419,7 +419,7 @@ async fn run_retranscription<R: Runtime>(
     emit_progress(&app, &meeting_id, "saving", 80, "Saving transcripts...");
 
     // Create transcript segments with proper timestamps from VAD
-    let segments = create_transcript_segments(&all_transcripts);
+    let mut segments = create_transcript_segments(&all_transcripts);
 
     // Save to database
     let app_state = app
@@ -431,6 +431,29 @@ async fn run_retranscription<R: Runtime>(
     // no SQL is issued from the audio module.
     let pool = app_state.db_manager.pool();
     let ctx = crate::context::current();
+
+    // Opt-in PII/keyword redaction BEFORE persistence (BACKLOG C6). Applied at this
+    // text-persist boundary so both the replaced DB rows and the on-disk
+    // transcripts.json written below stay consistent. Disabled (the default) leaves
+    // segments verbatim; only `text` is rewritten, ids/timestamps are preserved.
+    match crate::database::repositories::setting::SettingsRepository::get_redaction_config(
+        pool, &ctx,
+    )
+    .await
+    {
+        Ok(cfg) if cfg.is_active() => {
+            for seg in segments.iter_mut() {
+                seg.text = crate::redaction::redact(&seg.text, &cfg);
+            }
+            info!(
+                "Applied redaction to {} retranscribed segment(s) before persistence",
+                segments.len()
+            );
+        }
+        Ok(_) => {} // disabled/no-op
+        Err(e) => return Err(anyhow!("Failed to load redaction configuration: {}", e)),
+    }
+
     crate::database::repositories::transcript::TranscriptsRepository::replace_meeting_transcripts(
         pool,
         &ctx,

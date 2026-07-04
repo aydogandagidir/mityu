@@ -471,6 +471,81 @@ impl SettingsRepository {
         Ok(())
     }
 
+    // ===== REDACTION CONFIG (per-workspace PII/keyword redaction policy, BACKLOG C6) =====
+
+    /// Reads the workspace's [`RedactionConfig`] from the `settings.redactionConfig`
+    /// JSON column. Returns [`RedactionConfig::default`] (disabled — the
+    /// non-breaking, local-first default) when no row/column value exists or when a
+    /// stored blob fails to parse, so a missing/corrupt config can never *enable*
+    /// redaction implicitly. Scoped by `workspace_id = ctx.tenant_id`. This holds no
+    /// secret, so it is a plain column (unlike the `*ApiKey` markers above).
+    pub async fn get_redaction_config(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+    ) -> std::result::Result<crate::redaction::RedactionConfig, sqlx::Error> {
+        let json: Option<String> = sqlx::query_scalar(
+            "SELECT redactionConfig FROM settings WHERE id = '1' AND workspace_id = ? LIMIT 1",
+        )
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+
+        match json {
+            Some(raw) if !raw.trim().is_empty() => match serde_json::from_str(&raw) {
+                Ok(cfg) => Ok(cfg),
+                Err(e) => {
+                    // Fail safe: never silently enable redaction from a bad blob, and
+                    // never log the blob itself.
+                    tracing::warn!(
+                        workspace_id = %ctx.tenant_id,
+                        error = %e,
+                        "redactionConfig failed to parse; falling back to disabled default"
+                    );
+                    Ok(crate::redaction::RedactionConfig::default())
+                }
+            },
+            _ => Ok(crate::redaction::RedactionConfig::default()),
+        }
+    }
+
+    /// Upserts the workspace's [`RedactionConfig`] as JSON into the
+    /// `settings.redactionConfig` column. Mirrors [`Self::save_custom_openai_config`]:
+    /// legacy single-row (`id = '1'`) with the `WHERE workspace_id = excluded.workspace_id`
+    /// guard so a foreign workspace cannot clobber another's row. Stamps `updated_at`.
+    pub async fn set_redaction_config(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        config: &crate::redaction::RedactionConfig,
+    ) -> std::result::Result<(), sqlx::Error> {
+        let config_json = serde_json::to_string(config).map_err(|e| {
+            sqlx::Error::Protocol(format!(
+                "Failed to serialize RedactionConfig to JSON: {}",
+                e
+            ))
+        })?;
+
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            INSERT INTO settings (id, workspace_id, provider, model, whisperModel, redactionConfig, created_at, updated_at)
+            VALUES ('1', ?, 'ollama', 'llama3.2:latest', 'large-v3', ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                redactionConfig = excluded.redactionConfig,
+                updated_at = excluded.updated_at
+            WHERE workspace_id = excluded.workspace_id
+            "#,
+        )
+        .bind(ctx.tenant_id.as_str())
+        .bind(config_json)
+        .bind(now)
+        .bind(now)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
     // ===== KEYCHAIN MIGRATION (legacy plaintext columns → OS credential store) =====
 
     /// `(provider, column)` pairs for summary (`settings`) key columns. Drives

@@ -55,6 +55,10 @@ pub mod anthropic;
 pub mod groq;
 pub mod openrouter;
 pub mod parakeet_engine;
+/// Opt-in PII/keyword redaction (BACKLOG C6). OFF by default; when a workspace
+/// enables it, transcript text is scrubbed before DB persistence and before it
+/// reaches a summary LLM provider (docs/SECURITY_PRIVACY.md "Retention/redaction").
+pub mod redaction;
 pub mod secrets;
 pub mod state;
 pub mod summary;
@@ -669,6 +673,9 @@ pub fn run() {
             api::api_save_custom_openai_config,
             api::api_get_custom_openai_config,
             api::api_test_custom_openai_connection,
+            // Redaction config commands (BACKLOG C6)
+            api::api_get_redaction_config,
+            api::api_set_redaction_config,
             // Summary commands
             summary::commands::api_process_transcript,
             summary::commands::api_get_summary,

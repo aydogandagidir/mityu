@@ -1023,6 +1023,34 @@ pub async fn api_save_transcript<R: Runtime>(
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
 
+    // Opt-in PII/keyword redaction BEFORE persistence (BACKLOG C6). Policy is loaded
+    // per-workspace and applied at this call boundary — the repository stays a pure
+    // writer. Disabled (the default) => `is_active()` is false and segments are
+    // untouched, so existing local flows are unchanged. Only `text` is rewritten;
+    // segment ids/timestamps (and thus source-linking) are preserved.
+    let mut transcripts_to_save = transcripts_to_save;
+    match SettingsRepository::get_redaction_config(pool, &ctx).await {
+        Ok(cfg) if cfg.is_active() => {
+            for seg in transcripts_to_save.iter_mut() {
+                seg.text = crate::redaction::redact(&seg.text, &cfg);
+            }
+            log_info!(
+                "Applied redaction to {} transcript segment(s) before persistence",
+                transcripts_to_save.len()
+            );
+        }
+        Ok(_) => {} // disabled/no-op: leave segments verbatim
+        Err(e) => {
+            // Fail safe: do not persist unredacted PII if the policy said to redact
+            // but we could not read it. Surface a clear, content-free error.
+            log_error!(
+                "Failed to load redaction config before saving transcript: {}",
+                e
+            );
+            return Err(format!("Failed to load redaction configuration: {}", e));
+        }
+    }
+
     // Now, call the repository with the correctly typed data.
     match TranscriptsRepository::save_transcript(
         pool,
@@ -1322,6 +1350,69 @@ pub async fn api_get_custom_openai_config<R: Runtime>(
         Err(e) => {
             log_error!("❌ Failed to get custom OpenAI config: {}", e);
             Err(format!("Failed to get custom OpenAI configuration: {}", e))
+        }
+    }
+}
+
+/// Gets the current workspace's redaction policy (BACKLOG C6). Returns the
+/// disabled default when none is stored, so the frontend can render the toggle in
+/// its off state without special-casing "not configured". Redaction config is not
+/// identity, so the config value legitimately round-trips through the frontend.
+#[tauri::command]
+pub async fn api_get_redaction_config<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<crate::redaction::RedactionConfig, String> {
+    log_info!("api_get_redaction_config called");
+
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+
+    match SettingsRepository::get_redaction_config(pool, &ctx).await {
+        Ok(cfg) => {
+            // Log only non-sensitive shape (never the custom terms themselves).
+            log_info!(
+                "Loaded redaction config: enabled={}, default_patterns={}, custom_terms={}",
+                cfg.enabled,
+                cfg.use_default_patterns,
+                cfg.custom_terms.len()
+            );
+            Ok(cfg)
+        }
+        Err(e) => {
+            log_error!("Failed to get redaction config: {}", e);
+            Err(format!("Failed to get redaction configuration: {}", e))
+        }
+    }
+}
+
+/// Persists the current workspace's redaction policy (BACKLOG C6). Enabling this is
+/// opt-in; when enabled, transcript text is redacted before DB persistence and
+/// before it reaches a summary LLM provider. The custom terms are never logged.
+#[tauri::command]
+pub async fn api_set_redaction_config<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    config: crate::redaction::RedactionConfig,
+) -> Result<serde_json::Value, String> {
+    log_info!(
+        "api_set_redaction_config called: enabled={}, default_patterns={}, custom_terms={}",
+        config.enabled,
+        config.use_default_patterns,
+        config.custom_terms.len()
+    );
+
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+
+    match SettingsRepository::set_redaction_config(pool, &ctx, &config).await {
+        Ok(()) => Ok(serde_json::json!({
+            "status": "success",
+            "message": "Redaction configuration saved"
+        })),
+        Err(e) => {
+            log_error!("Failed to save redaction config: {}", e);
+            Err(format!("Failed to save redaction configuration: {}", e))
         }
     }
 }

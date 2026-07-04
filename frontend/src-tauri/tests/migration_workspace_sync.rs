@@ -286,10 +286,9 @@ async fn prior_migrator(dir: &Path) -> Migrator {
         "prior-migration copy must match the embedded set"
     );
     assert_eq!(
-        MIGRATOR.iter().filter(|m| m.version >= NEW_VERSION).count(),
+        MIGRATOR.iter().filter(|m| m.version == NEW_VERSION).count(),
         1,
-        "exactly one migration at/after NEW_VERSION expected; bump NEW_VERSION when \
-         a newer migration lands"
+        "the B2 migration under test (NEW_VERSION) must exist exactly once"
     );
     Migrator::new(dir).await.expect("resolve prior migrations")
 }
@@ -301,10 +300,9 @@ async fn fresh_db_gets_workspace_and_sync_columns() {
     let pool = open_temp(&db_path).await;
 
     MIGRATOR.run(&pool).await.expect("migrations on fresh db");
-    assert_eq!(
-        applied_versions(&pool).await.last().copied(),
-        Some(NEW_VERSION),
-        "newest migration must be applied"
+    assert!(
+        applied_versions(&pool).await.contains(&NEW_VERSION),
+        "the B2 migration (NEW_VERSION) must be applied"
     );
 
     for table in SYNCED_TABLES {
@@ -406,12 +404,16 @@ async fn populated_db_upgrade_backfills_and_preserves_data() {
     // 2) Upgrade with the real runner: exactly the new migration applies.
     MIGRATOR.run(&pool).await.expect("upgrade migration");
     let post_applied = applied_versions(&pool).await;
+    let new_migrations = MIGRATOR.iter().filter(|m| m.version >= NEW_VERSION).count();
     assert_eq!(
         post_applied.len(),
-        pre_applied.len() + 1,
-        "exactly one new migration"
+        pre_applied.len() + new_migrations,
+        "all migrations at/after NEW_VERSION apply on top of the priors"
     );
-    assert_eq!(post_applied.last().copied(), Some(NEW_VERSION));
+    assert!(
+        post_applied.contains(&NEW_VERSION),
+        "the B2 migration (NEW_VERSION) must be applied"
+    );
 
     // 3) Row counts unchanged.
     for (t, pre) in &pre_counts {
@@ -622,12 +624,16 @@ async fn real_populated_copy_upgrade_when_env_set() {
     MIGRATOR.run(&pool).await.expect("upgrade real copy");
 
     let post_applied = applied_versions(&pool).await;
+    let new_migrations = MIGRATOR.iter().filter(|m| m.version >= NEW_VERSION).count();
     assert_eq!(
         post_applied.len(),
-        pre_applied.len() + 1,
-        "exactly one new migration"
+        pre_applied.len() + new_migrations,
+        "all migrations at/after NEW_VERSION apply on top of the priors"
     );
-    assert_eq!(post_applied.last().copied(), Some(NEW_VERSION));
+    assert!(
+        post_applied.contains(&NEW_VERSION),
+        "the B2 migration (NEW_VERSION) must be applied"
+    );
 
     println!(
         "real-copy upgrade: applied {NEW_VERSION} on top of {} priors",

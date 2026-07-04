@@ -313,6 +313,31 @@ impl SummaryService {
         // every repository call below is scoped to this workspace.
         let ctx = crate::context::current();
 
+        // Opt-in PII/keyword redaction BEFORE the transcript reaches the LLM provider
+        // (BACKLOG C6, docs/SECURITY_PRIVACY.md LLM02). This is the key privacy
+        // boundary: for a cloud provider it stops PII leaving the device. Applied to
+        // the assembled `text` up front so every downstream use (language detection,
+        // cache fingerprint, and the provider call) sees the redacted text. Disabled
+        // (the default) => `is_active()` is false and `text` is unchanged. Redaction
+        // fingerprints differently, so a redacted run will not reuse an
+        // unredacted cache entry (and vice-versa) — correct by construction.
+        let text = match SettingsRepository::get_redaction_config(&pool, &ctx).await {
+            Ok(cfg) if cfg.is_active() => {
+                let redacted = crate::redaction::redact(&text, &cfg);
+                info!("Applied redaction to transcript text before summarization");
+                redacted
+            }
+            Ok(_) => text, // disabled/no-op
+            Err(e) => {
+                // Fail safe: if the policy could not be read, do not risk sending
+                // unredacted text to a (possibly cloud) provider. Mark the process
+                // failed with a content-free message.
+                let err_msg = format!("Failed to load redaction configuration: {}", e);
+                Self::update_process_failed(&pool, &ctx, &meeting_id, &err_msg).await;
+                return;
+            }
+        };
+
         // Register cancellation token for this meeting
         let cancellation_token = Self::register_cancellation_token(&meeting_id);
 
