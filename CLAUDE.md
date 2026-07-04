@@ -26,7 +26,7 @@
 
 **Is:** An offline-capable desktop app that records meetings / on-site conversations, transcribes them locally, produces structured, source-linked summaries and action items, and lets a user search and export them. Designed to grow into a team product (shared workspaces, admin, audit) and later a managed multi-tenant SaaS — **without abandoning local-first**.
 
-**Is not:** A cloud recorder that streams your audio to someone else's servers (that is the competitor category we differentiate from). Not a meeting bot that joins calls. Not an autonomous agent that takes irreversible actions without approval.
+**Is not:** A cloud recorder that streams your audio to someone else's servers (that is the competitor category we differentiate from). Not a meeting bot that joins calls **by default** — a call-joining bot may exist only as an explicit, consent-gated opt-in integration and the core never depends on it (ADR-0018). Not an autonomous agent that takes irreversible actions without approval.
 
 ---
 

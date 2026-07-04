@@ -118,7 +118,7 @@ Legend: **Agent** = `.claude/agents/` file · **Cmd** = `.claude/commands/`.
 
 ## EPIC F — On-device AI agents (Phase 1+, optional; only after gate C8)
 
-Backs the About "Coming soon: a library of on-device AI agents." Local-first, **draft-only (HITL)**, source-linked, tenant-scoped, **no autonomous external actions** (ADR-0013). A dormant seam already exists (`frontend/src-tauri/src/agents/`, off by default); these tasks turn it on in sequence. Meeting-platform (Zoom/Meet/Teams) *API* integration is intentionally **not** here — the app captures system audio and is not a meeting bot (`CLAUDE.md` §1).
+Backs the About "Coming soon: a library of on-device AI agents." Local-first, **draft-only (HITL)**, source-linked, tenant-scoped, **no autonomous external actions** (ADR-0013). A dormant seam already exists (`frontend/src-tauri/src/agents/`, off by default); these tasks turn it on in sequence. Meeting-platform (Zoom/Meet/Teams) *API* integration is intentionally **not** here — the app captures system audio and is not a meeting bot by default; opt-in integrations live in EPIC G (ADR-0018).
 
 ### F0 · ADR + agent boundaries ⛔ DESIGN GATE
 - Agent: rust-tauri-core-engineer + security-privacy-auditor · Cmd: — · depends-on: C8
@@ -143,6 +143,24 @@ Backs the About "Coming soon: a library of on-device AI agents." Local-first, **
 ### F5 · Opt-in scheduling / automation ⛔ GATE
 - Agent: rust-tauri-core-engineer + security-privacy-auditor · Cmd: /feature then /security-review · depends-on: F4
 - AC: optional scheduled runs; even then outputs are draft-by-default or require explicit per-action approval; fully offline; `/security-review` + multitenancy-guardian pass; **no autonomous irreversible action ships**.
+
+---
+
+## EPIC G — Opt-in Integrations (ADR-0018; the core stays connectionless)
+
+The app ships deliberately unconnected; an Integrations section lets the user consciously enable each connection after reading its terms. Everything here is OFF by default, per-workspace, and the app must remain fully functional (manual mode) with all of it off.
+
+### G1 · Integrations hub UI + consent framework
+- Agent: frontend-nextjs-engineer + security-privacy-auditor · Cmd: /feature then /security-review · depends-on: C8
+- AC: an Integrations section lists available integrations, each OFF by default; enabling shows that integration's scope/consent text which the user must explicitly accept (acceptance recorded per-workspace with timestamp); disconnect wipes local tokens/state; with everything off the app behaves exactly as before.
+
+### G2 · Calendar metadata (Google Calendar / Microsoft 365, read-only)
+- Agent: rust-tauri-core-engineer + frontend-nextjs-engineer · Cmd: /feature · depends-on: G1
+- AC: opt-in read-only calendar connection enriches meetings on-device (title/time/attendees; optional "meeting starting — record?" prompt); OAuth tokens in the OS keychain (ADR-0011 pattern); nothing transits bluedev infrastructure; offline or not-consented → manual naming unchanged; privacy policy gains an Integrations section.
+
+### G3 · Meeting bot (Zoom/Teams/Meet auto-join) ⛔ needs its own ADR before code
+- Agent: sync-server-architect + security-privacy-auditor · Cmd: — (design first) · depends-on: G1, D5
+- AC (frame only, per ADR-0018 Tier 2): bot joins only meetings the user connected and consented to; announces itself in-call; media path, processor role (DPA), retention and EU residency (E2) documented; per-integration kill switch; a detailed ADR + /security-review precede any implementation.
 
 ---
 
