@@ -372,6 +372,35 @@ pub async fn api_process_transcript<R: Runtime>(
 
     let ctx = crate::context::current();
 
+    // Opt-in PII/keyword redaction BEFORE the raw transcript is persisted at rest
+    // (BACKLOG C6). `text` here is the verbatim in-memory transcript from the
+    // frontend — NOT re-read from the already-redacted `transcripts` rows — and the
+    // `save_transcript_data` write below lands it in `transcript_chunks` (durable,
+    // full-text, and on the B4 sync allowlist). Redact ONCE here and rebind `text`
+    // so the SAME redacted value flows to BOTH the `transcript_chunks` write and the
+    // spawned summary task; the task's own redaction in service.rs then becomes an
+    // idempotent no-op (kept for defense-in-depth). Disabled (the default) leaves
+    // `text` unchanged. Fail safe: if the policy cannot be read, abort BEFORE the
+    // write rather than persist raw text. Never logs the text or the term list.
+    let text =
+        match crate::database::repositories::setting::SettingsRepository::get_redaction_config(
+            &pool, &ctx,
+        )
+        .await
+        {
+            Ok(cfg) if cfg.is_active() => {
+                let redacted = crate::redaction::redact(&text, &cfg);
+                log_info!(
+                    "Applied redaction to transcript text before persisting transcript_chunks"
+                );
+                redacted
+            }
+            Ok(_) => text, // disabled/no-op
+            Err(e) => {
+                return Err(format!("Failed to load redaction configuration: {}", e));
+            }
+        };
+
     // Create or reset the process entry in the database
     SummaryProcessesRepository::create_or_reset_process(&pool, &ctx, &m_id)
         .await

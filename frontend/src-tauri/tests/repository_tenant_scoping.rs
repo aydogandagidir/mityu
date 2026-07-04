@@ -1013,3 +1013,141 @@ async fn search_covers_transcripts_and_summaries_scoped_by_workspace() {
 
     pool.close().await;
 }
+
+/// Read back the persisted full text of a meeting's `transcript_chunks` row.
+async fn read_chunk_text(pool: &SqlitePool, meeting_id: &str) -> String {
+    sqlx::query_scalar::<_, String>(
+        "SELECT transcript_text FROM transcript_chunks WHERE meeting_id = ?",
+    )
+    .bind(meeting_id)
+    .fetch_one(pool)
+    .await
+    .expect("transcript_chunks row must exist")
+}
+
+/// Guards the C6 at-rest gap the security review flagged: `api_process_transcript`
+/// persists the verbatim in-memory transcript into `transcript_chunks` (durable,
+/// full-text, on the B4 sync allowlist) via `save_transcript_data`. This test
+/// replicates that command's exact **redact-then-write** sequence (fetch the
+/// workspace redaction config, `redact` when active, then persist) and proves:
+///   - with redaction ENABLED, the text landed in `transcript_chunks` is redacted
+///     (the raw PII is gone and it equals the pure `redact()` output — the same
+///     value the command also hands to the background summary task, so both sinks
+///     agree end-to-end);
+///   - with redaction DISABLED (the default), the raw text is persisted verbatim
+///     (non-breaking).
+#[tokio::test]
+async fn process_transcript_redacts_chunks_at_rest_when_enabled() {
+    use app_lib::redaction::{self, RedactionConfig};
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("redaction_chunks.sqlite")).await;
+    let local = AuthContext::local();
+
+    let raw = "Contact jane.doe@example.com about invoice 4242 4242 4242 4242";
+
+    // transcript_chunks.meeting_id is FK -> meetings(id); create real meetings via
+    // the repository first (each returns a minted `meeting-{uuid}` id).
+    let meeting_off = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "Off",
+        &[segment("transcript-off", "seed", 0.0, 1.0)],
+        None,
+    )
+    .await
+    .expect("create meeting (disabled case)");
+    let meeting_on = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "On",
+        &[segment("transcript-on", "seed", 0.0, 1.0)],
+        None,
+    )
+    .await
+    .expect("create meeting (enabled case)");
+
+    // --- DISABLED (default): raw text must persist verbatim -------------------
+    let cfg_off = SettingsRepository::get_redaction_config(&pool, &local)
+        .await
+        .expect("default redaction config");
+    assert!(!cfg_off.is_active(), "redaction must be OFF by default");
+    // Mirror the command: when inactive, `text` passes through unchanged.
+    let text_off = if cfg_off.is_active() {
+        redaction::redact(raw, &cfg_off)
+    } else {
+        raw.to_string()
+    };
+    TranscriptChunksRepository::save_transcript_data(
+        &pool,
+        &local,
+        &meeting_off,
+        chunk_data(&text_off),
+    )
+    .await
+    .expect("save chunk (disabled)");
+    assert_eq!(
+        read_chunk_text(&pool, &meeting_off).await,
+        raw,
+        "with redaction OFF the verbatim transcript must persist unchanged"
+    );
+
+    // --- ENABLED: chunk text must be redacted at rest ------------------------
+    let enabled = RedactionConfig {
+        enabled: true,
+        use_default_patterns: true,
+        custom_terms: vec!["invoice".to_string()],
+    };
+    SettingsRepository::set_redaction_config(&pool, &local, &enabled)
+        .await
+        .expect("persist enabled redaction config");
+
+    // Re-read via the repository (the command reads, it does not trust the caller).
+    let cfg_on = SettingsRepository::get_redaction_config(&pool, &local)
+        .await
+        .expect("stored redaction config");
+    assert!(cfg_on.is_active(), "stored config must be active");
+
+    // Mirror the command's single rebind: this exact value flows to BOTH the
+    // transcript_chunks write and (in production) the spawned summary task.
+    let text_on = if cfg_on.is_active() {
+        redaction::redact(raw, &cfg_on)
+    } else {
+        raw.to_string()
+    };
+    TranscriptChunksRepository::save_transcript_data(
+        &pool,
+        &local,
+        &meeting_on,
+        chunk_data(&text_on),
+    )
+    .await
+    .expect("save chunk (enabled)");
+
+    let stored = read_chunk_text(&pool, &meeting_on).await;
+    // The persisted text equals the pure redactor output (both sinks agree).
+    assert_eq!(
+        stored,
+        redaction::redact(raw, &cfg_on),
+        "persisted chunk text must equal the redactor output"
+    );
+    // And the raw PII / custom term must NOT be at rest.
+    assert!(
+        !stored.contains("jane.doe@example.com"),
+        "email must not remain in transcript_chunks: {stored:?}"
+    );
+    assert!(
+        !stored.contains("4242 4242 4242 4242"),
+        "card must not remain in transcript_chunks: {stored:?}"
+    );
+    assert!(
+        !stored.to_lowercase().contains("invoice"),
+        "custom term must not remain in transcript_chunks: {stored:?}"
+    );
+    assert!(
+        stored.contains("[EMAIL]") && stored.contains("[CARD]") && stored.contains("[REDACTED]"),
+        "expected typed placeholders in persisted text: {stored:?}"
+    );
+
+    pool.close().await;
+}
