@@ -30,6 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        # pnpm major must match frontend/pnpm-lock.yaml (lockfileVersion 9.0 = pnpm >= 9)
+        with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: lts/*, cache: pnpm, cache-dependency-path: frontend/pnpm-lock.yaml }
       - run: pnpm install --frozen-lockfile

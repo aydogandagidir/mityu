@@ -108,7 +108,8 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 8
+          # must match frontend/pnpm-lock.yaml (lockfileVersion 9.0 = pnpm >= 9)
+          version: 10
           run_install: false
 
       - name: Setup Node
