@@ -1,8 +1,10 @@
 use crate::database::repositories::{
-    meeting::MeetingsRepository, summary::SummaryProcessesRepository,
+    action_item::ActionItemsRepository, meeting::MeetingsRepository,
+    summary::SummaryProcessesRepository, summary_draft::SummariesRepository,
     transcript_chunk::TranscriptChunksRepository,
 };
 use crate::state::AppState;
+use crate::summary::draft::{ActionItemDraft, BlockStatus, MeetingNotesDraft, SummaryStatus};
 use crate::summary::language_detection::{detect_summary_language, SummaryLanguageDetection};
 use crate::summary::metadata::{
     read_detected_summary_language_from_metadata, read_summary_language_from_metadata,
@@ -518,5 +520,440 @@ pub async fn api_cancel_summary<R: Runtime>(
             "message": "No active summary generation to cancel",
             "meeting_id": meeting_id,
         }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// C1.5 — HITL commands for source-linked summary drafts
+// (BACKLOG C1.5; docs/CONTRACTS.md §4 approval rule; ADR-0019).
+//
+// Thin Tauri wrappers over the C1.3 tenant-scoped repositories
+// (`SummariesRepository` / `ActionItemsRepository`). Every command:
+//   - resolves identity ONLY via `crate::context::current()` — the frontend
+//     never supplies `workspace_id`/`user_id` (ADR-0010, docs/MULTITENANCY.md
+//     rule 2; `AuthContext` deliberately is not `Deserialize`);
+//   - is ALWAYS active — HITL/approval enforcement is never behind the C1.4
+//     `structured` generation flag (that flag only gates draft *generation*);
+//   - maps `SummaryDraftError` to a CONTENT-FREE `String` via
+//     [`summary_draft_err`] (the typed error itself already carries ids/counts
+//     only — never block or transcript text — CLAUDE.md §0.6); and
+//   - returns `Ok(false)` verbatim from the repository for an illegal
+//     transition / not-found / cross-workspace no-op (no error, no leak).
+//
+// The repositories own ALL business rules (the §4 status machine,
+// approve-time source re-resolution, "any block mutation de-approves the
+// summary", soft-delete/scoping); these wrappers add NO logic beyond identity
+// resolution and error mapping.
+// ---------------------------------------------------------------------------
+
+/// Content-free mapping of a repository [`SummaryDraftError`] to the `String`
+/// error surfaced to the frontend. The `Display` impl of every variant is
+/// ids/counts/status-tokens only (see `summary_draft.rs`), so this never leaks
+/// meeting content into the Tauri error channel or the logs.
+fn summary_draft_err(
+    err: crate::database::repositories::summary_draft::SummaryDraftError,
+) -> String {
+    err.to_string()
+}
+
+/// The read-side payload for one meeting's structured, source-linked summary
+/// draft plus its extracted action items (C1.5).
+///
+/// `draft` is `None` when the meeting has no (live) `summaries` row — a meeting
+/// that was never summarized, or whose summary was soft-deleted. In that case
+/// the HITL lifecycle fields are all `None`/`Draft` and `action_items` may
+/// still be non-empty (action items live in their own table).
+#[derive(Debug, Serialize)]
+pub struct SummaryDraftResponse {
+    /// The §4 [`MeetingNotesDraft`] hydrated from storage, or `None` when there
+    /// is no summary row for this meeting in this workspace.
+    pub draft: Option<MeetingNotesDraft>,
+    /// Summary-level HITL status (`draft` when there is no row).
+    pub status: SummaryStatus,
+    /// Provider/model that generated the draft, if recorded.
+    pub model: Option<String>,
+    /// Summary template used, if recorded.
+    pub template_id: Option<String>,
+    /// When the draft was (re)generated (RFC 3339, as stored).
+    pub generated_at: Option<String>,
+    /// When a human approved the summary (RFC 3339, as stored).
+    pub approved_at: Option<String>,
+    /// Who approved the summary (`AuthContext::user_id` at approve time).
+    pub approved_by: Option<String>,
+    /// The meeting's live action-item drafts, in display order (§4 shape).
+    pub action_items: Vec<ActionItemDraft>,
+}
+
+/// Reads the meeting's structured summary draft (§4) and its live action items.
+///
+/// Identity is resolved via `context::current()`; both reads are
+/// workspace-scoped and exclude soft-deleted rows. A meeting with no summary
+/// row yields `draft: None` (not an error). Repository errors map to a
+/// content-free `String`.
+///
+/// TS binding: `invoke("api_get_summary_draft", { meetingId })
+///   -> SummaryDraftResponse`.
+#[tauri::command]
+pub async fn api_get_summary_draft(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+) -> Result<SummaryDraftResponse, String> {
+    log_info!(
+        "api_get_summary_draft called for meeting_id: {}",
+        meeting_id
+    );
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+
+    let summary = SummariesRepository::get_by_meeting(pool, &ctx, &meeting_id)
+        .await
+        .map_err(summary_draft_err)?;
+
+    // Action items are their own table: present even when there is no summary.
+    let action_items = ActionItemsRepository::list_by_meeting(pool, &ctx, &meeting_id)
+        .await
+        .map_err(summary_draft_err)?
+        .into_iter()
+        .map(|row| ActionItemDraft {
+            id: row.id,
+            text: row.text,
+            assignee: row.assignee,
+            due: row.due,
+            status: row.status,
+            source_chunk_id: row.source_chunk_id,
+        })
+        .collect();
+
+    Ok(match summary {
+        Some(row) => SummaryDraftResponse {
+            draft: Some(row.draft),
+            status: row.status,
+            model: row.model,
+            template_id: row.template_id,
+            generated_at: row.generated_at,
+            approved_at: row.approved_at,
+            approved_by: row.approved_by,
+            action_items,
+        },
+        None => SummaryDraftResponse {
+            draft: None,
+            status: SummaryStatus::Draft,
+            model: None,
+            template_id: None,
+            generated_at: None,
+            approved_at: None,
+            approved_by: None,
+            action_items,
+        },
+    })
+}
+
+/// Human APPROVE of one summary block. The repository re-validates that the
+/// block's `source_chunk_id` still resolves NOW (retranscription may have
+/// removed the cited segment — ADR-0019). `Ok(false)` = illegal transition,
+/// unknown block, no summary in this workspace, or stale evidence.
+///
+/// TS binding: `invoke("api_approve_summary_block", { meetingId, blockId })
+///   -> boolean`.
+#[tauri::command]
+pub async fn api_approve_summary_block(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    block_id: String,
+) -> Result<bool, String> {
+    log_info!(
+        "api_approve_summary_block called for meeting_id: {}, block_id: {}",
+        meeting_id,
+        block_id
+    );
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Approved)
+        .await
+        .map_err(summary_draft_err)
+}
+
+/// Human REJECT of one summary block. `Ok(false)` = illegal transition,
+/// unknown block, or no summary in this workspace.
+///
+/// TS binding: `invoke("api_reject_summary_block", { meetingId, blockId })
+///   -> boolean`.
+#[tauri::command]
+pub async fn api_reject_summary_block(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    block_id: String,
+) -> Result<bool, String> {
+    log_info!(
+        "api_reject_summary_block called for meeting_id: {}, block_id: {}",
+        meeting_id,
+        block_id
+    );
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Rejected)
+        .await
+        .map_err(summary_draft_err)
+}
+
+/// Human EDIT of one summary block's content. NEVER touches `source_chunk_id`
+/// (the evidence anchor is immutable — §4); the first edit preserves the
+/// generated text and the summary drops back to draft (repository invariant).
+/// `Ok(false)` = unknown block, no summary in this workspace, or the block is
+/// rejected (restore to draft first).
+///
+/// TS binding: `invoke("api_edit_summary_block", { meetingId, blockId, content })
+///   -> boolean`.
+#[tauri::command]
+pub async fn api_edit_summary_block(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    block_id: String,
+    content: String,
+) -> Result<bool, String> {
+    log_info!(
+        "api_edit_summary_block called for meeting_id: {}, block_id: {}",
+        meeting_id,
+        block_id
+    );
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    SummariesRepository::edit_block(pool, &ctx, &meeting_id, &block_id, &content)
+        .await
+        .map_err(summary_draft_err)
+}
+
+/// Human RESTORE of one rejected summary block back to draft (`rejected ->
+/// draft`, the only legal arc out of rejected). `Ok(false)` = illegal
+/// transition, unknown block, or no summary in this workspace.
+///
+/// TS binding: `invoke("api_restore_summary_block", { meetingId, blockId })
+///   -> boolean`.
+#[tauri::command]
+pub async fn api_restore_summary_block(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    block_id: String,
+) -> Result<bool, String> {
+    log_info!(
+        "api_restore_summary_block called for meeting_id: {}, block_id: {}",
+        meeting_id,
+        block_id
+    );
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Draft)
+        .await
+        .map_err(summary_draft_err)
+}
+
+/// The explicit HUMAN approval of a whole summary (docs/CONTRACTS.md §4). The
+/// repository enforces the gate AT THIS MOMENT: at least one non-rejected
+/// block, every non-rejected block Approved, and every such block's
+/// `source_chunk_id` still resolves (ADR-0019). `Ok(false)` on any gate
+/// failure; on success the row is stamped `approved_at`/`approved_by`.
+///
+/// TS binding: `invoke("api_approve_summary", { meetingId }) -> boolean`.
+#[tauri::command]
+pub async fn api_approve_summary(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+) -> Result<bool, String> {
+    log_info!("api_approve_summary called for meeting_id: {}", meeting_id);
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    SummariesRepository::approve_summary(pool, &ctx, &meeting_id)
+        .await
+        .map_err(summary_draft_err)
+}
+
+/// Human APPROVE of one action item. The repository re-validates the item's
+/// `source_chunk_id` NOW (ADR-0019). `Ok(false)` = illegal transition, unknown
+/// item in this workspace, or stale evidence.
+///
+/// TS binding: `invoke("api_approve_action_item", { itemId }) -> boolean`.
+#[tauri::command]
+pub async fn api_approve_action_item(
+    state: tauri::State<'_, AppState>,
+    item_id: String,
+) -> Result<bool, String> {
+    log_info!("api_approve_action_item called for item_id: {}", item_id);
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Approved)
+        .await
+        .map_err(summary_draft_err)
+}
+
+/// Human REJECT of one action item. `Ok(false)` = illegal transition or
+/// unknown item in this workspace.
+///
+/// TS binding: `invoke("api_reject_action_item", { itemId }) -> boolean`.
+#[tauri::command]
+pub async fn api_reject_action_item(
+    state: tauri::State<'_, AppState>,
+    item_id: String,
+) -> Result<bool, String> {
+    log_info!("api_reject_action_item called for item_id: {}", item_id);
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Rejected)
+        .await
+        .map_err(summary_draft_err)
+}
+
+/// Human RESTORE of one rejected action item back to draft (`rejected ->
+/// draft`). `Ok(false)` = illegal transition or unknown item in this workspace.
+///
+/// TS binding: `invoke("api_restore_action_item", { itemId }) -> boolean`.
+#[tauri::command]
+pub async fn api_restore_action_item(
+    state: tauri::State<'_, AppState>,
+    item_id: String,
+) -> Result<bool, String> {
+    log_info!("api_restore_action_item called for item_id: {}", item_id);
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Draft)
+        .await
+        .map_err(summary_draft_err)
+}
+
+/// A tri-state patch for one nullable action-item field over the Tauri wire.
+///
+/// DEVIATION (documented): the C1.3 `ActionItemsRepository::edit` distinguishes
+/// three intents per nullable field — leave unchanged / clear / set — via
+/// `Option<Option<&str>>`. That double-`Option` does NOT survive JSON: serde
+/// collapses an absent key and an explicit `null` to the same `None`, losing
+/// the "clear" vs "leave unchanged" distinction across the boundary. Rather
+/// than change the repository signature, the command layer models each patch as
+/// this explicit, unambiguous enum and lowers it back to `Option<Option<&str>>`
+/// for the repository. Wire form (serde `snake_case`, internally tagged):
+///   `{ "op": "keep" }` — leave unchanged (the default when the whole field is
+///     omitted from `FieldPatch`),
+///   `{ "op": "clear" }` — set to NULL,
+///   `{ "op": "set", "value": "..." }` — set to the given string.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum FieldPatch {
+    /// Leave the stored value unchanged (repository `None`).
+    Keep,
+    /// Clear the stored value to NULL (repository `Some(None)`).
+    Clear,
+    /// Replace the stored value (repository `Some(Some(value))`).
+    Set {
+        /// The new value.
+        value: String,
+    },
+}
+
+impl FieldPatch {
+    /// Lower this wire patch to the repository's `Option<Option<&str>>` intent.
+    fn as_repo_patch(&self) -> Option<Option<&str>> {
+        match self {
+            FieldPatch::Keep => None,
+            FieldPatch::Clear => Some(None),
+            FieldPatch::Set { value } => Some(Some(value.as_str())),
+        }
+    }
+}
+
+/// The typed request for [`api_edit_action_item`]. Absent fields default to
+/// [`FieldPatch::Keep`] / no-op, so a caller sends only what it wants to
+/// change.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditActionItemRequest {
+    /// New action text; `None`/absent leaves it unchanged.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Assignee patch (keep / clear / set); absent = keep.
+    #[serde(default = "field_patch_keep")]
+    pub assignee: FieldPatch,
+    /// Due-date patch (keep / clear / set); absent = keep.
+    #[serde(default = "field_patch_keep")]
+    pub due: FieldPatch,
+}
+
+/// serde default for an omitted [`FieldPatch`] (a `Default` derive is avoided so
+/// the wire vocabulary stays the single source of truth for the variants).
+fn field_patch_keep() -> FieldPatch {
+    FieldPatch::Keep
+}
+
+/// Human EDIT of one action item (patch semantics). NEVER touches
+/// `source_chunk_id` (§4); the first text edit preserves the generated text and
+/// flips status to `edited` (repository invariant). `Ok(false)` = nothing to
+/// change, unknown item in this workspace, or the item is rejected (restore to
+/// draft first).
+///
+/// TS binding: `invoke("api_edit_action_item", { itemId, req: { text?,
+///   assignee?: { op:'keep'|'clear'|'set', value? },
+///   due?: { op:'keep'|'clear'|'set', value? } } }) -> boolean`. The `req`
+/// object mirrors the C1.3 patch intents; omit a field to leave it unchanged.
+#[tauri::command]
+pub async fn api_edit_action_item(
+    state: tauri::State<'_, AppState>,
+    item_id: String,
+    req: EditActionItemRequest,
+) -> Result<bool, String> {
+    log_info!("api_edit_action_item called for item_id: {}", item_id);
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    ActionItemsRepository::edit(
+        pool,
+        &ctx,
+        &item_id,
+        req.text.as_deref(),
+        req.assignee.as_repo_patch(),
+        req.due.as_repo_patch(),
+    )
+    .await
+    .map_err(summary_draft_err)
+}
+
+#[cfg(test)]
+mod hitl_command_types_tests {
+    use super::*;
+
+    /// The wire vocabulary for [`FieldPatch`] lowers to the exact repository
+    /// `Option<Option<&str>>` intents — the whole reason this enum exists is to
+    /// keep "clear" distinct from "keep" across JSON (which double-`Option`
+    /// cannot).
+    #[test]
+    fn field_patch_lowers_to_repo_intents() {
+        assert_eq!(FieldPatch::Keep.as_repo_patch(), None);
+        assert_eq!(FieldPatch::Clear.as_repo_patch(), Some(None));
+        assert_eq!(
+            FieldPatch::Set {
+                value: "ayse".to_string()
+            }
+            .as_repo_patch(),
+            Some(Some("ayse"))
+        );
+    }
+
+    /// An absent key, an explicit `keep`, `clear`, and `set` all deserialize to
+    /// the intended patch — and, critically, `clear` and an omitted field are
+    /// DIFFERENT (the bug the typed request struct exists to prevent).
+    #[test]
+    fn edit_request_distinguishes_clear_from_omitted() {
+        let omitted: EditActionItemRequest =
+            serde_json::from_str(r#"{ "text": "new text" }"#).expect("omitted patches parse");
+        assert_eq!(omitted.text.as_deref(), Some("new text"));
+        assert_eq!(omitted.assignee.as_repo_patch(), None, "omitted = keep");
+        assert_eq!(omitted.due.as_repo_patch(), None, "omitted = keep");
+
+        let explicit: EditActionItemRequest = serde_json::from_str(
+            r#"{ "assignee": { "op": "clear" }, "due": { "op": "set", "value": "Friday" } }"#,
+        )
+        .expect("explicit patches parse");
+        assert_eq!(explicit.text, None);
+        assert_eq!(
+            explicit.assignee.as_repo_patch(),
+            Some(None),
+            "explicit clear must be Some(None), NOT None"
+        );
+        assert_eq!(explicit.due.as_repo_patch(), Some(Some("Friday")));
     }
 }

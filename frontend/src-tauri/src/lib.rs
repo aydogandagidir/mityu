@@ -690,6 +690,17 @@ pub fn run() {
             summary::commands::api_save_meeting_detected_summary_language,
             summary::commands::api_detect_transcript_summary_language,
             summary::commands::api_cancel_summary,
+            // C1.5 HITL commands (source-linked draft review/approval; ADR-0019)
+            summary::commands::api_get_summary_draft,
+            summary::commands::api_approve_summary_block,
+            summary::commands::api_reject_summary_block,
+            summary::commands::api_edit_summary_block,
+            summary::commands::api_restore_summary_block,
+            summary::commands::api_approve_summary,
+            summary::commands::api_approve_action_item,
+            summary::commands::api_reject_action_item,
+            summary::commands::api_restore_action_item,
+            summary::commands::api_edit_action_item,
             // Template commands
             summary::template_commands::api_list_templates,
             summary::template_commands::api_get_template_details,
