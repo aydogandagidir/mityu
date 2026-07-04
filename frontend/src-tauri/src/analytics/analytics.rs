@@ -639,4 +639,20 @@ mod tests {
         assert!(properties.contains_key("timestamp"));
         assert!(!properties.contains_key("meeting_title"));
     }
+
+    #[tokio::test]
+    async fn client_without_api_key_stays_disabled_and_noops() {
+        // Even with enabled=true, an empty key must yield a no-op client —
+        // the guard init_analytics relies on when no build-time key exists.
+        let config = AnalyticsConfig {
+            api_key: String::new(),
+            enabled: true,
+            ..AnalyticsConfig::default()
+        };
+        let client = AnalyticsClient::new(config).await;
+
+        assert!(!client.is_enabled());
+        assert!(client.track_event("noop_probe", None).await.is_ok());
+        assert!(client.identify("user".to_string(), None).await.is_ok());
+    }
 }

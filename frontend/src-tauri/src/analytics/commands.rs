@@ -7,12 +7,31 @@ use tauri::command;
 static ANALYTICS_CLIENT: std::sync::Mutex<Option<Arc<AnalyticsClient>>> =
     std::sync::Mutex::new(None);
 
+/// PostHog project key, injected at build time via `MITYU_POSTHOG_API_KEY`.
+/// Must be a Mityu-owned project key — never hardcode one here. Unset/empty ⇒
+/// opting in still records the preference, but telemetry stays a local no-op
+/// (see docs/RELEASE_CHECKLIST.md §6).
+const POSTHOG_API_KEY: Option<&str> = option_env!("MITYU_POSTHOG_API_KEY");
+
+/// Treat an unset, empty, or whitespace-only build-time key as "no key".
+fn effective_api_key(raw: Option<&str>) -> Option<&str> {
+    raw.map(str::trim).filter(|key| !key.is_empty())
+}
+
 #[command]
 pub async fn init_analytics() -> Result<(), String> {
-    let config = AnalyticsConfig {
-        api_key: "phc_Aa9PqeCkDkVbtbRsYjtmHANBfcscjCVupxZwrtL5vZ77".to_string(),
-        host: Some("https://us.i.posthog.com".to_string()),
-        enabled: true,
+    let config = match effective_api_key(POSTHOG_API_KEY) {
+        Some(key) => AnalyticsConfig {
+            api_key: key.to_string(),
+            enabled: true,
+            ..AnalyticsConfig::default()
+        },
+        None => {
+            log::info!(
+                "analytics: opt-in recorded, but no MITYU_POSTHOG_API_KEY was set at build time; telemetry is a no-op"
+            );
+            AnalyticsConfig::default()
+        }
     };
 
     let client = Arc::new(AnalyticsClient::new(config).await);
@@ -417,5 +436,18 @@ pub async fn is_analytics_session_active() -> bool {
         client.is_session_active().await
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_api_key;
+
+    #[test]
+    fn effective_api_key_filters_unset_empty_and_whitespace() {
+        assert_eq!(effective_api_key(None), None);
+        assert_eq!(effective_api_key(Some("")), None);
+        assert_eq!(effective_api_key(Some("   ")), None);
+        assert_eq!(effective_api_key(Some(" phc_test ")), Some("phc_test"));
     }
 }

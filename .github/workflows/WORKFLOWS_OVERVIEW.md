@@ -300,6 +300,7 @@ All workflows require these secrets to be configured:
 - `MEETILY_RSA_PUBLIC_KEY` - License validation public key
 - `SUPABASE_URL` - Online license verification
 - `SUPABASE_ANON_KEY` - Supabase anonymous key
+- `MITYU_POSTHOG_API_KEY` - Mityu-owned PostHog project key (embedded at build time; unset = telemetry no-op)
 
 ---
 

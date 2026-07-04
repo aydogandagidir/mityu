@@ -86,3 +86,12 @@ The plaintext→SQLCipher conversion (`encryption::ensure_encrypted`) checkpoint
 ```powershell
 taskkill /F /IM mityu.exe 2>$null ; taskkill /F /IM cargo.exe 2>$null
 ```
+
+## 6. Telemetry (PostHog) project key — pre-GA gate
+
+Until 2026-07-04 `frontend/src-tauri/src/analytics/commands.rs` hardcoded **upstream Meetily's** PostHog key — an opted-in user's telemetry went to the upstream vendor's project (ADR-0016). The key is now **build-time injected** and absent by default:
+
+- Source: `MITYU_POSTHOG_API_KEY`, read at **compile time** (`option_env!`) in `analytics/commands.rs`. Unset/empty ⇒ opting in still records the preference, but telemetry is a local no-op (nothing is sent anywhere).
+- Local/dev builds: leave it unset — telemetry-silent by construction.
+- Release builds: create a **bluedev-owned** PostHog project, then add the GitHub secret `MITYU_POSTHOG_API_KEY` (already wired into the `env:` of every `build*.yml` tauri-action step). Deciding NOT to set it is acceptable (binaries ship telemetry-off) — but decide deliberately.
+- Invariants that must hold either way (CLAUDE.md §3): analytics is opt-in only (default OFF), no transcript/meeting content in events (`SENSITIVE_ANALYTICS_KEYS` strip), and fully disableable in-app.

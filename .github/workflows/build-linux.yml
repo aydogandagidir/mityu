@@ -210,6 +210,8 @@ jobs:
           # Supabase configuration (for online license verification)
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Mityu PostHog project key (embedded at build time; unset => telemetry no-op)
+          MITYU_POSTHOG_API_KEY: ${{ secrets.MITYU_POSTHOG_API_KEY }}
         with:
           projectPath: frontend
           args: --target x86_64-unknown-linux-gnu --features openblas ${{ steps.build-profile.outputs.args }}

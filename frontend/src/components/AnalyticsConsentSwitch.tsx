@@ -5,6 +5,7 @@ import { Info, Loader2, Copy, Check } from 'lucide-react';
 import { AnalyticsContext } from './AnalyticsProvider';
 import { load } from '@tauri-apps/plugin-store';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { Analytics } from '@/lib/analytics';
 import AnalyticsDataModal from './AnalyticsDataModal';
 
@@ -93,8 +94,9 @@ export default function AnalyticsConsentSwitch() {
         await Analytics.init();
 
         // Identify user with enhanced properties immediately after init
+        const appVersion = await getVersion().catch(() => 'unknown');
         await Analytics.identify(userId, {
-          app_version: '0.4.0',
+          app_version: appVersion,
           platform: 'tauri',
           first_seen: new Date().toISOString(),
           os: navigator.platform,
