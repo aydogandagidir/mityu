@@ -6,6 +6,7 @@ import { FolderOpen } from "lucide-react"
 import { invoke } from "@tauri-apps/api/core"
 import Analytics from "@/lib/analytics"
 import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch"
+import RecordingConsentSettings from "./RecordingConsentSettings"
 import RedactionSettings from "./RedactionSettings"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 
@@ -219,6 +220,11 @@ export function PreferenceSettings() {
             <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
           </p>
         </div>
+      </div>
+
+      {/* Recording Consent Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+        <RecordingConsentSettings />
       </div>
 
       {/* Redaction Section */}

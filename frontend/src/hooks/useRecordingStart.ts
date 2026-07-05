@@ -4,6 +4,7 @@ import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { useConfig } from '@/contexts/ConfigContext';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
+import { useRecordingConsent } from '@/contexts/RecordingConsentContext';
 import { recordingService } from '@/services/recordingService';
 import Analytics from '@/lib/analytics';
 import { showRecordingNotification } from '@/lib/recordingNotification';
@@ -36,6 +37,10 @@ export function useRecordingStart(
   const { setIsMeetingActive } = useSidebar();
   const { selectedDevices } = useConfig();
   const { setStatus } = useRecordingState();
+  // C5: pre-recording multi-party consent gate. Awaited at the top of every
+  // start path; resolves false when the user cancels/dismisses, which aborts
+  // the start before any capture is triggered.
+  const { ensureRecordingConsent } = useRecordingConsent();
 
   // Generate meeting title with timestamp
   const generateMeetingTitle = useCallback(() => {
@@ -82,7 +87,19 @@ export function useRecordingStart(
   // Handle manual recording start (from button click)
   const handleRecordingStart = useCallback(async () => {
     try {
-      console.log('handleRecordingStart called - checking Parakeet model status');
+      console.log('handleRecordingStart called - checking recording consent');
+
+      // C5: gate on multi-party consent BEFORE any capture is triggered.
+      // Shows the reminder only if the local gate requires it; a cancel aborts
+      // the start cleanly (return to IDLE, no backend call).
+      const consented = await ensureRecordingConsent();
+      if (!consented) {
+        console.log('Recording start cancelled at consent gate');
+        setStatus(RecordingStatus.IDLE);
+        return;
+      }
+
+      console.log('Consent confirmed - checking Parakeet model status');
 
       // Check if Parakeet transcription model is ready before starting
       const parakeetReady = await checkParakeetReady();
@@ -141,7 +158,7 @@ export function useRecordingStart(
       // Re-throw so RecordingControls can handle device-specific errors
       throw error;
     }
-  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkParakeetReady, checkIfModelDownloading, selectedDevices, showModal, setStatus]);
+  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkParakeetReady, checkIfModelDownloading, selectedDevices, showModal, setStatus, ensureRecordingConsent]);
 
   // Check for autoStartRecording flag and start recording automatically
   useEffect(() => {
@@ -152,6 +169,15 @@ export function useRecordingStart(
           console.log('Auto-starting recording from navigation...');
           setIsAutoStarting(true);
           sessionStorage.removeItem('autoStartRecording'); // Clear the flag
+
+          // C5: gate on multi-party consent BEFORE any capture is triggered.
+          const consented = await ensureRecordingConsent();
+          if (!consented) {
+            console.log('Auto-start cancelled at consent gate');
+            setStatus(RecordingStatus.IDLE);
+            setIsAutoStarting(false);
+            return;
+          }
 
           // Check if Parakeet transcription model is ready before starting
           const parakeetReady = await checkParakeetReady();
@@ -228,6 +254,7 @@ export function useRecordingStart(
     checkIfModelDownloading,
     showModal,
     setStatus,
+    ensureRecordingConsent,
   ]);
 
   // Listen for direct recording trigger from sidebar when already on home page
@@ -238,8 +265,19 @@ export function useRecordingStart(
         return;
       }
 
-      console.log('Direct start from sidebar - checking Parakeet model status');
+      console.log('Direct start from sidebar - checking recording consent');
       setIsAutoStarting(true);
+
+      // C5: gate on multi-party consent BEFORE any capture is triggered.
+      const consented = await ensureRecordingConsent();
+      if (!consented) {
+        console.log('Direct start cancelled at consent gate');
+        setStatus(RecordingStatus.IDLE);
+        setIsAutoStarting(false);
+        return;
+      }
+
+      console.log('Consent confirmed - checking Parakeet model status');
 
       // Check if Parakeet transcription model is ready before starting
       const parakeetReady = await checkParakeetReady();
@@ -317,6 +355,7 @@ export function useRecordingStart(
     checkIfModelDownloading,
     showModal,
     setStatus,
+    ensureRecordingConsent,
   ]);
 
   return {
