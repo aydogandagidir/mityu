@@ -11,7 +11,7 @@ import { SummaryUpdaterButtonGroup } from './SummaryUpdaterButtonGroup';
 import Analytics from '@/lib/analytics';
 import { useEffect, useRef, useState, RefObject } from 'react';
 import { toast } from 'sonner';
-import { Languages, ChevronDown } from 'lucide-react';
+import { Languages, ChevronDown, PanelRightClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { LanguagePickerPopover } from '@/components/LanguagePickerPopover';
@@ -75,6 +75,13 @@ interface SummaryPanelProps {
   onJumpToSource?: (sourceChunkId: string) => void;
   /** Notified when the whole summary is approved. */
   onSummaryApproved?: () => void;
+
+  // Layout affordances (owned by page-content). Additive; default off so the
+  // panel renders exactly as before when the parent does not opt in.
+  /** Show the desktop "collapse summary" chevron in the header. */
+  showCollapseButton?: boolean;
+  /** Collapse the summary panel (desktop) so the transcript reclaims the width. */
+  onCollapse?: () => void;
 }
 
 export function SummaryPanel({
@@ -117,6 +124,8 @@ export function SummaryPanel({
   draftError = null,
   onJumpToSource,
   onSummaryApproved,
+  showCollapseButton = false,
+  onCollapse,
 }: SummaryPanelProps) {
   const [summaryLang, setSummaryLang] = useState<string | null>(null);
   const [summaryLangStorage, setSummaryLangStorage] = useState<SummaryLanguageStorage>('metadata');
@@ -274,7 +283,9 @@ export function SummaryPanel({
   );
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col bg-white overflow-hidden">
+    // Layout-neutral root: the wrapper in page-content.tsx owns width, the left
+    // border, and responsive show/hide (mobile tab + desktop collapse).
+    <div className="flex w-full h-full min-w-0 flex-col bg-white overflow-hidden">
       {/* Title area */}
       <div className="p-4 border-b border-gray-200">
         {/* <EditableTitle
@@ -284,6 +295,23 @@ export function SummaryPanel({
           onFinishEditing={onFinishEditTitle}
           onChange={onTitleChange}
         /> */}
+
+        {/* Collapse chevron (desktop only): lets a user who just wants the
+            transcript reclaim the full width. Rendered even in the empty state
+            so the panel is always collapsible. State lives in page-content. */}
+        {showCollapseButton && onCollapse && (
+          <div className="hidden md:flex items-center justify-end w-full mb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onCollapse}
+              title="Collapse summary panel"
+              aria-label="Collapse summary panel"
+            >
+              <PanelRightClose size={18} />
+            </Button>
+          </div>
+        )}
 
         {/* Button groups - only show when summary exists */}
         {aiSummary && !isSummaryLoading && (
@@ -337,7 +365,10 @@ export function SummaryPanel({
         // only sets structuredEnabled when a live draft exists or the beta flag
         // is on.
         <div className="flex-1 overflow-y-auto min-h-0">
-          <div className="p-6 w-full">
+          {/* Centered column so the draft (and its compact empty state) reads
+              well at the rebalanced, narrower panel width instead of stretching
+              edge-to-edge. Width wrapper only — DraftSummaryView is untouched. */}
+          <div className="p-6 w-full max-w-3xl mx-auto">
             <BlockNoteSummaryView
               ref={summaryRef}
               summaryData={aiSummary}

@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { TranscriptPanel } from '@/components/MeetingDetails/TranscriptPanel';
 import { SummaryPanel } from '@/components/MeetingDetails/SummaryPanel';
 import { ModelConfig } from '@/components/ModelSettingsModal';
+import { FileText, Sparkles, PanelRightOpen } from 'lucide-react';
 
 // Custom hooks
 import { useMeetingData } from '@/hooks/meeting-details/useMeetingData';
@@ -64,6 +65,17 @@ export default function PageContent({
   // so it is used directly as the target segment id.
   const [scrollToSegmentId, setScrollToSegmentId] = useState<string | null>(null);
   const [scrollNonce, setScrollNonce] = useState(0);
+
+  // Meeting-details split layout (frontend-only rebalance):
+  //  - Desktop (md+): transcript (primary) grows to fill; summary is capped and
+  //    can be COLLAPSED so the transcript reclaims the full width.
+  //  - Narrow (< md): the two panels are switched via an in-page tab bar so the
+  //    transcript (primary content) is always reachable — it used to be hidden.
+  // Both panels stay mounted at all times (CSS show/hide, never unmount) so the
+  // BlockNote editor / draft-review state and the transcript scroll position
+  // survive collapsing and tab switches.
+  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'transcript' | 'summary'>('transcript');
 
   // Ref to store the modal open function from SummaryGeneratorButtonGroup
   const openModelSettingsRef = useRef<(() => void) | null>(null);
@@ -202,8 +214,52 @@ export default function PageContent({
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className="flex flex-col h-screen bg-gray-50"
     >
+      {/* Narrow-screen (< md) tab bar: switches which panel is visible so the
+          transcript (primary content) is reachable on mobile/tablet. Hidden on
+          md+ where both panels sit side by side. */}
+      <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setMobileTab('transcript')}
+          aria-pressed={mobileTab === 'transcript'}
+          className={`flex-1 inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            mobileTab === 'transcript'
+              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+              : 'text-gray-600 hover:bg-gray-50 border border-transparent'
+          }`}
+        >
+          <FileText size={16} />
+          Transcript
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab('summary')}
+          aria-pressed={mobileTab === 'summary'}
+          className={`flex-1 inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            mobileTab === 'summary'
+              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+              : 'text-gray-600 hover:bg-gray-50 border border-transparent'
+          }`}
+        >
+          <Sparkles size={16} />
+          Summary
+        </button>
+      </div>
+
       <div className="flex flex-1 overflow-hidden">
-        <TranscriptPanel
+        {/* Transcript wrapper — PRIMARY content.
+            - Mobile: full width, visible only when its tab is active.
+            - md+: always visible and grows to fill (flex-1), so it is never the
+              cramped panel and it reclaims space when the summary collapses.
+            The right border only shows on md+ when the summary is visible. */}
+        <div
+          className={`${
+            mobileTab === 'transcript' ? 'flex' : 'hidden'
+          } w-full min-w-0 md:flex md:flex-1 md:min-w-0 ${
+            isSummaryCollapsed ? '' : 'md:border-r md:border-gray-200'
+          }`}
+        >
+          <TranscriptPanel
           transcripts={meetingData.transcripts}
           customPrompt={customPrompt}
           onPromptChange={setCustomPrompt}
@@ -227,8 +283,21 @@ export default function PageContent({
           scrollToSegmentId={scrollToSegmentId}
           scrollNonce={scrollNonce}
           onRequestSegment={handleRequestSegment}
-        />
-        <SummaryPanel
+          />
+        </div>
+
+        {/* Summary wrapper — the CAPPED / SHRINKING panel (no longer dominant).
+            - Mobile: full width, visible only when its tab is active.
+            - md+: capped to ~half the width (max 640px) and does not grow, so
+              the transcript keeps comfortable room. Hidden when collapsed. */}
+        <div
+          className={`${
+            mobileTab === 'summary' ? 'flex' : 'hidden'
+          } w-full min-w-0 md:w-1/2 md:max-w-[640px] md:shrink-0 ${
+            isSummaryCollapsed ? 'md:hidden' : 'md:flex'
+          }`}
+        >
+          <SummaryPanel
           meeting={meeting}
           meetingTitle={meetingData.meetingTitle}
           onTitleChange={meetingData.handleTitleChange}
@@ -269,7 +338,27 @@ export default function PageContent({
           draftError={meetingData.draftError}
           onJumpToSource={handleJumpToSource}
           onSummaryApproved={meetingData.refetchDraft}
-        />
+          // Desktop collapse control (chevron lives in the summary header).
+          showCollapseButton
+          onCollapse={() => setIsSummaryCollapsed(true)}
+          />
+        </div>
+
+        {/* Collapsed-state expand rail (md+ only): a slim edge affordance to bring
+            the summary panel back after it has been collapsed. */}
+        {isSummaryCollapsed && (
+          <div className="hidden md:flex flex-col items-center border-l border-gray-200 bg-white shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsSummaryCollapsed(false)}
+              title="Show summary panel"
+              aria-label="Show summary panel"
+              className="p-2 m-1 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+            >
+              <PanelRightOpen size={18} />
+            </button>
+          </div>
+        )}
       </div>
     </motion.div>
   );
