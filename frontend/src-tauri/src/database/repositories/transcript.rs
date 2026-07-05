@@ -222,6 +222,13 @@ impl TranscriptsRepository {
         // touched items — is the normal no-op case. The replace above is
         // already committed; an error here means only the downgrade could not
         // be applied and is surfaced to the caller.
+        //
+        // The two downgrades are not atomic with each other (gate-review W1): if
+        // the second errors, the whole call returns `Err` (the caller sees the
+        // retranscription as failed) and a retry re-runs both — `downgrade_to_draft`
+        // is idempotent (draft→draft is a no-op). Any item left stale-approved is
+        // also refused by approve-time source re-resolution on the next approve.
+        // Make these one transaction when the repo executor is generalized (Phase 2).
         use super::action_item::ActionItemsRepository;
         use super::summary_draft::{SummariesRepository, SummaryDraftError};
         SummariesRepository::downgrade_to_draft(pool, ctx, meeting_id)
