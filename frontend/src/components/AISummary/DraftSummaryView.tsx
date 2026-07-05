@@ -37,8 +37,17 @@ import {
   ChevronRight,
   Loader2,
   Download,
+  FileText,
+  FileType,
+  FileDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
@@ -692,12 +701,13 @@ export function DraftSummaryView({
     };
   }, [draftResponse, draft, summaryStatus, actionItems]);
 
-  const { exportMarkdown, isExporting } = useExportOperations({
-    meetingId,
-    draftResponse: liveDraftResponse,
-    meetingTitle,
-    meetingDate,
-  });
+  const { exportMarkdown, exportDocx, exportPdf, isExporting } =
+    useExportOperations({
+      meetingId,
+      draftResponse: liveDraftResponse,
+      meetingTitle,
+      meetingDate,
+    });
 
   // Approved-only disclosure: how many action items are NOT approved (they are
   // excluded from the export). Mirrors buildExportDoc's excluded count.
@@ -901,23 +911,51 @@ export function DraftSummaryView({
     </Button>
   );
 
-  // Export is gated on an APPROVED summary (ADR-0019 decision 1). Disabled with
-  // an explanatory tooltip until the whole summary is approved.
-  const exportButton = (
+  // Export is gated on an APPROVED summary (ADR-0019 decision 1). The control is
+  // an "Export ▾" menu offering Markdown / Word / PDF; every format flows through
+  // the same approved-only pipeline (`useExportOperations`), differing only in the
+  // renderer. When the summary is NOT approved the trigger is disabled and wrapped
+  // in an explanatory tooltip below (mirroring the pre-C4.2 single-button gate).
+  const exportTrigger = (
     <Button
       variant="outline"
       size="sm"
-      onClick={() => void exportMarkdown()}
       disabled={!isSummaryApproved || isExporting}
-      aria-label="Export approved summary to Markdown"
+      aria-label="Export approved summary"
     >
       {isExporting ? (
         <Loader2 className="h-4 w-4 animate-spin" />
       ) : (
         <Download className="h-4 w-4" />
       )}
-      Export Markdown
+      Export
+      <ChevronDown className="h-4 w-4" />
     </Button>
+  );
+
+  const exportMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={!isSummaryApproved || isExporting}>
+        {exportTrigger}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => void exportMarkdown()}
+          className="gap-2"
+        >
+          <FileText className="h-4 w-4" />
+          <span>Markdown (.md)</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => void exportDocx()} className="gap-2">
+          <FileType className="h-4 w-4" />
+          <span>Word (.docx)</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => void exportPdf()} className="gap-2">
+          <FileDown className="h-4 w-4" />
+          <span>PDF (.pdf)</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   return (
@@ -939,15 +977,16 @@ export function DraftSummaryView({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* Export control: enabled only for an approved summary. */}
+          {/* Export control: the "Export ▾" menu is enabled only for an approved
+              summary; otherwise the disabled trigger is wrapped in a tooltip. */}
           {isSummaryApproved ? (
-            exportButton
+            exportMenu
           ) : (
             <TooltipProvider>
               <Tooltip>
-                {/* Wrap the disabled button so the tooltip still fires. */}
+                {/* Wrap the disabled trigger so the tooltip still fires. */}
                 <TooltipTrigger asChild>
-                  <span tabIndex={0}>{exportButton}</span>
+                  <span tabIndex={0}>{exportTrigger}</span>
                 </TooltipTrigger>
                 <TooltipContent>Approve the summary to export</TooltipContent>
               </Tooltip>
