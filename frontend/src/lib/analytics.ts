@@ -530,6 +530,33 @@ export class Analytics {
     }
   }
 
+  // Export tracking (BACKLOG C4). CONTENT-FREE by construction: only the export
+  // format, an optional coarse meeting_id, and platform info — never summary,
+  // transcript, or action-item text. Mirrors `trackCopy`'s opt-in gate.
+  static async trackExport(properties: {
+    format: 'markdown' | 'docx' | 'pdf';
+    meetingId?: string;
+  }): Promise<void> {
+    if (!this.initialized) return;
+
+    try {
+      const deviceInfo = await this.getDeviceInfo();
+
+      const trackingProperties: AnalyticsProperties = {
+        export_format: properties.format,
+        platform: deviceInfo.platform,
+        os_version: deviceInfo.os_version,
+      };
+      if (properties.meetingId) {
+        trackingProperties.meeting_id = properties.meetingId;
+      }
+
+      await this.track('summary_exported', trackingProperties);
+    } catch (error) {
+      console.error('Failed to track export:', error);
+    }
+  }
+
   // Meeting-specific tracking methods
   static async trackMeetingStarted(meetingId: string): Promise<void> {
     if (!this.initialized) return;

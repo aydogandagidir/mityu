@@ -36,6 +36,7 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -52,6 +53,7 @@ import {
   type MeetingNotesDraft,
   type SummaryDraftResponse,
 } from '@/services/summaryDraftService';
+import { useExportOperations } from '@/hooks/meeting-details/useExportOperations';
 
 interface DraftSummaryViewProps {
   /** The meeting whose draft is under review. */
@@ -62,6 +64,10 @@ interface DraftSummaryViewProps {
   isLoading?: boolean;
   /** A fetch/parse error to surface (user-friendly; never a raw panic). */
   error?: string | null;
+  /** Meeting title, used for the export header + filename (C4.1). */
+  meetingTitle?: string;
+  /** Human-readable meeting date for the export header (C4.1). */
+  meetingDate?: string;
   /**
    * Jump to the transcript segment identified by `sourceChunkId` (scroll +
    * highlight). Optional: when absent, the source affordance is hidden.
@@ -590,6 +596,8 @@ export function DraftSummaryView({
   draftResponse,
   isLoading = false,
   error = null,
+  meetingTitle,
+  meetingDate,
   onJumpToSource,
   onSummaryApproved,
 }: DraftSummaryViewProps) {
@@ -668,6 +676,35 @@ export function DraftSummaryView({
       return 'Approve (or reject) every block before approving the whole summary.';
     return null;
   }, [isSummaryApproved, allBlocks.length, nonRejected.length, allNonRejectedApproved]);
+
+  // --- Export (C4.1) -------------------------------------------------------
+  // The export reads the LIVE in-component review state (blocks/items the user
+  // just approved locally), not the stale prop, so it works the instant the
+  // summary flips to approved. Provenance fields (model/approved_*) come from the
+  // last fetched payload; the renderer degrades gracefully when they are absent.
+  const liveDraftResponse = useMemo<SummaryDraftResponse | null>(() => {
+    if (!draftResponse) return null;
+    return {
+      ...draftResponse,
+      draft,
+      status: summaryStatus,
+      action_items: actionItems,
+    };
+  }, [draftResponse, draft, summaryStatus, actionItems]);
+
+  const { exportMarkdown, isExporting } = useExportOperations({
+    meetingId,
+    draftResponse: liveDraftResponse,
+    meetingTitle,
+    meetingDate,
+  });
+
+  // Approved-only disclosure: how many action items are NOT approved (they are
+  // excluded from the export). Mirrors buildExportDoc's excluded count.
+  const excludedActionItemCount = useMemo(
+    () => actionItems.filter((i) => i.status !== 'approved').length,
+    [actionItems],
+  );
 
   // --- Block handlers ------------------------------------------------------
   const approveBlock = (block: DraftBlock) => {
@@ -864,12 +901,31 @@ export function DraftSummaryView({
     </Button>
   );
 
+  // Export is gated on an APPROVED summary (ADR-0019 decision 1). Disabled with
+  // an explanatory tooltip until the whole summary is approved.
+  const exportButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => void exportMarkdown()}
+      disabled={!isSummaryApproved || isExporting}
+      aria-label="Export approved summary to Markdown"
+    >
+      {isExporting ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Download className="h-4 w-4" />
+      )}
+      Export Markdown
+    </Button>
+  );
+
   return (
     <div className="w-full">
       <ReviewRequiredBanner />
 
       {/* Approve-summary bar */}
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex items-center justify-between gap-3 mb-2">
         <div className="text-sm text-gray-600">
           {isSummaryApproved ? (
             <span className="inline-flex items-center gap-1 text-green-700 font-medium">
@@ -882,20 +938,45 @@ export function DraftSummaryView({
             </span>
           )}
         </div>
-        {approveGateReason ? (
-          <TooltipProvider>
-            <Tooltip>
-              {/* Wrap the disabled button so the tooltip still fires. */}
-              <TooltipTrigger asChild>
-                <span tabIndex={0}>{approveButton}</span>
-              </TooltipTrigger>
-              <TooltipContent>{approveGateReason}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : (
-          approveButton
-        )}
+        <div className="flex items-center gap-2">
+          {/* Export control: enabled only for an approved summary. */}
+          {isSummaryApproved ? (
+            exportButton
+          ) : (
+            <TooltipProvider>
+              <Tooltip>
+                {/* Wrap the disabled button so the tooltip still fires. */}
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>{exportButton}</span>
+                </TooltipTrigger>
+                <TooltipContent>Approve the summary to export</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {approveGateReason ? (
+            <TooltipProvider>
+              <Tooltip>
+                {/* Wrap the disabled button so the tooltip still fires. */}
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>{approveButton}</span>
+                </TooltipTrigger>
+                <TooltipContent>{approveGateReason}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            approveButton
+          )}
+        </div>
       </div>
+
+      {/* Approved-only disclosure near the Export control. */}
+      {isSummaryApproved && excludedActionItemCount > 0 && (
+        <p className="text-xs text-amber-700 mb-4">
+          {excludedActionItemCount} action item
+          {excludedActionItemCount === 1 ? '' : 's'} not yet approved — not
+          included in the export.
+        </p>
+      )}
 
       {/* Sections -> blocks */}
       {draft?.sections.map((section, sIdx) => (

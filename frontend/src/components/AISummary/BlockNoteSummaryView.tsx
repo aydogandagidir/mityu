@@ -270,6 +270,12 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
         draftResponse={draftResponse}
         isLoading={isDraftLoading}
         error={draftError}
+        meetingTitle={meeting?.title}
+        meetingDate={
+          meeting?.created_at
+            ? new Date(meeting.created_at).toLocaleDateString()
+            : undefined
+        }
         onJumpToSource={onJumpToSource}
         onSummaryApproved={onSummaryApproved}
       />
