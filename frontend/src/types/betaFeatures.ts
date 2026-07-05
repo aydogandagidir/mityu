@@ -22,10 +22,21 @@ export interface BetaFeatures {
    * @since v0.3.0
    */
   importAndRetranscribe: boolean;
+
+  /**
+   * Opt-in source-linked structured summaries (human review required).
+   * When on, new summaries render as an editable draft where every block and
+   * action item is bound to its source transcript segment and must be approved
+   * by a human before it is "approved" (HITL, EU AI Act Art. 50). Draft
+   * generation is requested via `api_process_transcript({ structured: true })`.
+   * @since v0.4.0
+   */
+  structuredSummaries: boolean;
 }
 
 export const DEFAULT_BETA_FEATURES: BetaFeatures = {
   importAndRetranscribe: true, // Default: enabled
+  structuredSummaries: false, // Default: disabled (opt-in)
 };
 
 
@@ -34,6 +45,7 @@ export const DEFAULT_BETA_FEATURES: BetaFeatures = {
  */
 export const BETA_FEATURE_NAMES: Record<keyof BetaFeatures, string> = {
   importAndRetranscribe: 'Import Audio & Retranscribe',
+  structuredSummaries: 'Source-Linked Structured Summaries',
 };
 
 /**
@@ -41,6 +53,7 @@ export const BETA_FEATURE_NAMES: Record<keyof BetaFeatures, string> = {
  */
 export const BETA_FEATURE_DESCRIPTIONS: Record<keyof BetaFeatures, string> = {
   importAndRetranscribe: 'Import audio files to transcribe or retranscribe existing meetings with different language settings.',
+  structuredSummaries: 'Opt-in source-linked structured summaries. Each summary block and action item is linked to its transcript segment and requires human review and approval before it is finalized.',
 };
 
 /**

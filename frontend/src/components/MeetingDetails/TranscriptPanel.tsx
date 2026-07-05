@@ -28,6 +28,12 @@ interface TranscriptPanelProps {
   meetingId?: string;
   meetingFolderPath?: string | null;
   onRefetchTranscripts?: () => Promise<void>;
+
+  // Jump-to-source (BACKLOG C1.6): plumbed from the summary draft review surface
+  // down to the virtualized transcript view. Additive; default undefined = today.
+  scrollToSegmentId?: string | null;
+  scrollNonce?: number;
+  onRequestSegment?: (segmentId: string) => void;
 }
 
 export function TranscriptPanel({
@@ -48,6 +54,9 @@ export function TranscriptPanel({
   meetingId,
   meetingFolderPath,
   onRefetchTranscripts,
+  scrollToSegmentId,
+  scrollNonce,
+  onRequestSegment,
 }: TranscriptPanelProps) {
   // Convert transcripts to segments if pagination is not used but we want virtualization
   const convertedSegments = useMemo(() => {
@@ -94,6 +103,9 @@ export function TranscriptPanel({
           totalCount={totalCount}
           loadedCount={loadedCount}
           onLoadMore={onLoadMore}
+          scrollToSegmentId={scrollToSegmentId}
+          scrollNonce={scrollNonce}
+          onRequestSegment={onRequestSegment}
         />
       </div>
 

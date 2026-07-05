@@ -4,6 +4,10 @@ import { BlockNoteSummaryViewRef } from '@/components/AISummary/BlockNoteSummary
 import { CurrentMeeting, useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { invoke as invokeTauri } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
+import {
+  summaryDraftService,
+  SummaryDraftResponse,
+} from '@/services/summaryDraftService';
 
 interface UseMeetingDataProps {
   meeting: any;
@@ -23,6 +27,15 @@ export function useMeetingData({ meeting, summaryData, onMeetingUpdated }: UseMe
   const [, setIsSummaryDirty] = useState(false);
   const [, setError] = useState<string>('');
 
+  // BACKLOG C1.6: source-linked summary draft (HITL). Fetched alongside the
+  // legacy summary load. `draftResponse.draft` is null for meetings that were
+  // never summarized with the structured path; a live draft here is what lets
+  // the review surface render even when the beta flag is off (so existing
+  // structured drafts keep working). This never disrupts the legacy view.
+  const [draftResponse, setDraftResponse] = useState<SummaryDraftResponse | null>(null);
+  const [isDraftLoading, setIsDraftLoading] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+
   // Ref for BlockNoteSummaryView
   const blockNoteSummaryRef = useRef<BlockNoteSummaryViewRef>(null);
 
@@ -34,6 +47,54 @@ export function useMeetingData({ meeting, summaryData, onMeetingUpdated }: UseMe
     console.log('[useMeetingData] Syncing summary data from prop:', summaryData ? 'present' : 'null');
     setAiSummary(summaryData);
   }, [summaryData]); // Only trigger when parent prop changes, not when aiSummary changes
+
+  // Fetch the source-linked summary draft for this meeting (C1.6). Runs on
+  // meeting change, in parallel with the legacy summary load. Errors are kept
+  // user-friendly and do NOT block the rest of the page — the legacy view is
+  // unaffected regardless of the draft's presence.
+  const fetchDraft = useCallback(async () => {
+    setIsDraftLoading(true);
+    setDraftError(null);
+    try {
+      const response = await summaryDraftService.getSummaryDraft(meeting.id);
+      setDraftResponse(response);
+    } catch (err) {
+      console.error('[useMeetingData] Failed to load summary draft:', err);
+      setDraftResponse(null);
+      setDraftError('Could not load the summary draft for review.');
+    } finally {
+      setIsDraftLoading(false);
+    }
+  }, [meeting.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDraftResponse(null);
+    setIsDraftLoading(true);
+    setDraftError(null);
+    (async () => {
+      try {
+        const response = await summaryDraftService.getSummaryDraft(meeting.id);
+        if (!cancelled) setDraftResponse(response);
+      } catch (err) {
+        console.error('[useMeetingData] Failed to load summary draft:', err);
+        if (!cancelled) {
+          setDraftResponse(null);
+          setDraftError('Could not load the summary draft for review.');
+        }
+      } finally {
+        if (!cancelled) setIsDraftLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [meeting.id]);
+
+  // Whether the meeting actually has a source-linked draft to review.
+  const hasSummaryDraft =
+    !!draftResponse &&
+    (!!draftResponse.draft || draftResponse.action_items.length > 0);
 
   // Handlers
   const handleTitleChange = useCallback((newTitle: string) => {
@@ -161,6 +222,13 @@ export function useMeetingData({ meeting, summaryData, onMeetingUpdated }: UseMe
     aiSummary,
     isSaving,
     blockNoteSummaryRef,
+
+    // Source-linked draft (C1.6)
+    draftResponse,
+    isDraftLoading,
+    draftError,
+    hasSummaryDraft,
+    refetchDraft: fetchDraft,
 
     // Setters
     setMeetingTitle,

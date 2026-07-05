@@ -1,6 +1,7 @@
 "use client";
 
 import { Summary, SummaryResponse, Transcript } from '@/types';
+import { SummaryDraftResponse } from '@/services/summaryDraftService';
 import { EditableTitle } from '@/components/EditableTitle';
 import { BlockNoteSummaryView, BlockNoteSummaryViewRef } from '@/components/AISummary/BlockNoteSummaryView';
 import { EmptyStateSummary } from '@/components/EmptyStateSummary';
@@ -60,6 +61,20 @@ interface SummaryPanelProps {
   onTemplateSelect: (templateId: string, templateName: string) => void;
   isModelConfigLoading?: boolean;
   onOpenModelSettings?: (openFn: () => void) => void;
+
+  // BACKLOG C1.6 — source-linked structured draft (HITL review surface).
+  /** Route to the structured draft view (live draft exists OR beta flag on). */
+  structuredEnabled?: boolean;
+  /** The fetched draft payload. */
+  draftResponse?: SummaryDraftResponse | null;
+  /** Whether the draft is still loading. */
+  isDraftLoading?: boolean;
+  /** A user-friendly draft fetch/parse error. */
+  draftError?: string | null;
+  /** Jump to the transcript segment backing a block/action item. */
+  onJumpToSource?: (sourceChunkId: string) => void;
+  /** Notified when the whole summary is approved. */
+  onSummaryApproved?: () => void;
 }
 
 export function SummaryPanel({
@@ -95,7 +110,13 @@ export function SummaryPanel({
   selectedTemplate,
   onTemplateSelect,
   isModelConfigLoading = false,
-  onOpenModelSettings
+  onOpenModelSettings,
+  structuredEnabled = false,
+  draftResponse = null,
+  isDraftLoading = false,
+  draftError = null,
+  onJumpToSource,
+  onSummaryApproved,
 }: SummaryPanelProps) {
   const [summaryLang, setSummaryLang] = useState<string | null>(null);
   const [summaryLangStorage, setSummaryLangStorage] = useState<SummaryLanguageStorage>('metadata');
@@ -307,7 +328,39 @@ export function SummaryPanel({
         )}
       </div>
 
-      {isSummaryLoading ? (
+      {structuredEnabled ? (
+        // BACKLOG C1.6 — source-linked structured draft review (HITL). Renders
+        // regardless of the legacy `aiSummary`/transcripts gate because
+        // DraftSummaryView owns its own loading/empty/error states, and the
+        // always-on "AI-generated · review required" banner must be shown while
+        // a draft is under review. Existing meetings are unaffected: the parent
+        // only sets structuredEnabled when a live draft exists or the beta flag
+        // is on.
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="p-6 w-full">
+            <BlockNoteSummaryView
+              ref={summaryRef}
+              summaryData={aiSummary}
+              onSave={onSaveSummary}
+              onSummaryChange={onSummaryChange}
+              onDirtyChange={onDirtyChange}
+              status={summaryStatus}
+              error={summaryError}
+              meeting={{
+                id: meeting.id,
+                title: meetingTitle,
+                created_at: meeting.created_at,
+              }}
+              structuredEnabled
+              draftResponse={draftResponse}
+              isDraftLoading={isDraftLoading}
+              draftError={draftError}
+              onJumpToSource={onJumpToSource}
+              onSummaryApproved={onSummaryApproved}
+            />
+          </div>
+        </div>
+      ) : isSummaryLoading ? (
         <div className="flex flex-col h-full">
           {/* Show button group during generation */}
           <div className="flex items-center justify-center pt-8 pb-4">

@@ -34,6 +34,19 @@ export interface VirtualizedTranscriptViewProps {
     totalCount?: number;
     loadedCount?: number;
     onLoadMore?: () => void;
+
+    // Jump-to-source (BACKLOG C1.6). When `scrollToSegmentId` changes to a
+    // non-null value, scroll to the segment with that id and briefly flash it.
+    // If the segment is not in the currently loaded page and `onRequestSegment`
+    // is provided, the parent is asked to load it (e.g. fetch-all / expand); the
+    // scroll+flash then retries once the segment appears. `scrollNonce` lets the
+    // same id be re-targeted (repeat clicks on the same source).
+    /** Segment id to scroll to and highlight; `null`/`undefined` = no-op (default). */
+    scrollToSegmentId?: string | null;
+    /** Bump to re-trigger a jump to the same `scrollToSegmentId`. */
+    scrollNonce?: number;
+    /** Ask the parent to load a segment that isn't in the current page. */
+    onRequestSegment?: (segmentId: string) => void;
 }
 
 // Threshold for enabling virtualization (below this, use simple rendering)
@@ -71,6 +84,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     confidence,
     isStreaming,
     showConfidence,
+    isHighlighted = false,
 }: {
     id: string;
     timestamp: number;
@@ -78,11 +92,17 @@ const TranscriptSegment = memo(function TranscriptSegment({
     confidence?: number;
     isStreaming: boolean;
     showConfidence: boolean;
+    isHighlighted?: boolean;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
 
     return (
-        <div id={`segment-${id}`} className="mb-3">
+        <div
+            id={`segment-${id}`}
+            className={`mb-3 rounded-lg transition-colors duration-500 ${
+                isHighlighted ? 'bg-yellow-100 ring-2 ring-yellow-300' : ''
+            }`}
+        >
             <div className="flex items-start gap-2">
                 <Tooltip>
                     <TooltipTrigger>
@@ -124,11 +144,18 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     totalCount = 0,
     loadedCount = 0,
     onLoadMore,
+    scrollToSegmentId,
+    scrollNonce,
+    onRequestSegment,
 }) => {
     // Create scroll ref first - shared between virtualizer and auto-scroll hook
     const scrollRef = useRef<HTMLDivElement>(null);
     // Ref for infinite scroll trigger element
     const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+    // Segment id currently highlighted by a jump-to-source (drives the flash).
+    const [highlightedSegmentId, setHighlightedSegmentId] = useState<string | null>(null);
+    // A jump-to-source target waiting for its segment to load into the page.
+    const pendingScrollRef = useRef<string | null>(null);
 
     // Force re-render without flushSync (avoids React warning)
     const [, rerender] = useReducer((x: number) => x + 1, 0);
@@ -163,6 +190,68 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
         isRecording,
         enableStreaming
     );
+
+    // --- Jump-to-source (C1.6) ------------------------------------------------
+    // Try to scroll to + flash the segment with `id`. Returns true if the segment
+    // is in the currently loaded page (so the target can be cleared); false when
+    // it still needs to be loaded (caller keeps the pending target and retries).
+    const tryScrollToSegment = useCallback(
+        (id: string): boolean => {
+            const index = segments.findIndex((s) => s.id === id);
+            if (index === -1) return false;
+
+            // For virtualized lists, drive the virtualizer; for small lists the
+            // node is already in the DOM. In both cases scroll the DOM anchor into
+            // view (segment-${id} exists in TranscriptSegment) and flash it.
+            if (segments.length >= VIRTUALIZATION_THRESHOLD) {
+                virtualizer.scrollToIndex(index, { align: 'center' });
+            }
+
+            // Defer to the next frame so the (possibly just-mounted) node exists.
+            requestAnimationFrame(() => {
+                const node = document.getElementById(`segment-${id}`);
+                node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setHighlightedSegmentId(id);
+                window.setTimeout(() => {
+                    setHighlightedSegmentId((current) => (current === id ? null : current));
+                }, 2000);
+            });
+            return true;
+        },
+        [segments, virtualizer]
+    );
+
+    // React to a new jump-to-source request (id and/or nonce change).
+    useEffect(() => {
+        if (!scrollToSegmentId) return;
+        if (tryScrollToSegment(scrollToSegmentId)) {
+            pendingScrollRef.current = null;
+        } else {
+            // Not in the loaded page: remember it and ask the parent to load it
+            // (fetch-all / expand). The segments-change effect below retries.
+            pendingScrollRef.current = scrollToSegmentId;
+            onRequestSegment?.(scrollToSegmentId);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scrollToSegmentId, scrollNonce]);
+
+    // Retry a pending jump-to-source once new segments arrive (scroll-after-load).
+    // If the target still isn't loaded and more pages remain, ask the parent to
+    // keep loading (paging toward a deep segment); give up quietly when there is
+    // nothing left to load.
+    useEffect(() => {
+        const pending = pendingScrollRef.current;
+        if (!pending) return;
+        if (tryScrollToSegment(pending)) {
+            pendingScrollRef.current = null;
+        } else if (onRequestSegment && (hasMore || isLoadingMore)) {
+            if (!isLoadingMore) onRequestSegment(pending);
+        } else {
+            // No more pages and still not found: stop retrying.
+            pendingScrollRef.current = null;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [segments, hasMore, isLoadingMore]);
 
     // Infinite scroll: IntersectionObserver to trigger loading more
     useEffect(() => {
@@ -296,6 +385,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        isHighlighted={highlightedSegmentId === segment.id}
                                     />
                                 </div>
                             );
@@ -352,6 +442,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        isHighlighted={highlightedSegmentId === segment.id}
                                     />
                                 </motion.div>
                             );

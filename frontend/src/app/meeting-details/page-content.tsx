@@ -58,14 +58,21 @@ export default function PageContent({
   const [isRecording] = useState(false);
   const [summaryResponse] = useState<SummaryResponse | null>(null);
 
+  // BACKLOG C1.6 — jump-to-source: the source_chunk_id the review surface asked
+  // to reveal, plus a nonce so repeat clicks on the same source re-trigger the
+  // scroll+flash. `source_chunk_id` shares the transcripts-table row id space,
+  // so it is used directly as the target segment id.
+  const [scrollToSegmentId, setScrollToSegmentId] = useState<string | null>(null);
+  const [scrollNonce, setScrollNonce] = useState(0);
+
   // Ref to store the modal open function from SummaryGeneratorButtonGroup
   const openModelSettingsRef = useRef<(() => void) | null>(null);
 
   // Sidebar context
   const { serverAddress } = useSidebar();
 
-  // Get model config from ConfigContext
-  const { modelConfig, setModelConfig } = useConfig();
+  // Get model config + beta features from ConfigContext
+  const { modelConfig, setModelConfig, betaFeatures } = useConfig();
 
   // Custom hooks
   const meetingData = useMeetingData({ meeting, summaryData, onMeetingUpdated });
@@ -84,6 +91,26 @@ export default function PageContent({
       openModelSettingsRef.current();
     } else {
       console.warn('⚠️ Modal open function not yet registered');
+    }
+  };
+
+  // Route to the structured HITL review surface when the beta flag is on OR the
+  // meeting already has a source-linked draft (so existing structured drafts keep
+  // rendering even if the flag is later turned off). Otherwise the legacy summary
+  // views are used unchanged.
+  const structuredEnabled = betaFeatures.structuredSummaries || meetingData.hasSummaryDraft;
+
+  // BACKLOG C1.6 — jump from a draft block/action item to its transcript segment.
+  const handleJumpToSource = (sourceChunkId: string) => {
+    setScrollToSegmentId(sourceChunkId);
+    setScrollNonce((n) => n + 1);
+  };
+
+  // The target segment isn't in the loaded page: pull the next page so the
+  // transcript view can retry the scroll once it arrives.
+  const handleRequestSegment = () => {
+    if (hasMore && !isLoadingMore) {
+      onLoadMore?.();
     }
   };
 
@@ -120,6 +147,11 @@ export default function PageContent({
     updateMeetingTitle: meetingData.updateMeetingTitle,
     setAiSummary: meetingData.setAiSummary,
     onOpenModelSettings: handleOpenModelSettings,
+    // C1.6: request structured drafts when the beta flag is on (generation keys
+    // off the flag only), and refresh the draft when one completes so the review
+    // surface populates.
+    structuredSummaries: betaFeatures.structuredSummaries,
+    onStructuredGenerated: meetingData.refetchDraft,
   });
 
   const copyOperations = useCopyOperations({
@@ -191,6 +223,10 @@ export default function PageContent({
           meetingId={meeting.id}
           meetingFolderPath={meeting.folder_path}
           onRefetchTranscripts={onRefetchTranscripts}
+          // Jump-to-source (C1.6)
+          scrollToSegmentId={scrollToSegmentId}
+          scrollNonce={scrollNonce}
+          onRequestSegment={handleRequestSegment}
         />
         <SummaryPanel
           meeting={meeting}
@@ -226,6 +262,13 @@ export default function PageContent({
           onTemplateSelect={templates.handleTemplateSelection}
           isModelConfigLoading={false}
           onOpenModelSettings={handleRegisterModalOpen}
+          // Source-linked structured draft review (C1.6)
+          structuredEnabled={structuredEnabled}
+          draftResponse={meetingData.draftResponse}
+          isDraftLoading={meetingData.isDraftLoading}
+          draftError={meetingData.draftError}
+          onJumpToSource={handleJumpToSource}
+          onSummaryApproved={meetingData.refetchDraft}
         />
       </div>
     </motion.div>

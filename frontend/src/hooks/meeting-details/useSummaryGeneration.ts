@@ -60,6 +60,19 @@ interface UseSummaryGenerationProps {
   updateMeetingTitle: (title: string) => void;
   setAiSummary: (summary: Summary | null) => void;
   onOpenModelSettings?: () => void;
+  /**
+   * Whether structured, source-linked HITL drafts are enabled for generation
+   * (the `structuredSummaries` beta flag). Passed through to
+   * `api_process_transcript` as `structured`; default false keeps the legacy
+   * path byte-compatible (BACKLOG C1.6).
+   */
+  structuredSummaries?: boolean;
+  /**
+   * Called after a structured generation completes so the draft can be fetched
+   * and DraftSummaryView populated (e.g. `refetchDraft` from useMeetingData).
+   * Only invoked when `structuredSummaries` was on for that generation.
+   */
+  onStructuredGenerated?: () => void | Promise<void>;
 }
 
 export function useSummaryGeneration({
@@ -72,6 +85,8 @@ export function useSummaryGeneration({
   updateMeetingTitle,
   setAiSummary,
   onOpenModelSettings,
+  structuredSummaries = false,
+  onStructuredGenerated,
 }: UseSummaryGenerationProps) {
   const [summaryStatus, setSummaryStatus] = useState<SummaryStatus>('idle');
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -97,16 +112,24 @@ export function useSummaryGeneration({
   }, []);
 
   // Unified summary processing logic
+  //
+  // `structured` (BACKLOG C1.6) requests the source-linked, HITL draft branch in
+  // the Rust core. It keys off the `structuredSummaries` beta flag at the call
+  // site; default false. When false the payload carries `structured: false`,
+  // which the backend treats identically to omitting it — the legacy path stays
+  // byte-compatible.
   const processSummary = useCallback(async ({
     transcriptText,
     transcriptTexts,
     customPrompt = '',
     isRegeneration = false,
+    structured = false,
   }: {
     transcriptText: string;
     transcriptTexts?: string[];
     customPrompt?: string;
     isRegeneration?: boolean;
+    structured?: boolean;
   }) => {
     setSummaryStatus(isRegeneration ? 'regenerating' : 'processing');
     setSummaryError(null);
@@ -157,6 +180,7 @@ export function useSummaryGeneration({
         customPrompt: customPrompt,
         templateId: selectedTemplate,
         summaryLanguage,
+        structured: structured,
       }) as any;
 
       const process_id = result.process_id;
@@ -287,6 +311,11 @@ export function useSummaryGeneration({
               await onMeetingUpdated();
             }
 
+            // C1.6: refresh the source-linked draft so DraftSummaryView shows it.
+            if (structured && onStructuredGenerated) {
+              await onStructuredGenerated();
+            }
+
             await Analytics.trackSummaryGenerationCompleted(
               modelConfig.provider,
               modelConfig.model,
@@ -366,6 +395,11 @@ export function useSummaryGeneration({
           if (meetingName && onMeetingUpdated) {
             await onMeetingUpdated();
           }
+
+          // C1.6: refresh the source-linked draft so DraftSummaryView shows it.
+          if (structured && onStructuredGenerated) {
+            await onStructuredGenerated();
+          }
         }
       });
     } catch (error) {
@@ -396,6 +430,7 @@ export function useSummaryGeneration({
     setAiSummary,
     updateMeetingTitle,
     onMeetingUpdated,
+    onStructuredGenerated,
   ]);
 
   // Helper function to fetch ALL transcripts for summary generation
@@ -613,8 +648,11 @@ export function useSummaryGeneration({
     await processSummary({
       ...summaryPayload,
       customPrompt,
+      // C1.6: generation mode keys off the beta flag ONLY (not hasSummaryDraft),
+      // so an existing legacy meeting is not silently switched to structured.
+      structured: structuredSummaries,
     });
-  }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary, modelConfig, isModelConfigLoading, selectedTemplate]);
+  }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary, modelConfig, isModelConfigLoading, selectedTemplate, structuredSummaries]);
 
   // Public API: Regenerate summary from the current saved transcript
   const handleRegenerateSummary = useCallback(async () => {
@@ -628,9 +666,12 @@ export function useSummaryGeneration({
 
     await processSummary({
       ...buildSummaryTranscriptPayload(allTranscripts),
-      isRegeneration: true
+      isRegeneration: true,
+      // C1.6: regenerate honors the beta flag only — a legacy meeting stays
+      // legacy on regenerate unless the user opted into structured summaries.
+      structured: structuredSummaries,
     });
-  }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary]);
+  }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary, structuredSummaries]);
 
   // Public API: Stop ongoing summary generation
   const handleStopGeneration = useCallback(async () => {

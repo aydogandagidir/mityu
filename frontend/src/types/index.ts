@@ -66,7 +66,27 @@ export interface SummaryResponse {
 }
 
 // BlockNote-specific types
-export type SummaryFormat = 'legacy' | 'markdown' | 'blocknote';
+//
+// 'structured' (BACKLOG C1.6) is the NEW source-linked HITL draft format. It is
+// detected FIRST in BlockNoteSummaryView and renders the DraftSummaryView review
+// surface instead of the editable BlockNote/markdown/legacy views.
+export type SummaryFormat = 'structured' | 'legacy' | 'markdown' | 'blocknote';
+
+// Source-linked summary draft types (BACKLOG C1.6). The canonical definitions
+// live in the typed service layer next to the invoke() wrappers; re-exported
+// here so components can import draft types from '@/types' alongside the rest.
+export type {
+  BlockStatus,
+  SummaryStatus,
+  DraftBlockType,
+  DraftBlock,
+  DraftSection,
+  MeetingNotesDraft,
+  ActionItemDraft,
+  SummaryDraftResponse,
+  FieldPatch,
+  EditActionItemRequest,
+} from '@/services/summaryDraftService';
 
 export interface BlockNoteBlock {
   id: string;

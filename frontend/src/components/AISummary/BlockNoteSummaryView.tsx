@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHand
 import dynamic from 'next/dynamic';
 import { Summary, SummaryDataResponse, SummaryFormat, BlockNoteBlock } from '@/types';
 import { AISummary } from './index';
+import { DraftSummaryView } from './DraftSummaryView';
+import { SummaryDraftResponse } from '@/services/summaryDraftService';
 import { Block } from '@blocknote/core';
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/shadcn';
@@ -26,6 +28,23 @@ interface BlockNoteSummaryViewProps {
     created_at: string;
   };
   onDirtyChange?: (isDirty: boolean) => void;
+
+  // --- BACKLOG C1.6: source-linked structured draft (HITL review) ---
+  // When `structuredEnabled` is on (a live draft exists OR the beta flag is on),
+  // the 'structured' format is detected FIRST and DraftSummaryView renders the
+  // review surface instead of the editable BlockNote/markdown/legacy views.
+  /** Whether to route to the structured draft review surface. */
+  structuredEnabled?: boolean;
+  /** The fetched draft payload (from `api_get_summary_draft`). */
+  draftResponse?: SummaryDraftResponse | null;
+  /** Whether the draft is still loading (parent load flow). */
+  isDraftLoading?: boolean;
+  /** A user-friendly draft fetch/parse error. */
+  draftError?: string | null;
+  /** Jump to the transcript segment backing a block/action item. */
+  onJumpToSource?: (sourceChunkId: string) => void;
+  /** Notified when the whole summary is approved. */
+  onSummaryApproved?: () => void;
 }
 
 export interface BlockNoteSummaryViewRef {
@@ -35,7 +54,22 @@ export interface BlockNoteSummaryViewRef {
 }
 
 // Format detection helper
-function detectSummaryFormat(data: any): { format: SummaryFormat; data: any } {
+//
+// `structuredEnabled` (BACKLOG C1.6) is checked FIRST: when a source-linked
+// draft exists OR the structuredSummaries beta flag is on, the review surface
+// (DraftSummaryView) takes precedence over the legacy/markdown/blocknote views.
+// This never disrupts existing meetings — the parent only enables it when a
+// draft is present or the beta flag is explicitly turned on.
+function detectSummaryFormat(
+  data: any,
+  structuredEnabled?: boolean,
+): { format: SummaryFormat; data: any } {
+  // Priority 0: structured, source-linked HITL draft.
+  if (structuredEnabled) {
+    console.log('✅ FORMAT: STRUCTURED (source-linked draft, HITL review)');
+    return { format: 'structured', data };
+  }
+
   if (!data) {
     return { format: 'legacy', data: null };
   }
@@ -73,9 +107,15 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
   error = null,
   onRegenerateSummary,
   meeting,
-  onDirtyChange
+  onDirtyChange,
+  structuredEnabled = false,
+  draftResponse = null,
+  isDraftLoading = false,
+  draftError = null,
+  onJumpToSource,
+  onSummaryApproved,
 }, ref) => {
-  const { format, data } = detectSummaryFormat(summaryData);
+  const { format, data } = detectSummaryFormat(summaryData, structuredEnabled);
   const [isDirty, setIsDirty] = useState(false);
   const [currentBlocks, setCurrentBlocks] = useState<Block[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -217,6 +257,24 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
     },
     isDirty
   }), [handleSave, isDirty, editor, format, currentBlocks, data]);
+
+  // Render structured, source-linked draft (BACKLOG C1.6, HITL review surface).
+  // Detected FIRST so it takes precedence over the editable views. Draft state
+  // is persisted through the C1.5 HITL commands (per block/action item), so the
+  // save/markdown ref methods above intentionally no-op for this format.
+  if (format === 'structured') {
+    console.log('🎨 Rendering STRUCTURED format (DraftSummaryView)');
+    return (
+      <DraftSummaryView
+        meetingId={meeting?.id ?? draftResponse?.draft?.meeting_id ?? ''}
+        draftResponse={draftResponse}
+        isLoading={isDraftLoading}
+        error={draftError}
+        onJumpToSource={onJumpToSource}
+        onSummaryApproved={onSummaryApproved}
+      />
+    );
+  }
 
   // Render legacy format
   if (format === 'legacy') {
