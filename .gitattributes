@@ -1,0 +1,4 @@
+# sqlx migration files: freeze bytes exactly (no CRLF/LF conversion) so their
+# checksums stay stable across clones/platforms. Converting them re-triggers
+# "migration was previously applied but has been modified" against an existing DB.
+frontend/src-tauri/migrations/*.sql -text
