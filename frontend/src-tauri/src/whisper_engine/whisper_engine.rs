@@ -276,6 +276,20 @@ impl WhisperEngine {
             available_models.insert(model.name.clone(), model.clone());
         }
 
+        // Log which models resolved to a non-missing state (cheap; useful when a
+        // "Settings shows Download but the file is on disk" report recurs).
+        let non_missing: Vec<String> = models
+            .iter()
+            .filter(|m| !matches!(m.status, ModelStatus::Missing))
+            .map(|m| format!("{}={:?}", m.name, m.status))
+            .collect();
+        log::info!(
+            "Whisper discover_models: dir={:?} | detected(non-missing)=[{}] | total_catalog={}",
+            models_dir,
+            non_missing.join(", "),
+            models.len()
+        );
+
         Ok(models)
     }
 

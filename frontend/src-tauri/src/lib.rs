@@ -467,11 +467,16 @@ pub fn run() {
             // Set models directory to use app_data_dir (unified storage location)
             whisper_engine::commands::set_models_directory(&_app.handle());
 
-            // Initialize Whisper engine on startup
+            // Initialize Whisper engine on startup, then warm the model scan once.
+            // The warm scan ensures the engine is fully ready and its model cache
+            // is populated before the user reaches Settings -> Transcription, which
+            // previously could race and report already-downloaded models as
+            // "Download" (empty scan) when the tab was opened too early.
             tauri::async_runtime::spawn(async {
                 if let Err(e) = whisper_engine::commands::whisper_init().await {
                     log::error!("Failed to initialize Whisper engine on startup: {}", e);
                 }
+                let _ = whisper_engine::commands::whisper_get_available_models().await;
             });
 
             // Set Parakeet models directory
