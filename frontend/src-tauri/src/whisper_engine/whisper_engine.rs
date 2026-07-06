@@ -191,13 +191,37 @@ impl WhisperEngine {
         // Use centralized model catalog from config.rs
         let model_configs = WHISPER_MODEL_CATALOG;
 
+        // Enumerate the models directory ONCE (filename -> size) instead of a
+        // per-file exists()/metadata() probe. The per-file probe was observed to
+        // intermittently report existing model files as Missing in some launch
+        // contexts (double-click vs shell), which made already-downloaded models
+        // render as "Download". A single read_dir is a different, more reliable
+        // syscall path; on failure we log the exact OS error and treat as empty.
+        let present_files: std::collections::HashMap<String, u64> =
+            match std::fs::read_dir(models_dir) {
+                Ok(entries) => entries
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| {
+                        let name = e.file_name().to_string_lossy().into_owned();
+                        e.metadata().ok().map(|m| (name, m.len()))
+                    })
+                    .collect(),
+                Err(e) => {
+                    log::warn!(
+                        "Whisper: read_dir({:?}) failed: {} (kind={:?}, os={:?})",
+                        models_dir,
+                        e,
+                        e.kind(),
+                        e.raw_os_error()
+                    );
+                    std::collections::HashMap::new()
+                }
+            };
+
         for &(name, filename, size_mb, accuracy, speed, description) in model_configs {
             let model_path = models_dir.join(filename);
-            let status = if model_path.exists() {
-                // Check if file size is reasonable (at least 1MB for a valid model)
-                match std::fs::metadata(&model_path) {
-                    Ok(metadata) => {
-                        let file_size_bytes = metadata.len();
+            let status = match present_files.get(filename).copied() {
+                Some(file_size_bytes) => {
                         let file_size_mb = file_size_bytes / (1024 * 1024);
                         let expected_min_size_mb = (size_mb as f64 * 0.9) as u64; // Allow 90% of expected size as minimum for more accurate corruption detection
 
@@ -250,10 +274,7 @@ impl WhisperEngine {
                             ModelStatus::Missing
                         }
                     }
-                    Err(_) => ModelStatus::Missing,
-                }
-            } else {
-                ModelStatus::Missing
+                None => ModelStatus::Missing,
             };
 
             let model_info = ModelInfo {
