@@ -642,8 +642,12 @@ impl ParakeetEngine {
         let base_url = if model_name.contains("-v2-") {
             "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main"
         } else {
-            // Default to v3 for v3 models
-            "https://meetily.towardsgeneralintelligence.com/models/parakeet-tdt-0.6b-v3-onnx"
+            // Default to v3 for v3 models. Same file names and sizes as the
+            // previous Zackriya-controlled CDN (verified byte-for-byte against
+            // this HF repo's listing during the 2026-07-07 GA-readiness audit,
+            // see docs/DECISIONS.md ADR-0020) — CC-BY-4.0, matches NVIDIA's
+            // original release, already credited in README.md.
+            "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main"
         };
 
         // Determine which files to download based on quantization

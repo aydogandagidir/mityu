@@ -28,6 +28,14 @@ export function About() {
         }
     };
 
+    const openExternalLink = async (url: string) => {
+        try {
+            await invoke('open_external_url', { url });
+        } catch (error) {
+            console.error('Failed to open link:', error);
+        }
+    };
+
     const handleCheckForUpdates = async () => {
         setIsChecking(true);
         try {
@@ -134,6 +142,32 @@ export function About() {
                 >
                     Chat with the bluedev team
                 </button>
+            </div>
+
+            {/* Acknowledgments - Compact */}
+            <div className="pt-2 border-t border-gray-200">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Acknowledgments</h3>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                    Mityu is built on the open-source{' '}
+                    <button onClick={() => openExternalLink('https://github.com/Zackriya-Solutions/meeting-minutes')} className="underline hover:text-gray-700">
+                        Meetily
+                    </button>{' '}
+                    by Zackriya Solutions (MIT license). Mityu is a separate product by bluedev and is not affiliated with, nor endorsed by, Meetily or Zackriya Solutions.
+                </p>
+                <p className="text-xs text-gray-500 leading-relaxed mt-1.5">
+                    On-device transcription is powered by{' '}
+                    <button onClick={() => openExternalLink('https://github.com/ggerganov/whisper.cpp')} className="underline hover:text-gray-700">
+                        whisper.cpp
+                    </button>{' '}
+                    (OpenAI Whisper, MIT license) and{' '}
+                    <button onClick={() => openExternalLink('https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3')} className="underline hover:text-gray-700">
+                        NVIDIA&apos;s Parakeet
+                    </button>{' '}
+                    model (CC BY 4.0), with an ONNX conversion by{' '}
+                    <button onClick={() => openExternalLink('https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx')} className="underline hover:text-gray-700">
+                        istupakov
+                    </button>.
+                </p>
             </div>
 
             {/* Footer - Compact */}

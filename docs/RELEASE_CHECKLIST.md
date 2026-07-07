@@ -25,11 +25,9 @@ CI used to pass `MEETILY_RSA_PUBLIC_KEY` + `SUPABASE_URL` / `SUPABASE_ANON_KEY` 
 
 ## 3. Third-party binaries & models (supply-chain)
 
-Two dependencies still download from upstream-controlled hosts (ADR-0009 flagged the model CDN):
-- **FFmpeg** — `frontend/src-tauri/build/ffmpeg.rs` fetches from `github.com/Zackriya-Solutions/ffmpeg-binaries`.
-- **Parakeet model** — `frontend/src-tauri/src/parakeet_engine/parakeet_engine.rs` fetches from `meetily.towardsgeneralintelligence.com`.
-
-Before GA, either accept the dependency or **mirror** each to infrastructure you control (a `bluedev` / `aydogandagidir` GitHub release for the ffmpeg zips; your own host or the official HF repo `istupakov/parakeet-tdt-0.6b-v3-onnx` for the model), then repoint those URLs and verify checksums.
+One dependency still downloads from an upstream-controlled host (ADR-0009 flagged the model CDN); the other is resolved:
+- **FFmpeg** — `frontend/src-tauri/build/ffmpeg.rs` fetches from `github.com/Zackriya-Solutions/ffmpeg-binaries`. Still open: either accept the dependency or mirror the binaries to a `bluedev` / `aydogandagidir` GitHub release and repoint the URL, verifying checksums.
+- **Parakeet model** — ~~fetched from `meetily.towardsgeneralintelligence.com`~~ **fixed (2026-07-07)**: `parakeet_engine.rs` now downloads the default v3 model from `huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx` directly (same pattern already used for v2), verified byte-for-byte identical file names/sizes against the old CDN before switching (see ADR-0020). This also closes the model-licensing question: CC-BY-4.0, matches NVIDIA's official release, already credited in `README.md` and now also in the in-app About screen.
 
 ## 4. Build & verify (toolchain)
 
