@@ -19,9 +19,9 @@ Still OPEN before the first release:
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = the password you chose
 2. Verify: a release build emits `*.sig` files; `latest.json` URLs point to `aydogandagidir/mityu` (already fixed in `scripts/generate-update-manifest-github.js`); an older build updates to the new one.
 
-## 2. Upstream PRO licensing (decide — currently dormant)
+## 2. Upstream PRO licensing (resolved — dead secrets removed)
 
-CI passes `MEETILY_RSA_PUBLIC_KEY` + `SUPABASE_URL` / `SUPABASE_ANON_KEY` — upstream Meetily PRO's **license-activation** system, which Mityu does **not** ship. With those secrets unset the feature is inert (nothing to do to release). If you later build your own licensing, add `MITYU_*` secrets and rename the CI env vars; otherwise you may delete those `env:` lines from `.github/workflows/build*.yml`.
+CI used to pass `MEETILY_RSA_PUBLIC_KEY` + `SUPABASE_URL` / `SUPABASE_ANON_KEY` — upstream Meetily PRO's **license-activation** system, which Mityu does **not** ship (confirmed zero references anywhere in `frontend/src-tauri/src/`). Those `env:` lines have been removed from every workflow that had them (`build.yml`, `build-windows.yml`, `build-macos.yml`, `build-linux.yml`, `build-devtest.yml`); the matching GitHub repo secrets, if ever configured, are no longer read by anything and can be deleted too. If you later build your own licensing, add fresh `MITYU_*`-prefixed secrets and wire them in explicitly rather than reviving these names.
 
 ## 3. Third-party binaries & models (supply-chain)
 

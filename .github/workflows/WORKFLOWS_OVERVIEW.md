@@ -2,11 +2,30 @@
 
 This document provides a quick overview of all available CI/CD workflows in this repository.
 
-**Note:** All workflows in this repository use **manual triggers only** (`workflow_dispatch`). There are no automatic triggers from push or pull request events.
+**Note:** Most workflows in this repository — every build and release workflow below — use **manual triggers only** (`workflow_dispatch`). The exception is **`ci.yml`**, which triggers **automatically** on push (`main`, `feat/**`, `fix/**`, `chore/**`, `docs/**`) and on every pull request, in addition to supporting manual dispatch.
 
 ## Workflow Files
 
-### 1. **build-devtest.yml** - DevTest Builds
+### 1. **ci.yml** - Continuous Integration
+**Purpose:** Lint, type-check, and test every push and pull request — the automatic quality gate (not a build/release workflow, produces no artifacts)
+
+**Key Features:**
+- `rust` job: `cargo fmt --all --check`, `cargo clippy --all-targets`, `cargo test --all`
+- `frontend` job: `pnpm install --frozen-lockfile`, `pnpm run lint`, `pnpm tsc --noEmit`
+- `server-isolation` job: fails the build if `server/` exists without a `*cross_tenant*` isolation test (no-op guard until `server/` ships, see CLAUDE.md §5)
+- No build artifacts, no signing, no releases
+
+**Triggers:**
+- **Automatic** — push to `main`, `feat/**`, `fix/**`, `chore/**`, `docs/**`
+- **Automatic** — every pull request
+- Also supports manual `workflow_dispatch`
+
+**Use When:**
+- N/A for manual use — it runs on its own for every push/PR. Dispatch it manually only to re-run the check without a new commit.
+
+---
+
+### 2. **build-devtest.yml** - DevTest Builds
 **Purpose:** Fast builds for development and testing
 
 **Key Features:**
@@ -25,7 +44,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 ---
 
-### 2. **build-macos.yml** - macOS Standalone Builds
+### 3. **build-macos.yml** - macOS Standalone Builds
 **Purpose:** Build and test specifically for Apple Silicon (M1/M2/M3)
 
 **Key Features:**
@@ -48,7 +67,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 ---
 
-### 3. **build-windows.yml** - Windows Standalone Builds
+### 4. **build-windows.yml** - Windows Standalone Builds
 **Purpose:** Build and test specifically for Windows x64
 
 **Key Features:**
@@ -71,7 +90,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 ---
 
-### 4. **build-linux.yml** - Linux Standalone Builds
+### 5. **build-linux.yml** - Linux Standalone Builds
 **Purpose:** Build and test for Linux distributions
 
 **Key Features:**
@@ -96,7 +115,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 ---
 
-### 5. **build-test.yml** - Multi-Platform Test Builds
+### 6. **build-test.yml** - Multi-Platform Test Builds
 **Purpose:** Test builds across all platforms with signing
 
 **Key Features:**
@@ -116,7 +135,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 ---
 
-### 6. **build.yml** - Reusable Build Workflow
+### 7. **build.yml** - Reusable Build Workflow
 **Purpose:** Shared workflow used by other workflows
 
 **Key Features:**
@@ -128,7 +147,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 ---
 
-### 7. **release.yml** - Production Release
+### 8. **release.yml** - Production Release
 **Purpose:** Create official releases with signed binaries
 
 **Key Features:**
@@ -164,7 +183,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 ---
 
-### 8. **pr-main-check.yml** - Validation Check
+### 9. **pr-main-check.yml** - Validation Check
 **Purpose:** Quick validation of version and configuration
 
 **Key Features:**
@@ -233,6 +252,9 @@ This document provides a quick overview of all available CI/CD workflows in this
 ## Workflow Dependencies
 
 ```
+ci.yml — automatic (push + pull_request), also manually dispatchable;
+         independent of everything below (no build.yml, no artifacts)
+
 build.yml (reusable)
     |-- build-test.yml (calls build.yml)
     |-- release.yml (calls build.yml)
@@ -297,9 +319,6 @@ All workflows require these secrets to be configured:
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` - Key password
 
 ### Application Configuration
-- `MEETILY_RSA_PUBLIC_KEY` - License validation public key
-- `SUPABASE_URL` - Online license verification
-- `SUPABASE_ANON_KEY` - Supabase anonymous key
 - `MITYU_POSTHOG_API_KEY` - Mityu-owned PostHog project key (embedded at build time; unset = telemetry no-op)
 
 ---
