@@ -15,9 +15,6 @@ use crate::{
     summary::CustomOpenAIConfig,
 };
 
-// Hardcoded server URL
-const APP_SERVER_URL: &str = "http://localhost:5167";
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiResponse<T> {
     pub success: bool,
@@ -207,12 +204,6 @@ async fn get_auth_token<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
             None
         }
     }
-}
-
-// Helper function to get server address - now hardcoded
-async fn get_server_address<R: Runtime>(_app: &AppHandle<R>) -> Result<String, String> {
-    log_info!("Using hardcoded server URL: {}", APP_SERVER_URL);
-    Ok(APP_SERVER_URL.to_string())
 }
 
 // API Commands for Tauri
@@ -952,77 +943,6 @@ pub async fn open_meeting_folder<R: Runtime>(
         None => {
             log_warn!("Meeting not found: {}", meeting_id);
             Err("Meeting not found".to_string())
-        }
-    }
-}
-
-// Simple test command to check backend connectivity
-#[tauri::command]
-pub async fn test_backend_connection<R: Runtime>(
-    app: AppHandle<R>,
-    auth_token: Option<String>,
-) -> Result<String, String> {
-    log_debug!("Testing backend connection...");
-
-    let client = reqwest::Client::new();
-    let server_url = get_server_address(&app).await?;
-
-    log_debug!("Testing connection to: {}", server_url);
-
-    let mut request = client.get(&format!("{}/docs", server_url));
-
-    if let Some(token) = auth_token {
-        request = request.header("Authorization", format!("Bearer {}", token));
-    }
-
-    match request.send().await {
-        Ok(response) => {
-            let status = response.status();
-            log_debug!("Backend responded with status: {}", status);
-            Ok(format!("Backend is reachable. Status: {}", status))
-        }
-        Err(e) => {
-            let error_msg = format!("Failed to connect to backend: {}", e);
-            log_debug!("{}", error_msg);
-            Err(error_msg)
-        }
-    }
-}
-
-#[tauri::command]
-pub async fn debug_backend_connection<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
-    log_debug!("=== DEBUG: Testing backend connection ===");
-
-    // Test 1: Check server address from store
-    let server_url = match get_server_address(&app).await {
-        Ok(url) => {
-            log_debug!("✓ Server URL from store: {}", url);
-            url
-        }
-        Err(e) => {
-            log_error!("✗ Failed to get server URL: {}", e);
-            return Err(format!("Failed to get server URL: {}", e));
-        }
-    };
-
-    // Test 2: Make a simple HTTP request to the backend
-    let client = reqwest::Client::new();
-    let test_url = format!("{}/docs", server_url); // Try the docs endpoint which should be public
-
-    log_debug!("Testing connection to: {}", test_url);
-
-    match client.get(&test_url).send().await {
-        Ok(response) => {
-            let status = response.status();
-            log_debug!("✓ Backend responded with status: {}", status);
-            Ok(format!(
-                "Backend connection successful! Status: {}, URL: {}",
-                status, server_url
-            ))
-        }
-        Err(e) => {
-            log_error!("✗ Backend connection failed: {}", e);
-            Err(format!("Backend connection failed: {}", e))
         }
     }
 }
