@@ -222,16 +222,38 @@ impl WhisperEngine {
             let model_path = models_dir.join(filename);
             let status = match present_files.get(filename).copied() {
                 Some(file_size_bytes) => {
-                        let file_size_mb = file_size_bytes / (1024 * 1024);
-                        let expected_min_size_mb = (size_mb as f64 * 0.9) as u64; // Allow 90% of expected size as minimum for more accurate corruption detection
+                    let file_size_mb = file_size_bytes / (1024 * 1024);
+                    let expected_min_size_mb = (size_mb as f64 * 0.9) as u64; // Allow 90% of expected size as minimum for more accurate corruption detection
 
-                        if file_size_mb >= expected_min_size_mb && file_size_mb > 1 {
-                            // File size looks good, but let's also check if it's a valid GGML file
-                            match self.validate_model_file(&model_path).await {
-                                Ok(_) => ModelStatus::Available,
-                                Err(_) => {
-                                    log::warn!("Model file {} has correct size but appears corrupted (failed validation)",
+                    if file_size_mb >= expected_min_size_mb && file_size_mb > 1 {
+                        // File size looks good, but let's also check if it's a valid GGML file
+                        match self.validate_model_file(&model_path).await {
+                            Ok(_) => ModelStatus::Available,
+                            Err(_) => {
+                                log::warn!("Model file {} has correct size but appears corrupted (failed validation)",
                                              filename);
+                                ModelStatus::Corrupted {
+                                    file_size: file_size_bytes,
+                                    expected_min_size: (expected_min_size_mb * 1024 * 1024) as u64,
+                                }
+                            }
+                        }
+                    } else if file_size_mb > 0 {
+                        // File exists but is smaller than expected
+                        // Check if this model is currently being downloaded
+                        let models_guard = self.available_models.read().await;
+                        if let Some(existing_model) = models_guard.get(name) {
+                            match &existing_model.status {
+                                ModelStatus::Downloading { progress } => {
+                                    log::debug!("Model {} appears to be downloading ({} MB so far, {}% complete)",
+                                                  filename, file_size_mb, progress);
+                                    ModelStatus::Downloading {
+                                        progress: *progress,
+                                    }
+                                }
+                                _ => {
+                                    log::warn!("Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
+                                                 filename, file_size_mb, size_mb);
                                     ModelStatus::Corrupted {
                                         file_size: file_size_bytes,
                                         expected_min_size: (expected_min_size_mb * 1024 * 1024)
@@ -239,41 +261,22 @@ impl WhisperEngine {
                                     }
                                 }
                             }
-                        } else if file_size_mb > 0 {
-                            // File exists but is smaller than expected
-                            // Check if this model is currently being downloaded
-                            let models_guard = self.available_models.read().await;
-                            if let Some(existing_model) = models_guard.get(name) {
-                                match &existing_model.status {
-                                    ModelStatus::Downloading { progress } => {
-                                        log::debug!("Model {} appears to be downloading ({} MB so far, {}% complete)",
-                                                  filename, file_size_mb, progress);
-                                        ModelStatus::Downloading {
-                                            progress: *progress,
-                                        }
-                                    }
-                                    _ => {
-                                        log::warn!("Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
-                                                 filename, file_size_mb, size_mb);
-                                        ModelStatus::Corrupted {
-                                            file_size: file_size_bytes,
-                                            expected_min_size: (expected_min_size_mb * 1024 * 1024)
-                                                as u64,
-                                        }
-                                    }
-                                }
-                            } else {
-                                log::warn!("Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
-                                         filename, file_size_mb, size_mb);
-                                ModelStatus::Corrupted {
-                                    file_size: file_size_bytes,
-                                    expected_min_size: (expected_min_size_mb * 1024 * 1024) as u64,
-                                }
-                            }
                         } else {
-                            ModelStatus::Missing
+                            log::warn!(
+                                "Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
+                                filename,
+                                file_size_mb,
+                                size_mb
+                            );
+                            ModelStatus::Corrupted {
+                                file_size: file_size_bytes,
+                                expected_min_size: (expected_min_size_mb * 1024 * 1024) as u64,
+                            }
                         }
+                    } else {
+                        ModelStatus::Missing
                     }
+                }
                 None => ModelStatus::Missing,
             };
 
