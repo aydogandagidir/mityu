@@ -117,8 +117,8 @@ export function About() {
                         <p className="text-xs text-gray-600 leading-relaxed">Avoid pay-per-minute bills by running models locally (or pay only for the calls you choose).</p>
                     </div>
                     <div className="bg-gray-50 rounded p-3 hover:bg-gray-100 transition-colors">
-                        <h3 className="font-bold text-sm text-gray-900 mb-1">Works everywhere</h3>
-                        <p className="text-xs text-gray-600 leading-relaxed">Google Meet, Zoom, Teams-online or offline.</p>
+                        <h3 className="font-bold text-sm text-gray-900 mb-1">Any meeting app</h3>
+                        <p className="text-xs text-gray-600 leading-relaxed">Google Meet, Zoom, Teams — or a face-to-face conversation. Mityu captures system audio, so it never joins your call. macOS &amp; Windows (Linux experimental).</p>
                     </div>
                 </div>
             </div>
@@ -126,7 +126,7 @@ export function About() {
             {/* Coming Soon - Compact */}
             <div className="bg-blue-50 rounded p-3">
                 <p className="text-s text-blue-800">
-                    <span className="font-bold">Coming soon:</span> A library of on-device AI agents-automating follow-ups, action tracking, and more.
+                    <span className="font-bold">Coming soon:</span> A library of on-device AI agents — drafting follow-ups, tracking action items, and more. Draft-only: nothing is sent until you approve it.
                 </p>
             </div>
 

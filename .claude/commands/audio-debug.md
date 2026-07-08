@@ -4,7 +4,7 @@ argument-hint: <symptom, platform>
 ---
 Diagnose this audio issue: **$ARGUMENTS** (delegate to audio-pipeline-engineer; read-first, minimal change).
 
-1. Confirm platform + permissions: macOS needs microphone AND screen-recording (macOS 13+) for system audio; Windows needs WASAPI loopback / virtual device. BlackHole (macOS) present?
+1. Confirm platform + permissions: macOS needs microphone AND screen-recording/audio-capture (macOS 13+) for system audio; Windows uses WASAPI loopback (no virtual device). No BlackHole required — if present it is only classified as a wired virtual device. Linux system audio is known broken (ADR-0022).
 2. Verify the 48kHz assumption and where resampling happens; check mic vs "system" device naming.
 3. Enable verbose audio logging; trace the buffer/threading path in `audio*`/`recording_manager.rs`; identify where the signal is lost or corrupted.
 4. Propose the smallest fix; preserve thread-safety/lock ordering.

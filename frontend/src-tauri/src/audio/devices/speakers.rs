@@ -35,13 +35,18 @@ pub fn default_output_device() -> Result<AudioDevice> {
         return Ok(AudioDevice::new(device.name()?, DeviceType::Output));
     }
 
+    // Linux (and any other non-macOS/Windows target): system-audio capture is not
+    // supported. cpal's ALSA host does not surface PulseAudio/PipeWire monitor
+    // sources, so returning the ALSA *output* endpoint here only produced a "system"
+    // stream that failed later, deep inside get_device_and_config (ADR-0022).
+    // Fail early and explicitly instead: `RecordingManager` treats an Err here as
+    // "no system device" and records the microphone only — the honest behaviour.
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| anyhow!("No default output device found"))?;
-        return Ok(AudioDevice::new(device.name()?, DeviceType::Output));
+        return Err(anyhow!(
+            "System audio capture is not supported on this platform yet (ADR-0022); \
+             recording microphone only"
+        ));
     }
 }
 

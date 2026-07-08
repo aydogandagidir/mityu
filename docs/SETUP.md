@@ -10,7 +10,7 @@ Goal: a reproducible local build of the Tauri (Rust) + Next.js app, with local t
 - **Whisper model** (`large-v3` default): download in-app (model manager) or place it in the models path the engine expects.
 - **Parakeet** engine assets per `parakeet_engine/` (verify model/license).
 - **Ollama** (for local, offline summarization) with at least one instruct model pulled (e.g. a small local model) so the app works with no cloud key. The app also ships an embedded llama.cpp engine (`llama-helper` + in-app model manager) as a local alternative.
-- **System audio capture:** BlackHole (macOS) / WASAPI loopback (Windows). macOS: grant Microphone + Screen Recording permissions (macOS 13+).
+- **System audio capture:** no virtual audio device needed — ScreenCaptureKit or a Core Audio tap (macOS), WASAPI loopback (Windows). macOS: grant Microphone + Screen Recording permissions (macOS 13+). Linux: microphone capture only for now (system audio broken, ADR-0022).
 
 ## Build & run
 ```bash

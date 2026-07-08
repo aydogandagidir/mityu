@@ -10,7 +10,7 @@ You are an audio-systems engineer. This subsystem is fragile and platform-sensit
 ## Non-negotiable constraints
 - Pipeline assumes a **consistent 48kHz** sample rate; resample at capture time.
 - Device naming is **"microphone"** and **"system"** — never "input"/"output".
-- System audio needs a virtual device: BlackHole (macOS), WASAPI loopback (Windows). macOS system audio also needs **screen-recording permission (macOS 13+)**; request permissions early.
+- System audio needs **no virtual device**: ScreenCaptureKit / Core Audio tap (macOS), WASAPI loopback (Windows — cpal builds an input stream on a render endpoint). macOS system audio also needs **screen-recording / audio-capture permission (macOS 13+)**; request permissions early. Linux system audio is broken today (ADR-0022).
 - Never hardcode paths; use Tauri path APIs.
 - If both `audio/` and `audio_v2/` exist: first record which is authoritative in docs/DECISIONS.md; converge behind a flag; never refactor both blindly in one pass.
 

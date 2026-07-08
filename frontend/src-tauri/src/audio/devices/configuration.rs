@@ -152,22 +152,18 @@ pub async fn get_device_and_config(
                     }
                 }
 
+                // Linux: nothing to resolve. cpal's ALSA host does not expose
+                // PulseAudio/PipeWire monitor sources, and the synthetic
+                // "<name> (System Audio)" entries this code used to look for could
+                // never round-trip through AudioDevice::from_name anyway. Fail loudly
+                // instead of falling through to a generic "Device not found"
+                // (ADR-0022).
                 #[cfg(target_os = "linux")]
                 {
-                    // For Linux, we use PulseAudio monitor sources for system audio
-                    if let Ok(pulse_host) = cpal::host_from_id(cpal::HostId::Alsa) {
-                        for device in pulse_host.input_devices()? {
-                            if let Ok(name) = device.name() {
-                                if name == audio_device.name {
-                                    let default_config =
-                                        device.default_input_config().map_err(|e| {
-                                            anyhow!("Failed to get default input config: {}", e)
-                                        })?;
-                                    return Ok((device, default_config));
-                                }
-                            }
-                        }
-                    }
+                    return Err(anyhow!(
+                        "System audio capture is not supported on Linux yet (ADR-0022); \
+                         Mityu records the microphone only on this platform"
+                    ));
                 }
             }
         }

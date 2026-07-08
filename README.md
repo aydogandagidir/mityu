@@ -40,7 +40,7 @@ This makes Mityu a fit for professionals and enterprises who must keep control o
 - **Privacy-first.** Capture, transcription, and (by default) summarization run on your device. No cloud, no leaks.
 - **Use any model.** Prefer a local open-source model? Great. Want to plug in an external API? Also fine. Bring your own key (BYOK) — no lock-in.
 - **Cost-smart.** Avoid pay-per-minute bills by running models locally, or pay only for the calls you choose.
-- **Works everywhere.** Google Meet, Zoom, Teams — online or offline. Mityu captures system audio, so it records the conversation regardless of platform (it is *not* a bot that joins your call).
+- **Any meeting app.** Google Meet, Zoom, Teams — or a face-to-face conversation. Mityu captures system audio, so it records regardless of platform (it is *not* a bot that joins your call). System-audio capture is supported on **macOS** (ScreenCaptureKit / Core Audio tap) and **Windows** (WASAPI loopback); **Linux is experimental** — microphone capture works, system-audio capture does not yet.
 - **Human-in-the-loop.** AI summaries and action items are **drafts** bound to their source transcript segment until a human approves them — for trust, dispute evidence, and EU AI Act transparency.
 
 ## Features
@@ -76,6 +76,12 @@ This makes Mityu a fit for professionals and enterprises who must keep control o
 2. Open it and drag **Mityu** to your Applications folder.
 
 ### 🐧 Linux
+
+> **Experimental — microphone only.** Recording, transcription and summarization work, but
+> **system-audio capture does not**: it needs a PulseAudio/PipeWire backend that is not built yet
+> (see [ADR-0022](docs/DECISIONS.md)). Mityu will record the microphone and log a clear message
+> instead of silently capturing nothing. Use it for in-person conversations; for online meetings
+> prefer macOS or Windows.
 
 Build from source:
 

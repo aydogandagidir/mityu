@@ -93,7 +93,7 @@ graph TD
 
 Upstream flags this as the most fragile subsystem. Rules:
 - Pipeline expects a **consistent 48kHz** sample rate; resample at capture time.
-- System-audio capture needs a virtual device (BlackHole on macOS, WASAPI loopback on Windows) and **macOS 13+ screen-recording permission**; request permissions early.
+- System-audio capture needs **no virtual device**: macOS uses ScreenCaptureKit (default) or a Core Audio tap, Windows uses WASAPI loopback (cpal opens an input stream on a render endpoint). macOS still needs **screen-recording / audio-capture permission (macOS 13+, 14.4+ for taps)**; request it early. BlackHole is merely *tolerated* if present (classified as a wired virtual device), never required. **Linux system audio is currently broken** — see ADR-0022.
 - Devices are named **"microphone"** and **"system"** consistently — never "input"/"output".
 - Do not refactor `audio/` and `audio_v2/` together in one pass. If both exist, first document which is authoritative in `docs/DECISIONS.md`, then converge behind a flag.
 - Any audio change requires a manual smoke test (record → transcript appears) on at least one macOS and one Windows path before merge.
