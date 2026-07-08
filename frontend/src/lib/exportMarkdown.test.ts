@@ -1,25 +1,17 @@
 /**
- * Pure unit tests for `renderExportMarkdown` (BACKLOG C4.1).
+ * Unit tests for `renderExportMarkdown` (BACKLOG C4.1).
  *
- * NO TEST RUNNER EXISTS in `frontend/` (no jest/vitest in package.json). These
- * are framework-free assertions: type-checked by `pnpm exec tsc --noEmit` and
- * runnable ad-hoc via any TS runner (e.g.
- * `pnpm dlx tsx src/lib/exportMarkdown.test.ts`). `runExportMarkdownTests` throws
- * on the first failed assertion.
+ * Run with `pnpm test` (Vitest, `environment: 'node'` — see `vitest.config.ts`).
+ * These are pure-logic assertions: no DOM, no mocks, no I/O.
  *
  * Coverage: deterministic output (same in → same out), the provenance header,
  * heading/text/bullet mapping, `[MM:SS]` presence, the Action Items section, and
  * the excluded-action-items footer note.
  */
 
+import { describe, it, expect } from 'vitest';
 import { renderExportMarkdown } from './exportMarkdown';
 import type { ExportDoc } from './exportModel';
-
-function assert(cond: boolean, msg: string): void {
-  if (!cond) {
-    throw new Error(`renderExportMarkdown test failed: ${msg}`);
-  }
-}
 
 const FULL_DOC: ExportDoc = {
   meta: {
@@ -49,90 +41,99 @@ const FULL_DOC: ExportDoc = {
   excludedActionItemCount: 2,
 };
 
-export function runExportMarkdownTests(): number {
-  let passed = 0;
-
+describe('renderExportMarkdown', () => {
   const md = renderExportMarkdown(FULL_DOC);
 
-  // 1) Determinism: identical input renders byte-identical output.
-  {
-    const again = renderExportMarkdown(FULL_DOC);
-    assert(md === again, 'render is deterministic (same in → same out)');
-    passed += 1;
-  }
+  it('is deterministic (same in → same out)', () => {
+    expect(renderExportMarkdown(FULL_DOC)).toBe(md);
+  });
 
-  // 2) Header title + provenance line (AI-generated + approver + date).
-  {
-    assert(md.startsWith('# Weekly Sync\n'), 'title is the H1 header');
-    assert(
-      md.includes('> AI-generated · reviewed & approved by ada@bluedev.dev on 2026-07-05T09:30:00Z'),
-      'provenance line names approver + approval time',
-    );
-    passed += 1;
-  }
+  describe('header + provenance', () => {
+    it('renders the title as the H1 header', () => {
+      expect(md.startsWith('# Weekly Sync\n')).toBe(true);
+    });
 
-  // 3) Metadata line carries date + model + exported.
-  {
-    assert(md.includes('**Meeting date:** Jul 5, 2026'), 'meeting date in meta line');
-    assert(md.includes('**Model:** claude-3-5'), 'model in meta line');
-    assert(md.includes('**Exported:** 2026-07-05 10:00'), 'exported time in meta line');
-    passed += 1;
-  }
+    it('names the approver and approval time in the provenance line', () => {
+      expect(md).toContain(
+        '> AI-generated · reviewed & approved by ada@bluedev.dev on 2026-07-05T09:30:00Z',
+      );
+    });
+  });
 
-  // 4) Section + heading/text/bullet mapping with timestamps.
-  {
-    assert(md.includes('## Decisions'), 'section title as H2');
-    assert(md.includes('# [00:10] Budget'), 'heading1 -> "#" with leading [MM:SS]');
-    assert(md.includes('[00:12] We approved the Q3 budget.'), 'text line carries its [MM:SS]');
-    assert(md.includes('- [01:05] Hire two engineers'), 'bullet carries [MM:SS] after marker');
-    assert(md.includes('- Ship export feature'), 'bullet without ts renders plainly');
-    passed += 1;
-  }
+  describe('metadata line', () => {
+    it('carries the meeting date', () => {
+      expect(md).toContain('**Meeting date:** Jul 5, 2026');
+    });
 
-  // 5) Action Items section + per-item ts + (Assignee, Due) suffix.
-  {
-    assert(md.includes('## Action Items'), 'action items section present');
-    assert(
-      md.includes('- [02:00] Draft the JD (Assignee: Ada, Due: Fri)'),
-      'action item: ts + text + assignee/due suffix',
-    );
-    assert(md.includes('- No-timestamp task'), 'action item without ts/meta renders plainly');
-    passed += 1;
-  }
+    it('carries the model', () => {
+      expect(md).toContain('**Model:** claude-3-5');
+    });
 
-  // 6) Excluded-action-items footer note (transparency).
-  {
-    assert(
-      md.includes('_Note: 2 action items not yet approved — not included._'),
-      'footer discloses the excluded action-item count',
-    );
-    passed += 1;
-  }
+    it('carries the exported time', () => {
+      expect(md).toContain('**Exported:** 2026-07-05 10:00');
+    });
+  });
 
-  // 7) Graceful provenance fallback when approver/date are absent.
-  {
+  describe('section + item mapping', () => {
+    it('renders the section title as H2', () => {
+      expect(md).toContain('## Decisions');
+    });
+
+    it('maps heading1 to "#" with a leading [MM:SS]', () => {
+      expect(md).toContain('# [00:10] Budget');
+    });
+
+    it('gives a text line its [MM:SS]', () => {
+      expect(md).toContain('[00:12] We approved the Q3 budget.');
+    });
+
+    it('puts a bullet\'s [MM:SS] after the marker', () => {
+      expect(md).toContain('- [01:05] Hire two engineers');
+    });
+
+    it('renders a bullet without a timestamp plainly', () => {
+      expect(md).toContain('- Ship export feature');
+    });
+  });
+
+  describe('action items section', () => {
+    it('is present', () => {
+      expect(md).toContain('## Action Items');
+    });
+
+    it('renders ts + text + assignee/due suffix', () => {
+      expect(md).toContain('- [02:00] Draft the JD (Assignee: Ada, Due: Fri)');
+    });
+
+    it('renders an item without ts/meta plainly', () => {
+      expect(md).toContain('- No-timestamp task');
+    });
+  });
+
+  describe('excluded-action-items footer (transparency)', () => {
+    it('discloses the excluded action-item count', () => {
+      expect(md).toContain('_Note: 2 action items not yet approved — not included._');
+    });
+
+    it('uses the singular "item" for a count of one', () => {
+      const singular = renderExportMarkdown({ ...FULL_DOC, excludedActionItemCount: 1 });
+      expect(singular).toContain('_Note: 1 action item not yet approved — not included._');
+    });
+  });
+
+  describe('graceful degradation when approver/date are absent', () => {
     const noProvenance = renderExportMarkdown({
       ...FULL_DOC,
       meta: { meetingId: 'm', title: 'T', exportedAt: 'now' },
       excludedActionItemCount: 0,
     });
-    assert(
-      noProvenance.includes('> AI-generated · reviewed & approved by a human before export'),
-      'provenance degrades gracefully with no approver/date',
-    );
-    assert(!noProvenance.includes('_Note:'), 'no footer note when nothing is excluded');
-    passed += 1;
-  }
 
-  // 8) Singular wording for exactly one excluded item.
-  {
-    const singular = renderExportMarkdown({ ...FULL_DOC, excludedActionItemCount: 1 });
-    assert(
-      singular.includes('_Note: 1 action item not yet approved — not included._'),
-      'singular "item" for a count of one',
-    );
-    passed += 1;
-  }
+    it('falls back to a generic human-approval provenance line', () => {
+      expect(noProvenance).toContain('> AI-generated · reviewed & approved by a human before export');
+    });
 
-  return passed;
-}
+    it('omits the footer note when nothing is excluded', () => {
+      expect(noProvenance).not.toContain('_Note:');
+    });
+  });
+});

@@ -1,37 +1,21 @@
 /**
- * Pure unit tests for `buildExportDoc` (BACKLOG C4.1).
+ * Unit tests for `buildExportDoc` (BACKLOG C4.1).
  *
- * NO TEST RUNNER EXISTS in `frontend/` (no jest/vitest in package.json). These
- * are written as pure, framework-free assertions so they are (a) fully
- * type-checked by `pnpm exec tsc --noEmit` and (b) runnable ad-hoc with any TS
- * runner (e.g. `pnpm dlx tsx src/lib/exportModel.test.ts`). `runExportModelTests`
- * throws on the first failed assertion and returns the passed-count otherwise.
+ * Run with `pnpm test` (Vitest, `environment: 'node'` — see `vitest.config.ts`).
+ * These are pure-logic assertions: no DOM, no mocks, no I/O.
  *
  * Coverage: approved-only block filtering, approved-only action-item filtering +
  * excluded-count, timestamp mapping (resolved + unresolved), empty-section drop,
  * and the legacy `draft: null` degraded doc.
  */
 
+import { describe, it, expect } from 'vitest';
 import { buildExportDoc, type ExportMeta } from './exportModel';
 import type {
   SummaryDraftResponse,
   DraftBlock,
   ActionItemDraft,
 } from '@/services/summaryDraftService';
-
-function assert(cond: boolean, msg: string): void {
-  if (!cond) {
-    throw new Error(`buildExportDoc test failed: ${msg}`);
-  }
-}
-
-function assertEq<T>(actual: T, expected: T, msg: string): void {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
-  if (a !== e) {
-    throw new Error(`buildExportDoc test failed: ${msg}\n  expected ${e}\n  actual   ${a}`);
-  }
-}
 
 const META: ExportMeta = {
   meetingId: 'm1',
@@ -74,11 +58,8 @@ function response(overrides: Partial<SummaryDraftResponse>): SummaryDraftRespons
   };
 }
 
-export function runExportModelTests(): number {
-  let passed = 0;
-
-  // 1) Approved-only block filtering + empty-section drop.
-  {
+describe('buildExportDoc', () => {
+  describe('approved-only block filtering', () => {
     const resp = response({
       draft: {
         meeting_id: 'm1',
@@ -101,17 +82,26 @@ export function runExportModelTests(): number {
         ],
       },
     });
-    const ts = new Map<string, string>([['t1', '[01:05]']]);
-    const doc = buildExportDoc(resp, ts, META);
-    assertEq(doc.sections.length, 1, 'only one section survives (empty dropped)');
-    assertEq(doc.sections[0].items.length, 1, 'only the approved block is emitted');
-    assertEq(doc.sections[0].items[0].text, 'kept', 'the surviving block is the approved one');
-    assertEq(doc.sections[0].items[0].sourceTs, '[01:05]', 'resolved timestamp attached');
-    passed += 1;
-  }
+    const doc = buildExportDoc(resp, new Map<string, string>([['t1', '[01:05]']]), META);
 
-  // 2) Unresolved source_chunk_id => sourceTs undefined (never fabricated).
-  {
+    it('drops a section whose blocks are all non-approved', () => {
+      expect(doc.sections).toHaveLength(1);
+    });
+
+    it('emits only the approved block', () => {
+      expect(doc.sections[0].items).toHaveLength(1);
+    });
+
+    it('the surviving block is the approved one', () => {
+      expect(doc.sections[0].items[0].text).toBe('kept');
+    });
+
+    it('attaches the resolved timestamp to the surviving block', () => {
+      expect(doc.sections[0].items[0].sourceTs).toBe('[01:05]');
+    });
+  });
+
+  it('leaves sourceTs undefined for an unresolved source_chunk_id (never fabricated)', () => {
     const resp = response({
       draft: {
         meeting_id: 'm1',
@@ -125,12 +115,10 @@ export function runExportModelTests(): number {
       },
     });
     const doc = buildExportDoc(resp, new Map(), META);
-    assert(doc.sections[0].items[0].sourceTs === undefined, 'unresolved id yields undefined ts');
-    passed += 1;
-  }
+    expect(doc.sections[0].items[0].sourceTs).toBeUndefined();
+  });
 
-  // 3) Action items: approved-only + excluded count + assignee/due + ts mapping.
-  {
+  describe('action items', () => {
     const resp = response({
       action_items: [
         actionItem({ id: 'a1', text: 'ship', status: 'approved', assignee: 'Ada', due: 'Fri', source_chunk_id: 't1' }),
@@ -139,39 +127,70 @@ export function runExportModelTests(): number {
         actionItem({ id: 'a4', text: 'rejected', status: 'rejected', source_chunk_id: 't4' }),
       ],
     });
-    const ts = new Map<string, string>([['t1', '[00:42]']]);
-    const doc = buildExportDoc(resp, ts, META);
-    assertEq(doc.actionItems.length, 1, 'only the approved action item is emitted');
-    assertEq(doc.actionItems[0].text, 'ship', 'approved item text');
-    assertEq(doc.actionItems[0].assignee, 'Ada', 'assignee carried');
-    assertEq(doc.actionItems[0].due, 'Fri', 'due carried');
-    assertEq(doc.actionItems[0].sourceTs, '[00:42]', 'action item ts resolved');
-    assertEq(doc.excludedActionItemCount, 3, 'three non-approved items counted as excluded');
-    passed += 1;
-  }
+    const doc = buildExportDoc(resp, new Map<string, string>([['t1', '[00:42]']]), META);
 
-  // 4) Legacy draft:null => degraded doc: no sections; approved items still flow.
-  {
+    it('emits only the approved action item', () => {
+      expect(doc.actionItems).toHaveLength(1);
+    });
+
+    it('carries the approved item text', () => {
+      expect(doc.actionItems[0].text).toBe('ship');
+    });
+
+    it('carries the assignee', () => {
+      expect(doc.actionItems[0].assignee).toBe('Ada');
+    });
+
+    it('carries the due date', () => {
+      expect(doc.actionItems[0].due).toBe('Fri');
+    });
+
+    it('resolves the action-item timestamp', () => {
+      expect(doc.actionItems[0].sourceTs).toBe('[00:42]');
+    });
+
+    it('counts the three non-approved items as excluded', () => {
+      expect(doc.excludedActionItemCount).toBe(3);
+    });
+  });
+
+  describe('legacy `draft: null` degraded doc', () => {
     const resp = response({
       draft: null,
       action_items: [actionItem({ id: 'a1', text: 'still here', status: 'approved', source_chunk_id: 't1' })],
     });
     const doc = buildExportDoc(resp, new Map([['t1', '[00:01]']]), META);
-    assertEq(doc.sections.length, 0, 'null draft yields zero sections');
-    assertEq(doc.actionItems.length, 1, 'action items (own table) still flow with null draft');
-    assertEq(doc.excludedActionItemCount, 0, 'no excluded items here');
-    passed += 1;
-  }
 
-  // 5) Fully null response (defensive) => empty doc.
-  {
+    it('yields zero sections', () => {
+      expect(doc.sections).toHaveLength(0);
+    });
+
+    it('still flows action items (they live in their own table)', () => {
+      expect(doc.actionItems).toHaveLength(1);
+    });
+
+    it('reports no excluded items', () => {
+      expect(doc.excludedActionItemCount).toBe(0);
+    });
+  });
+
+  describe('fully null response (defensive)', () => {
     const doc = buildExportDoc(null, new Map(), META);
-    assertEq(doc.sections.length, 0, 'null response: no sections');
-    assertEq(doc.actionItems.length, 0, 'null response: no action items');
-    assertEq(doc.excludedActionItemCount, 0, 'null response: zero excluded');
-    assertEq(doc.meta.title, 'Weekly Sync', 'meta is passed through verbatim');
-    passed += 1;
-  }
 
-  return passed;
-}
+    it('has no sections', () => {
+      expect(doc.sections).toHaveLength(0);
+    });
+
+    it('has no action items', () => {
+      expect(doc.actionItems).toHaveLength(0);
+    });
+
+    it('reports zero excluded items', () => {
+      expect(doc.excludedActionItemCount).toBe(0);
+    });
+
+    it('passes meta through verbatim', () => {
+      expect(doc.meta.title).toBe('Weekly Sync');
+    });
+  });
+});

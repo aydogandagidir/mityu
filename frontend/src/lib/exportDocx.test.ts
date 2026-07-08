@@ -1,12 +1,9 @@
 /**
- * Pure(ish) unit tests for the DOCX + PDF renderers (BACKLOG C4.2).
+ * Unit tests for the DOCX + PDF renderers (BACKLOG C4.2).
  *
- * NO TEST RUNNER EXISTS in `frontend/` (no jest/vitest in package.json). Like the
- * C4.1 tests these are framework-free: type-checked by `pnpm exec tsc --noEmit`
- * and runnable ad-hoc with any TS runner that provides a DOM-ish global (the
- * renderers dynamically import `docx` / `jspdf`, which are browser-oriented), e.g.
- * `pnpm dlx tsx src/lib/exportDocx.test.ts`. Each `run…Tests` throws on the first
- * failed assertion and returns the passed-count otherwise.
+ * Run with `pnpm test` (Vitest, `environment: 'node'` — see `vitest.config.ts`).
+ * The renderers dynamically import `docx` / `jspdf`; both produce a `Blob`, which
+ * Node provides globally, so no DOM environment is required.
  *
  * WHAT CAN BE ASSERTED: a .docx is a binary zip and a .pdf is a binary stream, so
  * their *content* is not meaningfully greppable the way Markdown is. These tests
@@ -20,15 +17,10 @@
  * `ExportDoc` model + the Markdown renderer's exhaustive C4.1 assertions.)
  */
 
+import { describe, it, expect } from 'vitest';
 import { renderExportDocx } from './exportDocx';
 import { renderExportPdf } from './exportPdf';
 import type { ExportDoc } from './exportModel';
-
-function assert(cond: boolean, msg: string): void {
-  if (!cond) {
-    throw new Error(`export renderer test failed: ${msg}`);
-  }
-}
 
 /** A representative, fully-populated doc exercising every item kind + footer. */
 const FULL_DOC: ExportDoc = {
@@ -75,44 +67,48 @@ const EMPTY_DOC: ExportDoc = {
 const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-export async function runExportDocxTests(): Promise<number> {
-  let passed = 0;
+describe('renderExportDocx', () => {
+  describe('a fully-populated doc', () => {
+    it('returns a Blob', async () => {
+      expect(await renderExportDocx(FULL_DOC)).toBeInstanceOf(Blob);
+    });
 
-  // 1) Full doc → a non-empty .docx Blob of the right MIME type.
-  {
-    const blob = await renderExportDocx(FULL_DOC);
-    assert(blob instanceof Blob, 'returns a Blob');
-    assert(blob.size > 0, 'DOCX blob is non-empty');
-    // docx sets the OOXML wordprocessing MIME type on the packed Blob.
-    assert(blob.type === DOCX_MIME, `DOCX MIME is set (got "${blob.type}")`);
-    passed += 1;
-  }
+    it('returns a non-empty Blob', async () => {
+      expect((await renderExportDocx(FULL_DOC)).size).toBeGreaterThan(0);
+    });
 
-  // 2) Empty/legacy doc → must not throw, still yields a non-empty Blob.
-  {
-    const blob = await renderExportDocx(EMPTY_DOC);
-    assert(blob instanceof Blob, 'empty doc still returns a Blob');
-    assert(blob.size > 0, 'empty-doc DOCX blob is still a valid non-empty file');
-    passed += 1;
-  }
+    it('sets the OOXML wordprocessing MIME type', async () => {
+      expect((await renderExportDocx(FULL_DOC)).type).toBe(DOCX_MIME);
+    });
+  });
 
-  return passed;
-}
+  describe('the empty/legacy doc', () => {
+    it('does not throw and still returns a Blob', async () => {
+      expect(await renderExportDocx(EMPTY_DOC)).toBeInstanceOf(Blob);
+    });
 
-export async function runExportPdfTests(): Promise<number> {
-  let passed = 0;
+    it('still yields a valid non-empty file', async () => {
+      expect((await renderExportDocx(EMPTY_DOC)).size).toBeGreaterThan(0);
+    });
+  });
+});
 
-  // 1) Full doc (multi-item, forces at least one page) → non-empty application/pdf.
-  {
-    const blob = await renderExportPdf(FULL_DOC);
-    assert(blob instanceof Blob, 'returns a Blob');
-    assert(blob.size > 0, 'PDF blob is non-empty');
-    assert(blob.type === 'application/pdf', `PDF MIME is application/pdf (got "${blob.type}")`);
-    passed += 1;
-  }
+describe('renderExportPdf', () => {
+  describe('a fully-populated doc', () => {
+    it('returns a Blob', async () => {
+      expect(await renderExportPdf(FULL_DOC)).toBeInstanceOf(Blob);
+    });
 
-  // 2) A doc large enough to force PAGINATION (many bullets) → still non-empty.
-  {
+    it('returns a non-empty Blob', async () => {
+      expect((await renderExportPdf(FULL_DOC)).size).toBeGreaterThan(0);
+    });
+
+    it('sets the application/pdf MIME type', async () => {
+      expect((await renderExportPdf(FULL_DOC)).type).toBe('application/pdf');
+    });
+  });
+
+  it('still renders a non-empty Blob for a doc long enough to force pagination', async () => {
     const many: ExportDoc = {
       ...FULL_DOC,
       sections: [
@@ -126,25 +122,16 @@ export async function runExportPdfTests(): Promise<number> {
         },
       ],
     };
-    const blob = await renderExportPdf(many);
-    assert(blob.size > 0, 'paginated PDF blob is non-empty');
-    passed += 1;
-  }
+    expect((await renderExportPdf(many)).size).toBeGreaterThan(0);
+  });
 
-  // 3) Empty/legacy doc → must not throw, still yields a non-empty single-page PDF.
-  {
-    const blob = await renderExportPdf(EMPTY_DOC);
-    assert(blob instanceof Blob, 'empty doc still returns a Blob');
-    assert(blob.size > 0, 'empty-doc PDF blob is still a valid non-empty file');
-    passed += 1;
-  }
+  describe('the empty/legacy doc', () => {
+    it('does not throw and still returns a Blob', async () => {
+      expect(await renderExportPdf(EMPTY_DOC)).toBeInstanceOf(Blob);
+    });
 
-  return passed;
-}
-
-/** Run both suites (for an ad-hoc `tsx` invocation). */
-export async function runExportBinaryRendererTests(): Promise<number> {
-  const d = await runExportDocxTests();
-  const p = await runExportPdfTests();
-  return d + p;
-}
+    it('still yields a valid non-empty single-page PDF', async () => {
+      expect((await renderExportPdf(EMPTY_DOC)).size).toBeGreaterThan(0);
+    });
+  });
+});

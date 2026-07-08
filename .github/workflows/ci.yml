@@ -42,6 +42,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
       - run: pnpm tsc --noEmit
+      - run: pnpm test
   server-isolation:
     # Enable once server/ exists (Phase 2). Fails the build if the cross-tenant test is missing.
     # hashFiles() is steps-context only (evaluated on the runner): a job-level `if` using it
