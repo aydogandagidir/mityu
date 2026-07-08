@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { Switch } from "./ui/switch"
 import { FolderOpen } from "lucide-react"
-import { invoke } from "@tauri-apps/api/core"
+import { openDatabaseFolder, openModelsFolder, openRecordingsFolder } from "@/services/systemService"
 import Analytics from "@/lib/analytics"
 import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch"
 import RecordingConsentSettings from "./RecordingConsentSettings"
@@ -116,13 +116,13 @@ export function PreferenceSettings() {
     try {
       switch (folderType) {
         case 'database':
-          await invoke('open_database_folder');
+          await openDatabaseFolder();
           break;
         case 'models':
-          await invoke('open_models_folder');
+          await openModelsFolder();
           break;
         case 'recordings':
-          await invoke('open_recordings_folder');
+          await openRecordingsFolder();
           break;
       }
 

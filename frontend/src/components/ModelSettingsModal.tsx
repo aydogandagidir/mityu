@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSidebar } from './Sidebar/SidebarProvider';
 import { invoke } from '@tauri-apps/api/core';
+import { openExternalUrl } from '@/services/systemService';
 import { Button } from '@/components/ui/button';
 import { useOllamaDownload } from '@/contexts/OllamaDownloadContext';
 import { BuiltInModelManager } from '@/components/BuiltInModelManager';
@@ -736,7 +737,7 @@ export function ModelSettingsModal({
           duration: 7000,
           action: {
             label: 'Download',
-            onClick: () => invoke('open_external_url', { url: 'https://ollama.com/download' })
+            onClick: () => openExternalUrl('https://ollama.com/download')
           }
         });
         // Update the installation status flag
@@ -1233,7 +1234,7 @@ export function ModelSettingsModal({
                     <Button
                       variant="default"
                       size="sm"
-                      onClick={() => invoke('open_external_url', { url: 'https://ollama.com/download' })}
+                      onClick={() => openExternalUrl('https://ollama.com/download')}
                       className="w-full bg-blue-600 hover:bg-blue-700"
                     >
                       <ExternalLink className="mr-2 h-4 w-4" />

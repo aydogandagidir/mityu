@@ -6,6 +6,7 @@ import { AnalyticsContext } from './AnalyticsProvider';
 import { load } from '@tauri-apps/plugin-store';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
+import { openExternalUrl } from '@/services/systemService';
 import { Analytics } from '@/lib/analytics';
 import AnalyticsDataModal from './AnalyticsDataModal';
 
@@ -149,7 +150,7 @@ export default function AnalyticsConsentSwitch() {
 
   const handlePrivacyPolicyClick = async () => {
     try {
-      await invoke('open_external_url', { url: 'https://github.com/aydogandagidir/mityu/blob/main/PRIVACY_POLICY.md' });
+      await openExternalUrl('https://github.com/aydogandagidir/mityu/blob/main/PRIVACY_POLICY.md');
     } catch (error) {
       console.error('Failed to open privacy policy link:', error);
     }

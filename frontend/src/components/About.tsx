@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
+import { openExternalUrl } from '@/services/systemService';
 import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch";
 import { UpdateDialog } from "./UpdateDialog";
 import { updateService, UpdateInfo } from '@/services/updateService';
@@ -22,7 +22,7 @@ export function About() {
 
     const handleContactClick = async () => {
         try {
-            await invoke('open_external_url', { url: 'https://bluedev.dev' });
+            await openExternalUrl('https://bluedev.dev');
         } catch (error) {
             console.error('Failed to open link:', error);
         }
@@ -30,7 +30,7 @@ export function About() {
 
     const openExternalLink = async (url: string) => {
         try {
-            await invoke('open_external_url', { url });
+            await openExternalUrl(url);
         } catch (error) {
             console.error('Failed to open link:', error);
         }

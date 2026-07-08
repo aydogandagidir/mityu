@@ -19,6 +19,7 @@ import {
 import { Sparkles, Settings, Loader2, FileText, Check, Square } from 'lucide-react';
 import Analytics from '@/lib/analytics';
 import { invoke } from '@tauri-apps/api/core';
+import { openExternalUrl } from '@/services/systemService';
 import { toast } from 'sonner';
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { isOllamaNotInstalledError } from '@/lib/utils';
@@ -223,7 +224,7 @@ export function SummaryGeneratorButtonGroup({
             duration: 7000,
             action: {
               label: 'Download',
-              onClick: () => invoke('open_external_url', { url: 'https://ollama.com/download' })
+              onClick: () => openExternalUrl('https://ollama.com/download')
             }
           }
         );

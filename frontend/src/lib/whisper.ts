@@ -278,6 +278,7 @@ export function getRecommendedModel(systemSpecs?: { ram: number; cores: number }
 
 // Tauri command wrappers for whisper-rs backend
 import { invoke } from '@tauri-apps/api/core';
+import { openModelsFolder as openModelsFolderCommand } from '@/services/systemService';
 
 export class WhisperAPI {
   static async init(): Promise<void> {
@@ -328,7 +329,8 @@ export class WhisperAPI {
     return await invoke('whisper_validate_model_ready');
   }
 
+  /** Delegates to systemService so the `open_models_folder` command name lives in exactly one place. */
   static async openModelsFolder(): Promise<void> {
-    await invoke('open_models_folder');
+    await openModelsFolderCommand();
   }
 }

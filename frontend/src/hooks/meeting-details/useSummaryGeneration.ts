@@ -3,6 +3,7 @@ import { Transcript, Summary } from '@/types';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 import { CurrentMeeting, useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { invoke as invokeTauri } from '@tauri-apps/api/core';
+import { openExternalUrl } from '@/services/systemService';
 import { toast } from 'sonner';
 import Analytics from '@/lib/analytics';
 import { isOllamaNotInstalledError } from '@/lib/utils';
@@ -541,7 +542,7 @@ export function useSummaryGeneration({
               duration: 7000,
               action: {
                 label: 'Download',
-                onClick: () => invokeTauri('open_external_url', { url: 'https://ollama.com/download' })
+                onClick: () => openExternalUrl('https://ollama.com/download')
               }
             }
           );

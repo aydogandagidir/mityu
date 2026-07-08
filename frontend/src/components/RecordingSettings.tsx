@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { FolderOpen } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { openRecordingsFolder } from '@/services/systemService';
 import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
 import Analytics from '@/lib/analytics';
 import { toast } from 'sonner';
@@ -98,7 +99,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
   const handleOpenFolder = async () => {
     try {
-      await invoke('open_recordings_folder');
+      await openRecordingsFolder();
     } catch (error) {
       console.error('Failed to open recordings folder:', error);
     }

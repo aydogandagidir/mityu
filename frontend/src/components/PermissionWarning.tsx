@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Mic, Speaker, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { invoke } from '@tauri-apps/api/core';
+import { openSystemSettings } from '@/services/systemService';
 import { useIsLinux } from '@/hooks/usePlatform';
 
 interface PermissionWarningProps {
@@ -34,7 +34,7 @@ export function PermissionWarning({
   const openMicrophoneSettings = async () => {
     if (isMacOS) {
       try {
-        await invoke('open_system_settings', { preferencePane: 'Privacy_Microphone' });
+        await openSystemSettings('Privacy_Microphone');
       } catch (error) {
         console.error('Failed to open microphone settings:', error);
       }
@@ -44,7 +44,7 @@ export function PermissionWarning({
   const openScreenRecordingSettings = async () => {
     if (isMacOS) {
       try {
-        await invoke('open_system_settings', { preferencePane: 'Privacy_ScreenCapture' });
+        await openSystemSettings('Privacy_ScreenCapture');
       } catch (error) {
         console.error('Failed to open screen recording settings:', error);
       }
