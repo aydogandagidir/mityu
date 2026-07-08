@@ -119,8 +119,16 @@ pub struct AgentRun {
     pub updated_by: Option<String>,
     /// Monotonic revision (sync baseline).
     pub rev: u64,
-    /// Soft-delete tombstone (deletes propagate under sync).
-    pub deleted: bool,
+    /// Soft-delete tombstone: `None` = live, `Some(ts)` = deleted at that instant.
+    ///
+    /// `CLAUDE.md` §6 mandates `deleted_at` for every domain table, and that is what
+    /// the shipped tables use (`database/repositories/action_item.rs`: `SET deleted_at
+    /// = ?` / `WHERE deleted_at IS NULL`). This field used to be a bare `deleted: bool`,
+    /// which mirrored the *sync envelope* (`sync/protocol.rs`: `"deleted": false`)
+    /// rather than the *row* — a `bool` cannot answer "when", so tombstone retention
+    /// and pruning would have had nowhere to read from. Corrected before any
+    /// `agent_runs` migration could bake it in (ADR-0022 / ADR-0013 amendment).
+    pub deleted_at: Option<String>,
 }
 
 #[cfg(test)]
@@ -176,7 +184,7 @@ mod tests {
             updated_at: "2026-07-02T10:00:00Z".to_string(),
             updated_by: None,
             rev: 1,
-            deleted: false,
+            deleted_at: None,
         };
         let text = serde_json::to_string(&run).expect("serialize");
         let back: AgentRun = serde_json::from_str(&text).expect("deserialize");
@@ -184,5 +192,17 @@ mod tests {
         assert_eq!(back.tenant_id, "local");
         assert_eq!(back.draft.status, DraftStatus::Draft);
         assert_eq!(back.draft.sources.len(), 1);
+        assert!(back.deleted_at.is_none(), "a fresh run is not a tombstone");
+    }
+
+    /// A soft-deleted run records *when* — the thing a bare `deleted: bool` could not.
+    #[test]
+    fn agent_run_tombstone_carries_a_timestamp() {
+        let json = r#"{"id":"run-2","tenant_id":"local","kind":"action_tracker",
+            "draft":{"status":"draft","actions":[],"sources":[]},
+            "created_at":"2026-07-02T10:00:00Z","updated_at":"2026-07-08T09:00:00Z",
+            "updated_by":null,"rev":2,"deleted_at":"2026-07-08T09:00:00Z"}"#;
+        let run: AgentRun = serde_json::from_str(json).expect("deserialize tombstone");
+        assert_eq!(run.deleted_at.as_deref(), Some("2026-07-08T09:00:00Z"));
     }
 }

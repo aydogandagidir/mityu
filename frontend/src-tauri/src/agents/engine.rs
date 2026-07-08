@@ -25,6 +25,7 @@
 use super::draft::{AgentDraft, DraftStatus, SourceRef};
 use super::AgentKind;
 use crate::context::AuthContext;
+use async_trait::async_trait;
 use thiserror::Error;
 
 /// Dormant agents configuration. `enabled` defaults to `false` (`bool::default()`),
@@ -55,11 +56,25 @@ pub enum AgentError {
     /// (surface a message, keep working on local data).
     #[error("agent provider error: {0}")]
     Provider(String),
+    /// The agent proposed actions without linking them to any transcript evidence.
+    /// `CLAUDE.md` §0.5 requires every AI-generated item to be bound to its source
+    /// segment, so [`AgentRunner::run`] rejects the draft instead of surfacing an
+    /// ungrounded proposal to the human reviewer.
+    #[error("agent produced {actions} proposal(s) with no source link")]
+    Ungrounded { actions: usize },
 }
 
 /// Read-only evidence an [`Agent`] reasons over. The agent never fetches anything
 /// from the network via this seam — it is handed the meeting's already-local
 /// summary + source anchors and returns a draft.
+///
+/// **F0 must decide the multi-meeting shape.** This struct is single-meeting
+/// (`meeting_id: String`), which fits F2 (follow-up drafter) but *not* F3
+/// (action-item tracker), whose whole job is to aggregate open items **across**
+/// meetings; nor does it carry the approved action items F2 needs alongside the
+/// summary. Deliberately left unresolved here rather than guessed — see the
+/// ADR-0013 amendment. Widening it (an enum, or `Vec<MeetingRef>` + `action_items`)
+/// is additive and touches no caller today, because there are none.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentInput {
     /// The meeting this run is about.
@@ -70,16 +85,24 @@ pub struct AgentInput {
     pub sources: Vec<SourceRef>,
 }
 
-/// A single on-device agent. Object-safe so [`AgentRunner`] can hold
-/// `Box<dyn Agent>`. Implementors MUST be pure "propose a draft" functions: no
-/// external side effects, offline-capable.
+/// A single on-device agent. Object-safe (via `#[async_trait]`) so [`AgentRunner`]
+/// can hold `Box<dyn Agent>`. Implementors MUST be pure "propose a draft" functions:
+/// no external side effects, offline-capable.
+///
+/// `draft` is **async**: every real Phase-F agent calls an LLM through the existing
+/// `summary/` provider layer, whose methods are async (see
+/// `audio/transcription/provider.rs` for the same `#[async_trait]` + `Box<dyn _>`
+/// pattern). A synchronous signature here would have forced the first real agent to
+/// block a runtime thread. `async-trait` is already a direct dependency, so this
+/// costs no new crate.
+#[async_trait]
 pub trait Agent: Send + Sync {
     /// Which [`AgentKind`] this implements.
     fn kind(&self) -> AgentKind;
 
     /// Produce a DRAFT grounded in `input`. `ctx` scopes the run to
     /// `ctx.tenant_id`. Never sends/creates anything in the outside world.
-    fn draft(&self, ctx: &AuthContext, input: &AgentInput) -> Result<AgentDraft, AgentError>;
+    async fn draft(&self, ctx: &AuthContext, input: &AgentInput) -> Result<AgentDraft, AgentError>;
 }
 
 /// Placeholder agent (the analogue of `sync::NoopTransport`): returns an empty
@@ -96,12 +119,17 @@ impl NoopAgent {
     }
 }
 
+#[async_trait]
 impl Agent for NoopAgent {
     fn kind(&self) -> AgentKind {
         self.kind
     }
 
-    fn draft(&self, _ctx: &AuthContext, _input: &AgentInput) -> Result<AgentDraft, AgentError> {
+    async fn draft(
+        &self,
+        _ctx: &AuthContext,
+        _input: &AgentInput,
+    ) -> Result<AgentDraft, AgentError> {
         Ok(AgentDraft::empty())
     }
 }
@@ -136,10 +164,18 @@ impl AgentRunner {
     /// Run the agent of `kind` over `input`.
     ///
     /// Phase 1: always returns [`AgentError::Disabled`] (agents are off) and does
-    /// **no work** — no agent is touched. The returned draft is ALWAYS
-    /// [`DraftStatus::Draft`]: approval is a separate human step (HITL,
-    /// `CLAUDE.md` §0.5), enforced here defensively so no agent can self-approve.
-    pub fn run(
+    /// **no work** — no agent is touched. Two constitutional invariants are enforced
+    /// here rather than merely documented:
+    ///
+    /// 1. **HITL** (`CLAUDE.md` §0.5): the returned draft is ALWAYS
+    ///    [`DraftStatus::Draft`]; approval is a separate human step, so no agent can
+    ///    self-approve.
+    /// 2. **Source-linked** (`CLAUDE.md` §0.5): a draft that proposes actions must
+    ///    carry at least one [`SourceRef`]. An ungrounded proposal is rejected with
+    ///    [`AgentError::Ungrounded`] instead of being shown to a reviewer who would
+    ///    have no evidence to check it against. (An *empty* draft — no actions — is
+    ///    fine and needs no sources.)
+    pub async fn run(
         &self,
         ctx: &AuthContext,
         kind: AgentKind,
@@ -154,7 +190,13 @@ impl AgentRunner {
             .iter()
             .find(|a| a.kind() == kind)
             .ok_or(AgentError::Unknown(kind))?;
-        let produced = agent.draft(ctx, input)?;
+        let produced = agent.draft(ctx, input).await?;
+        // Grounding: proposals without transcript evidence never reach the reviewer.
+        if !produced.actions.is_empty() && produced.sources.is_empty() {
+            return Err(AgentError::Ungrounded {
+                actions: produced.actions.len(),
+            });
+        }
         // HITL: coerce back to Draft no matter what the agent returned.
         Ok(AgentDraft {
             status: DraftStatus::Draft,
@@ -179,6 +221,15 @@ mod tests {
         }
     }
 
+    /// A transcript anchor, so a test draft can be grounded.
+    fn source() -> SourceRef {
+        SourceRef {
+            meeting_id: "m1".to_string(),
+            source_chunk_id: "chunk-1".to_string(),
+            quote: None,
+        }
+    }
+
     /// The default config is OFF — the local-first invariant for this module.
     #[test]
     fn config_default_is_disabled() {
@@ -191,19 +242,24 @@ mod tests {
     struct SpyAgent {
         called: Arc<AtomicBool>,
     }
+    #[async_trait]
     impl Agent for SpyAgent {
         fn kind(&self) -> AgentKind {
             AgentKind::FollowUpDrafter
         }
-        fn draft(&self, _ctx: &AuthContext, _input: &AgentInput) -> Result<AgentDraft, AgentError> {
+        async fn draft(
+            &self,
+            _ctx: &AuthContext,
+            _input: &AgentInput,
+        ) -> Result<AgentDraft, AgentError> {
             self.called.store(true, Ordering::SeqCst);
             Ok(AgentDraft::empty())
         }
     }
 
     /// Disabled `run` returns `Disabled` AND never invokes an agent (no work).
-    #[test]
-    fn disabled_run_returns_disabled_and_does_no_work() {
+    #[tokio::test]
+    async fn disabled_run_returns_disabled_and_does_no_work() {
         let flag = Arc::new(AtomicBool::new(false));
         let mut runner = AgentRunner::new(AgentsConfig::default());
         runner.register(Box::new(SpyAgent {
@@ -213,6 +269,7 @@ mod tests {
 
         let err = runner
             .run(&ctx, AgentKind::FollowUpDrafter, &input())
+            .await
             .unwrap_err();
         assert!(matches!(err, AgentError::Disabled), "got {err:?}");
         assert!(
@@ -224,11 +281,16 @@ mod tests {
     /// An agent that tries to self-approve; the runner MUST coerce it back to
     /// `Draft` (HITL) — the executable form of `CLAUDE.md` §0.5.
     struct SelfApprovingAgent;
+    #[async_trait]
     impl Agent for SelfApprovingAgent {
         fn kind(&self) -> AgentKind {
             AgentKind::ActionTracker
         }
-        fn draft(&self, _ctx: &AuthContext, _input: &AgentInput) -> Result<AgentDraft, AgentError> {
+        async fn draft(
+            &self,
+            _ctx: &AuthContext,
+            _input: &AgentInput,
+        ) -> Result<AgentDraft, AgentError> {
             Ok(AgentDraft {
                 status: DraftStatus::Approved, // <-- must NOT survive the runner
                 actions: vec![ProposedAction::TrackActionItem {
@@ -236,19 +298,22 @@ mod tests {
                     assignee: None,
                     due: None,
                 }],
-                sources: Vec::new(),
+                // Grounded, so the run is rejected for HITL reasons only — not for
+                // missing evidence. The ungrounded case has its own test below.
+                sources: vec![source()],
             })
         }
     }
 
-    #[test]
-    fn run_forces_hitl_never_returns_approved() {
+    #[tokio::test]
+    async fn run_forces_hitl_never_returns_approved() {
         let mut runner = AgentRunner::new(AgentsConfig { enabled: true });
         runner.register(Box::new(SelfApprovingAgent));
         let ctx = AuthContext::local();
 
         let draft = runner
             .run(&ctx, AgentKind::ActionTracker, &input())
+            .await
             .expect("enabled run with a registered agent");
         assert_eq!(
             draft.status,
@@ -256,15 +321,73 @@ mod tests {
             "runner must force HITL: an agent can never auto-approve"
         );
         assert_eq!(draft.actions.len(), 1, "the proposal itself is preserved");
+        assert_eq!(draft.sources.len(), 1, "source links are preserved");
+    }
+
+    /// An agent that proposes work with no transcript evidence behind it.
+    struct UngroundedAgent;
+    #[async_trait]
+    impl Agent for UngroundedAgent {
+        fn kind(&self) -> AgentKind {
+            AgentKind::FollowUpDrafter
+        }
+        async fn draft(
+            &self,
+            _ctx: &AuthContext,
+            _input: &AgentInput,
+        ) -> Result<AgentDraft, AgentError> {
+            Ok(AgentDraft {
+                status: DraftStatus::Draft,
+                actions: vec![ProposedAction::DraftMessage {
+                    to: None,
+                    subject: None,
+                    body: "Great speaking today!".to_string(),
+                }],
+                sources: Vec::new(), // <-- no evidence
+            })
+        }
+    }
+
+    /// `CLAUDE.md` §0.5 in executable form: an ungrounded proposal never reaches a
+    /// human reviewer.
+    #[tokio::test]
+    async fn run_rejects_proposals_with_no_source_link() {
+        let mut runner = AgentRunner::new(AgentsConfig { enabled: true });
+        runner.register(Box::new(UngroundedAgent));
+        let ctx = AuthContext::local();
+
+        let err = runner
+            .run(&ctx, AgentKind::FollowUpDrafter, &input())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, AgentError::Ungrounded { actions: 1 }),
+            "got {err:?}"
+        );
+    }
+
+    /// An empty draft proposes nothing, so it needs no sources.
+    #[tokio::test]
+    async fn empty_draft_needs_no_sources() {
+        let mut runner = AgentRunner::new(AgentsConfig { enabled: true });
+        runner.register(Box::new(NoopAgent::new(AgentKind::FollowUpDrafter)));
+        let ctx = AuthContext::local();
+
+        let draft = runner
+            .run(&ctx, AgentKind::FollowUpDrafter, &input())
+            .await
+            .expect("an empty draft is grounded by vacuity");
+        assert!(draft.actions.is_empty());
     }
 
     /// Enabled but no matching agent ⇒ `Unknown(kind)`.
-    #[test]
-    fn enabled_unknown_kind_returns_unknown() {
+    #[tokio::test]
+    async fn enabled_unknown_kind_returns_unknown() {
         let runner = AgentRunner::new(AgentsConfig { enabled: true });
         let ctx = AuthContext::local();
         let err = runner
             .run(&ctx, AgentKind::FollowUpDrafter, &input())
+            .await
             .unwrap_err();
         assert!(
             matches!(err, AgentError::Unknown(AgentKind::FollowUpDrafter)),
@@ -273,11 +396,11 @@ mod tests {
     }
 
     /// The placeholder agent yields an empty Draft and does no I/O.
-    #[test]
-    fn noop_agent_yields_empty_draft() {
+    #[tokio::test]
+    async fn noop_agent_yields_empty_draft() {
         let a = NoopAgent::new(AgentKind::FollowUpDrafter);
         let ctx = AuthContext::local();
-        let d = a.draft(&ctx, &input()).expect("noop draft");
+        let d = a.draft(&ctx, &input()).await.expect("noop draft");
         assert_eq!(a.kind(), AgentKind::FollowUpDrafter);
         assert!(d.actions.is_empty());
         assert_eq!(d.status, DraftStatus::Draft);

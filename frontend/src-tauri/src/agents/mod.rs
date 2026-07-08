@@ -9,7 +9,7 @@
 //! this module (the local-first invariant, `CLAUDE.md` §0.1). See ADR-0013 for the
 //! design and the HITL rule; see BACKLOG EPIC F for the sequenced tasks (F0–F5).
 //!
-//! ## The two invariants this seam encodes structurally
+//! ## The three invariants this seam encodes structurally
 //!
 //! 1. **Human-in-the-loop (`CLAUDE.md` §0.5):** an agent run yields an
 //!    [`draft::AgentDraft`] whose [`draft::DraftStatus`] is always `Draft`.
@@ -19,6 +19,11 @@
 //!    *propose* work as a [`draft::ProposedAction`] (data). There is deliberately
 //!    **no method anywhere in this seam that sends an email, creates a task, or
 //!    otherwise acts on the outside world** — "send" stays a manual user step.
+//! 3. **Source-linked or rejected (`CLAUDE.md` §0.5):** a draft that proposes
+//!    actions must carry at least one [`draft::SourceRef`].
+//!    [`engine::AgentRunner::run`] returns [`engine::AgentError::Ungrounded`]
+//!    rather than hand a reviewer a proposal with no transcript evidence behind it.
+//!    An empty draft proposes nothing and so needs no sources.
 //!
 //! Every output is source-linked ([`draft::SourceRef`] → transcript chunk) and
 //! tenant-scoped (`ctx: &AuthContext`), so a Phase-2 `agent_runs` table + sync are
