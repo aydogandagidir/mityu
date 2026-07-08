@@ -6,6 +6,8 @@ import PageContent from "./page-content";
 import { useRouter, useSearchParams } from "next/navigation";
 import Analytics from "@/lib/analytics";
 import { invoke } from "@tauri-apps/api/core";
+import { getOllamaModels } from "@/services/providerModelsService";
+import { configService } from "@/services/configService";
 import { LoaderIcon } from "lucide-react";
 import { useConfig } from "@/contexts/ConfigContext";
 import { usePaginatedTranscripts } from "@/hooks/usePaginatedTranscripts";
@@ -51,7 +53,7 @@ function MeetingDetailsContent() {
   // Check if gemma3:1b model is available in Ollama
   const checkForGemmaModel = useCallback(async (): Promise<boolean> => {
     try {
-      const models = await invoke('get_ollama_models', { endpoint: null }) as any[];
+      const models = await getOllamaModels(null);
       const hasGemma = models.some((m: any) => m.name === 'gemma3:1b');
       console.log('🔍 Checked for gemma3:1b:', hasGemma);
       return hasGemma;
@@ -81,7 +83,7 @@ function MeetingDetailsContent() {
 
     try {
       // Check what's currently in database
-      const currentConfig = await invoke('api_get_model_config') as any;
+      const currentConfig = await configService.getModelConfig() as any;
 
       // If DB already has a model, use it (never override!)
       if (currentConfig && currentConfig.model) {

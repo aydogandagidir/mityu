@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getApiKey } from '@/services/providerModelsService';
+import { configService } from '@/services/configService';
 import { toast } from 'sonner';
 import { ModelConfig, ModelSettingsModal } from '@/components/ModelSettingsModal';
 import { SummaryLanguageSettings } from '@/components/SummaryLanguageSettings';
@@ -26,14 +28,12 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
   // Reusable fetch function
   const fetchModelConfig = useCallback(async () => {
     try {
-      const data = await invoke('api_get_model_config') as any;
+      const data = await configService.getModelConfig() as any;
       if (data && data.provider !== null) {
         // Fetch API key if not included and provider requires it
         if (data.provider !== 'ollama' && data.provider !== 'builtin-ai' && !data.apiKey) {
           try {
-            const apiKeyData = await invoke('api_get_api_key', {
-              provider: data.provider
-            }) as string;
+            const apiKeyData = await getApiKey(data.provider);
             data.apiKey = apiKeyData;
           } catch (err) {
             console.error('Failed to fetch API key:', err);
@@ -42,7 +42,7 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
         // Fetch Custom OpenAI config if that's the active provider
         if (data.provider === 'custom-openai') {
           try {
-            const customConfig = (await invoke('api_get_custom_openai_config')) as any;
+            const customConfig = (await configService.getCustomOpenAIConfig()) as any;
             if (customConfig) {
               data.customOpenAIDisplayName = customConfig.displayName || null;
               data.customOpenAIEndpoint = customConfig.endpoint || null;

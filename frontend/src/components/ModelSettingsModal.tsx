@@ -1,7 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSidebar } from './Sidebar/SidebarProvider';
-import { invoke } from '@tauri-apps/api/core';
 import { openExternalUrl } from '@/services/systemService';
+import { configService } from '@/services/configService';
+import {
+  getOllamaModels,
+  pullOllamaModel,
+  // aliased: a local handler of the same name wraps this command below
+  deleteOllamaModel as deleteOllamaModelCommand,
+  getOpenRouterModels,
+  getOpenAIModels,
+  getAnthropicModels,
+  getGroqModels,
+  getApiKey,
+  getAutoGenerateSetting,
+  type OllamaModel,
+  type OpenRouterModel,
+  type OpenAIModel,
+  type AnthropicModel,
+  type GroqModel,
+} from '@/services/providerModelsService';
+import { BuiltInAIAPI } from '@/lib/builtin-ai';
 import { Button } from '@/components/ui/button';
 import { useOllamaDownload } from '@/contexts/OllamaDownloadContext';
 import { BuiltInModelManager } from '@/components/BuiltInModelManager';
@@ -46,34 +64,8 @@ export interface ModelConfig {
   topP?: number | null;
 }
 
-interface OllamaModel {
-  name: string;
-  id: string;
-  size: string;
-  modified: string;
-}
-
-interface OpenRouterModel {
-  id: string;
-  name: string;
-  context_length?: number;
-  prompt_price?: string;
-  completion_price?: string;
-}
-
-interface OpenAIModel {
-  id: string;
-}
-
-interface AnthropicModel {
-  id: string;
-  display_name?: string;
-}
-
-interface GroqModel {
-  id: string;
-  owned_by?: string;
-}
+// Provider model shapes (OllamaModel, OpenRouterModel, OpenAIModel, AnthropicModel,
+// GroqModel) now live in @/services/providerModelsService - imported above.
 
 // Fallback models for when API fetch fails or no API key provided
 const OPENAI_FALLBACK_MODELS = [
@@ -206,9 +198,7 @@ export function ModelSettingsModal({
 
   const fetchApiKey = async (provider: string) => {
     try {
-      const data = (await invoke('api_get_api_key', {
-        provider,
-      })) as string;
+      const data = await getApiKey(provider);
       setApiKey(data || '');
     } catch (err) {
       console.error('Error fetching API key:', err);
@@ -264,16 +254,14 @@ export function ModelSettingsModal({
       }
 
       try {
-        const data = (await invoke('api_get_model_config')) as any;
+        const data = (await configService.getModelConfig()) as any;
         if (data && data.provider !== null) {
           setModelConfig(data);
 
           // Fetch API key if not included in response and provider requires it
           if (data.provider !== 'ollama' && !data.apiKey) {
             try {
-              const apiKeyData = await invoke('api_get_api_key', {
-                provider: data.provider
-              }) as string;
+              const apiKeyData = await getApiKey(data.provider);
               data.apiKey = apiKeyData;
               setApiKey(apiKeyData);
             } catch (err) {
@@ -291,7 +279,7 @@ export function ModelSettingsModal({
           // Fetch Custom OpenAI config if that's the active provider
           if (data.provider === 'custom-openai') {
             try {
-              const customConfig = (await invoke('api_get_custom_openai_config')) as any;
+              const customConfig = (await configService.getCustomOpenAIConfig()) as any;
               if (customConfig) {
                 setCustomOpenAIEndpoint(customConfig.endpoint || '');
                 setCustomOpenAIModel(customConfig.model || '');
@@ -318,7 +306,7 @@ export function ModelSettingsModal({
   useEffect(() => {
     const fetchAutoGenerateSetting = async () => {
       try {
-        const enabled = (await invoke('api_get_auto_generate_setting')) as boolean;
+        const enabled = await getAutoGenerateSetting();
         setAutoGenerateEnabled(enabled);
         console.log('Auto-generate setting loaded:', enabled);
       } catch (err) {
@@ -432,7 +420,7 @@ export function ModelSettingsModal({
 
     try {
       const endpoint = trimmedEndpoint || null;
-      const modelList = (await invoke('get_ollama_models', { endpoint })) as OllamaModel[];
+      const modelList = await getOllamaModels(endpoint);
       setModels(modelList);
       setLastFetchedEndpoint(trimmedEndpoint); // Track successful fetch
 
@@ -492,7 +480,7 @@ export function ModelSettingsModal({
     try {
       setIsLoadingOpenRouter(true);
       setOpenRouterError('');
-      const data = (await invoke('get_openrouter_models')) as OpenRouterModel[];
+      const data = await getOpenRouterModels();
       setOpenRouterModels(data);
     } catch (err) {
       console.error('Error loading OpenRouter models:', err);
@@ -508,7 +496,7 @@ export function ModelSettingsModal({
     if (builtinAiModels.length > 0) return; // Already loaded
 
     try {
-      const data = (await invoke('builtin_ai_list_models')) as any[];
+      const data = (await BuiltInAIAPI.listModels()) as any[];
       setBuiltinAiModels(data);
 
       // Auto-select first available model if none selected
@@ -532,7 +520,7 @@ export function ModelSettingsModal({
     }
     setIsLoadingOpenAI(true);
     try {
-      const data = (await invoke('get_openai_models', { apiKey: key })) as OpenAIModel[];
+      const data = await getOpenAIModels(key);
       setOpenaiModels(data.map((m) => m.id));
     } catch (err) {
       console.error('Error loading OpenAI models:', err);
@@ -550,7 +538,7 @@ export function ModelSettingsModal({
     }
     setIsLoadingClaude(true);
     try {
-      const data = (await invoke('get_anthropic_models', { apiKey: key })) as AnthropicModel[];
+      const data = await getAnthropicModels(key);
       setClaudeModels(data.map((m) => m.id));
     } catch (err) {
       console.error('Error loading Claude models:', err);
@@ -568,7 +556,7 @@ export function ModelSettingsModal({
     }
     setIsLoadingGroq(true);
     try {
-      const data = (await invoke('get_groq_models', { apiKey: key })) as GroqModel[];
+      const data = await getGroqModels(key);
       setGroqModels(data.map((m) => m.id));
     } catch (err) {
       console.error('Error loading Groq models:', err);
@@ -619,7 +607,7 @@ export function ModelSettingsModal({
     // For custom-openai provider, save the custom config first
     if (modelConfig.provider === 'custom-openai') {
       try {
-        await invoke('api_save_custom_openai_config', {
+        await configService.saveCustomOpenAIConfig({
           endpoint: customOpenAIEndpoint.trim(),
           apiKey: customOpenAIApiKey.trim() || null,
           model: customOpenAIModel.trim(),
@@ -678,11 +666,11 @@ export function ModelSettingsModal({
 
     setIsTestingConnection(true);
     try {
-      const result = await invoke<{ status: string; message: string }>('api_test_custom_openai_connection', {
-        endpoint: customOpenAIEndpoint.trim(),
-        apiKey: customOpenAIApiKey.trim() || null,
-        model: customOpenAIModel.trim(),
-      });
+      const result = await configService.testCustomOpenAIConnection(
+        customOpenAIEndpoint.trim(),
+        customOpenAIApiKey.trim() || null,
+        customOpenAIModel.trim(),
+      );
       toast.success(result.message || 'Connection successful!');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -716,10 +704,7 @@ export function ModelSettingsModal({
 
       // The download will be tracked by the global context via events
       // Progress toasts are shown automatically by OllamaDownloadContext
-      await invoke('pull_ollama_model', {
-        modelName: recommendedModel,
-        endpoint
-      });
+      await pullOllamaModel(recommendedModel, endpoint);
 
       // Refresh the models list after successful download
       await fetchOllamaModels(true);
@@ -751,10 +736,7 @@ export function ModelSettingsModal({
   const deleteOllamaModel = async (modelName: string) => {
     try {
       const endpoint = ollamaEndpoint.trim() || null;
-      await invoke('delete_ollama_model', {
-        modelName,
-        endpoint
-      });
+      await deleteOllamaModelCommand(modelName, endpoint);
 
       toast.success(`Model ${modelName} deleted`);
       await fetchOllamaModels(true); // Refresh list
@@ -856,7 +838,7 @@ export function ModelSettingsModal({
 
                 // Load custom OpenAI config when selected
                 if (provider === 'custom-openai') {
-                  invoke<any>('api_get_custom_openai_config').then((config) => {
+                  configService.getCustomOpenAIConfig().then((config) => {
                     if (config) {
                       setCustomOpenAIEndpoint(config.endpoint || '');
                       setCustomOpenAIModel(config.model || '');

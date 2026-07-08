@@ -4,6 +4,7 @@ import { ModelConfig } from '@/components/ModelSettingsModal';
 import { CurrentMeeting, useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { invoke as invokeTauri } from '@tauri-apps/api/core';
 import { openExternalUrl } from '@/services/systemService';
+import { getOllamaModels } from '@/services/providerModelsService';
 import { toast } from 'sonner';
 import Analytics from '@/lib/analytics';
 import { isOllamaNotInstalledError } from '@/lib/utils';
@@ -520,7 +521,7 @@ export function useSummaryGeneration({
     if (modelConfig.provider === 'ollama') {
       try {
         const endpoint = modelConfig.ollamaEndpoint || null;
-        const models = await invokeTauri('get_ollama_models', { endpoint }) as any[];
+        const models = await getOllamaModels(endpoint);
 
         if (!models || models.length === 0) {
           toast.error(

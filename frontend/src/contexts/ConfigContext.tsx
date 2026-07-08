@@ -4,16 +4,14 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { TranscriptModelProps } from '@/components/TranscriptSettings';
 import { SelectedDevices } from '@/components/DeviceSelection';
 import { configService, ModelConfig } from '@/services/configService';
+import { getOllamaModels, getApiKey, type OllamaModel } from '@/services/providerModelsService';
 import { invoke } from '@tauri-apps/api/core';
 import Analytics from '@/lib/analytics';
 import { BetaFeatures, BetaFeatureKey, loadBetaFeatures, saveBetaFeatures } from '@/types/betaFeatures';
 
-export interface OllamaModel {
-  name: string;
-  id: string;
-  size: string;
-  modified: string;
-}
+// OllamaModel now has a single definition, in providerModelsService. Re-exported here
+// so existing `import { OllamaModel } from '@/contexts/ConfigContext'` keeps working.
+export type { OllamaModel };
 
 export interface StorageLocations {
   database: string;
@@ -180,7 +178,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     const loadModels = async () => {
       try {
         const endpoint = modelConfig.ollamaEndpoint || null;
-        const modelList = await invoke<OllamaModel[]>('get_ollama_models', { endpoint });
+        const modelList = await getOllamaModels(endpoint);
         setModels(modelList);
         setError('');
       } catch (err) {
@@ -298,7 +296,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         const providers = ['claude', 'groq', 'openai', 'openrouter'];
         const keys = await Promise.all(
           providers.map(p =>
-            invoke<string>('api_get_api_key', { provider: p })
+            getApiKey(p)
               .catch(() => null) // Gracefully handle missing keys
           )
         );

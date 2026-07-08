@@ -11,6 +11,8 @@ import { SettingTabs } from '../SettingTabs';
 import { TranscriptModelProps } from '@/components/TranscriptSettings';
 import Analytics from '@/lib/analytics';
 import { invoke } from '@tauri-apps/api/core';
+import { getApiKey } from '@/services/providerModelsService';
+import { configService } from '@/services/configService';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
@@ -115,14 +117,12 @@ const Sidebar: React.FC = () => {
       }
 
       try {
-        const data = await invoke('api_get_model_config') as any;
+        const data = await configService.getModelConfig() as any;
         if (data && data.provider !== null) {
           // Fetch API key if not included and provider requires it
           if (data.provider !== 'ollama' && !data.apiKey) {
             try {
-              const apiKeyData = await invoke('api_get_api_key', {
-                provider: data.provider
-              }) as string;
+              const apiKeyData = await getApiKey(data.provider);
               data.apiKey = apiKeyData;
             } catch (err) {
               console.error('Failed to fetch API key:', err);
