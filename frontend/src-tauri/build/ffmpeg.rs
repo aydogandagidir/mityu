@@ -144,31 +144,42 @@ fn download_and_extract_ffmpeg(
 
 /// Get FFmpeg download URL for specific target triple
 fn get_ffmpeg_url_for_target(target: &str) -> Result<String, String> {
-    // Platform-specific URLs
+    // Windows and Linux: self-hosted LGPL-only static builds (unmodified
+    // re-uploads of BtbN/FFmpeg-Builds' pinned n8.1 release), pinned to our
+    // own GitHub release so this doesn't depend on a third party's servers
+    // or a `:latest` tag that can move under a reproducible build. Mityu
+    // only ever transcodes raw audio to AAC/MP4 (no `-c:v`, no video codec
+    // ever used), so LGPL is sufficient — the previous gyan.dev-derived
+    // build was `--enable-gpl`, which would put a GPL source-redistribution
+    // obligation on this project as a commercial distributor for
+    // functionality it doesn't use. See docs/DECISIONS.md ADR-0021.
+    const MITYU_FFMPEG_RELEASE: &str =
+        "https://github.com/aydogandagidir/mityu/releases/download/ffmpeg-deps-8.1-lgpl";
+
     let url = if target.contains("windows") {
-        // Windows
-        "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg-8.0.1-essentials_build.zip"
+        format!("{}/win64-lgpl.zip", MITYU_FFMPEG_RELEASE)
     } else if target.contains("apple") {
+        // macOS: not yet mirrored — no equivalently-licensed (LGPL-only)
+        // static macOS build has been sourced/verified. Still on the
+        // original third-party mirror pending a separate fix.
         if target.contains("aarch64") {
             // Apple Silicon (M1/M2/M3)
-            "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg80arm.zip"
+            "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg80arm.zip".to_string()
         } else {
             // Intel Mac
-            "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg-8.0.1.zip"
+            "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg-8.0.1.zip".to_string()
         }
     } else if target.contains("linux") {
         if target.contains("aarch64") || target.contains("arm") {
-            // Linux ARM64
-            "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg-release-arm64-static.tar.xz"
+            format!("{}/linuxarm64-lgpl.tar.xz", MITYU_FFMPEG_RELEASE)
         } else {
-            // Linux x86_64
-            "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg-release-amd64-static.tar.xz"
+            format!("{}/linux64-lgpl.tar.xz", MITYU_FFMPEG_RELEASE)
         }
     } else {
         return Err(format!("Unsupported target platform: {}", target));
     };
 
-    Ok(url.to_string())
+    Ok(url)
 }
 
 /// Extract FFmpeg binary from downloaded archive (handles ZIP and TAR.XZ)
