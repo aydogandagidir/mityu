@@ -17,3 +17,23 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.32.0", features = ["full"] }
+
+# Cargo honors [patch] ONLY in the workspace-root manifest. These two lived in
+# frontend/src-tauri/Cargo.toml, where Cargo silently ignored them
+# ("warning: patch for the non root package will be ignored"), so the crates
+# resolved from crates.io and the fixes below were never actually applied.
+#
+# cpal: pins RustAudio/cpal#946 "Fix macos non-default audio output" — released
+#   cpal 0.15.3 opens the CoreAudio audio unit with input=true even when querying
+#   the OUTPUT scope, so default_output_config()/supported_output_configs() are
+#   wrong for a non-default output device (e.g. a Bluetooth speaker). That is the
+#   exact path audio/devices/ takes for macOS system-audio capture.
+#   NOTE: 0.15.3 DOES already support WASAPI loopback (an input stream built on a
+#   render endpoint), so Windows system audio never depended on this patch.
+#
+# The block also carried `esaxx-rs = { git = ".../thewh1teagle/esaxx-rs" }`. That
+# repository no longer exists (GitHub: "Repository not found"), so the patch is
+# unresolvable and was dropped rather than moved — esaxx-rs 0.1.10 from crates.io
+# builds fine on the MSVC toolchain we ship with. Do not re-add it.
+[patch.crates-io]
+cpal = { git = "https://github.com/RustAudio/cpal", rev = "51c3b43" }
