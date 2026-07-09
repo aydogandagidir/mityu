@@ -27,6 +27,7 @@ import { ImportAudioDialog, ImportDropOverlay } from '@/components/ImportAudio'
 import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
 import { EncryptionStatusBanner } from '@/components/consent/EncryptionStatusBanner'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
+import { isTauri } from '@/lib/isTauri'
 
 
 const sourceSans3 = Source_Sans_3({
@@ -79,6 +80,15 @@ export default function RootLayout({
   const [importFilePath, setImportFilePath] = useState<string | null>(null)
 
   useEffect(() => {
+    // Outside the Tauri shell (browser dev-preview / design route) there is no
+    // backend to ask and `invoke` would throw. Render the main shell directly so
+    // the UI is inspectable without the desktop app; never show onboarding here.
+    if (!isTauri()) {
+      setOnboardingCompleted(true)
+      setShowOnboarding(false)
+      return
+    }
+
     // Check onboarding status first
     invoke<{ completed: boolean } | null>('get_onboarding_status')
       .then((status) => {
