@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, File, Settings, ChevronLeftCircle, ChevronRightCircle, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload } from 'lucide-react';
+import { ChevronDown, ChevronRight, File, Settings, PanelLeftClose, PanelLeftOpen, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -453,14 +453,12 @@ const Sidebar: React.FC = () => {
 
     return (
       <TooltipProvider>
-        <div className="flex flex-col items-center space-y-4 mt-4">
-          <Logo isCollapsed={isCollapsed} />
-
+        <div className="flex flex-col items-center space-y-2 mt-2">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={() => router.push('/')}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isHomePage ? 'bg-muted' : 'hover:bg-muted'
+                className={`p-2 rounded-lg transition-colors duration-150 ${isHomePage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
               >
                 <Home className="w-5 h-5 text-muted-foreground" />
@@ -513,7 +511,7 @@ const Sidebar: React.FC = () => {
                   if (isCollapsed) toggleCollapse();
                   toggleFolder('meetings');
                 }}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isMeetingPage ? 'bg-muted' : 'hover:bg-muted'
+                className={`p-2 rounded-lg transition-colors duration-150 ${isMeetingPage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
               >
                 <NotebookPen className="w-5 h-5 text-muted-foreground" />
@@ -528,7 +526,7 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={() => router.push('/settings')}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isSettingsPage ? 'bg-muted' : 'hover:bg-muted'
+                className={`p-2 rounded-lg transition-colors duration-150 ${isSettingsPage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
               >
                 <Settings className="w-5 h-5 text-muted-foreground" />
@@ -686,60 +684,59 @@ const Sidebar: React.FC = () => {
 
   return (
     <div className="fixed top-0 left-0 h-screen z-40">
-      {/* Floating collapse button */}
-      <button
-        onClick={toggleCollapse}
-        className="absolute -right-6 top-20 z-50 p-1 bg-card hover:bg-muted rounded-full shadow-lg border"
-        style={{ transform: 'translateX(50%)' }}
-      >
-        {isCollapsed ? (
-          <ChevronRightCircle className="w-6 h-6" />
-        ) : (
-          <ChevronLeftCircle className="w-6 h-6" />
-        )}
-      </button>
-
       <div
-        className={`h-screen bg-card border-r shadow-sm flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'
+        className={`h-screen bg-card border-r border-border shadow-sm flex flex-col transition-[width] duration-300 ease-out ${isCollapsed ? 'w-16' : 'w-64'
           }`}
       >
-        {/*  Header with traffic light spacing */}
-        <div className="flex-shrink-0 h-22 flex items-center">
-
-          {/* Title container */}
-
-
-
-          <div className="flex-1">
-            {!isCollapsed && (
-              <div className="p-3">
-                {/* <span className="text-lg text-center border rounded-full bg-blue-50 border-white font-semibold text-foreground mb-2 block items-center">
-                  <span>Mityu</span>
-                </span> */}
-                <Logo isCollapsed={isCollapsed} />
-
-                <div className="relative mb-1">
-                  <InputGroup >
-                    <InputGroupInput placeholder='Search meeting content...' value={searchQuery}
-                      onChange={(e) => handleSearchChange(e.target.value)}
-                    />
-                    <InputGroupAddon>
-                      <SearchIcon />
-                    </InputGroupAddon>
-                    {searchQuery &&
-                      <InputGroupAddon align={'inline-end'}>
-                        <InputGroupButton
-                          onClick={() => handleSearchChange('')}
-                        >
-                          <X />
-                        </InputGroupButton>
-                      </InputGroupAddon>
-                    }
-                  </InputGroup>
-                </div>
+        {/* Header: brand · collapse toggle · search */}
+        <div className="flex-shrink-0 px-3 pt-4 pb-2">
+          {isCollapsed ? (
+            <div className="flex flex-col items-center gap-3">
+              <Logo isCollapsed />
+              <button
+                onClick={toggleCollapse}
+                title="Expand sidebar"
+                aria-label="Expand sidebar"
+                className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <PanelLeftOpen className="h-5 w-5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <Logo isCollapsed={false} />
+                <button
+                  onClick={toggleCollapse}
+                  title="Collapse sidebar"
+                  aria-label="Collapse sidebar"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <PanelLeftClose className="h-[18px] w-[18px]" />
+                </button>
               </div>
-            )}
-          </div>
+
+              <div className="relative">
+                <InputGroup>
+                  <InputGroupInput placeholder='Search meetings…' value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                  />
+                  <InputGroupAddon>
+                    <SearchIcon />
+                  </InputGroupAddon>
+                  {searchQuery &&
+                    <InputGroupAddon align={'inline-end'}>
+                      <InputGroupButton
+                        onClick={() => handleSearchChange('')}
+                      >
+                        <X />
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  }
+                </InputGroup>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Main content - scrollable area */}
