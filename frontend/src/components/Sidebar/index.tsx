@@ -566,8 +566,8 @@ const Sidebar: React.FC = () => {
         <div
           className={`flex items-center transition-all duration-150 group ${item.type === 'folder' && depth === 0
             ? 'p-3 text-lg font-semibold h-10 mx-3 mt-3 rounded-lg'
-            : `px-3 py-2 my-0.5 rounded-md text-sm ${isActive ? 'bg-accent text-accent-foreground font-medium' :
-              hasTranscriptMatch ? 'bg-amber-50 dark:bg-amber-500/10' : 'hover:bg-muted'
+            : `relative px-3 py-2 my-0.5 rounded-md text-sm transition-colors ${isActive ? 'bg-primary/10 text-primary font-medium before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-[3px] before:rounded-r-full before:bg-primary' :
+              hasTranscriptMatch ? 'bg-amber-50 dark:bg-amber-500/10' : 'text-foreground/80 hover:bg-muted hover:text-foreground'
             } cursor-pointer`
             }`}
           style={item.type === 'folder' && depth === 0 ? {} : { paddingLeft }}
@@ -794,45 +794,50 @@ const Sidebar: React.FC = () => {
         {/* Footer */}
         {!isCollapsed && (
 
-          <div className="flex-shrink-0 p-2 border-t border-border">
+          <div className="flex-shrink-0 p-3 border-t border-border space-y-2">
+            {/* Primary CTA */}
             <button
               onClick={handleRecordingToggle}
               disabled={isRecording}
-              className={`w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-white ${isRecording ? 'bg-red-300 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'} rounded-lg transition-colors shadow-sm`}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-semibold text-white rounded-xl transition-colors shadow-sm ${isRecording ? 'bg-red-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}
             >
               {isRecording ? (
                 <>
-                  <Square className="w-4 h-4 mr-2" />
-                  <span>Recording in progress...</span>
+                  <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                  <span>Recording…</span>
                 </>
               ) : (
                 <>
-                  <Mic className="w-4 h-4 mr-2" />
-                  <span>Start Recording</span>
+                  <Mic className="w-4 h-4" />
+                  <span>Start recording</span>
                 </>
               )}
             </button>
 
-            {betaFeatures.importAndRetranscribe && (
+            {/* Secondary actions — compact icon row */}
+            <div className="flex items-center gap-1">
+              {betaFeatures.importAndRetranscribe && (
+                <button
+                  onClick={() => openImportDialog()}
+                  title="Import audio"
+                  aria-label="Import audio"
+                  className="flex-1 grid h-9 place-items-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <Upload className="w-[18px] h-[18px]" />
+                </button>
+              )}
               <button
-                onClick={() => openImportDialog()}
-                className="w-full flex items-center justify-center px-3 py-2 mt-1 text-sm font-medium text-foreground bg-accent hover:bg-accent/80 rounded-lg transition-colors shadow-sm"
+                onClick={() => router.push('/settings')}
+                title="Settings"
+                aria-label="Settings"
+                className="flex-1 grid h-9 place-items-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
-                <Upload className="w-4 h-4 mr-2" />
-                <span>Import Audio</span>
+                <Settings className="w-[18px] h-[18px]" />
               </button>
-            )}
-
-            <button
-              onClick={() => router.push('/settings')}
-              className="w-full flex items-center justify-center px-3 py-1.5 mt-1 mb-1 text-sm font-medium text-foreground bg-secondary hover:bg-muted rounded-lg transition-colors shadow-sm"
-            >
-              <Settings className="w-4 h-4 mr-2" />
-              <span>Settings</span>
-            </button>
-            <Info isCollapsed={isCollapsed} />
-            <div className="w-full flex items-center justify-center px-3 py-1 text-xs text-muted-foreground">
-              v0.4.0
+              <div className="flex-1 grid place-items-center [&_button]:mb-0">
+                <Info isCollapsed />
+              </div>
+              <span className="ml-auto pl-1 text-[11px] tabular-nums text-muted-foreground/70">v0.4.0</span>
             </div>
           </div>
         )}
