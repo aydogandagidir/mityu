@@ -28,6 +28,7 @@ import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
 import { EncryptionStatusBanner } from '@/components/consent/EncryptionStatusBanner'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 import { isTauri } from '@/lib/isTauri'
+import { ThemeProvider } from '@/components/theme-provider'
 
 
 const sourceSans3 = Source_Sans_3({
@@ -243,8 +244,9 @@ export default function RootLayout({
   }
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${sourceSans3.variable} font-sans antialiased`}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
         <AnalyticsProvider>
           <RecordingStateProvider>
             <RecordingConsentProvider>
@@ -298,6 +300,7 @@ export default function RootLayout({
         </AnalyticsProvider>
 
         <Toaster position="bottom-center" richColors closeButton />
+        </ThemeProvider>
       </body>
     </html>
   )
