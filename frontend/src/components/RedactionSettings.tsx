@@ -105,8 +105,8 @@ export default function RedactionSettings() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-base font-semibold text-gray-800 mb-2">Sensitive Data Redaction</h3>
-        <p className="text-sm text-gray-600 mb-4">
+        <h3 className="text-base font-semibold text-foreground mb-2">Sensitive Data Redaction</h3>
+        <p className="text-sm text-muted-foreground mb-4">
           Off by default. When enabled, sensitive content is scrubbed from new transcripts on this
           device before it is stored or summarized. Settings apply to this workspace and are stored
           locally.
@@ -114,16 +114,16 @@ export default function RedactionSettings() {
       </div>
 
       {isLoading && (
-        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
-          <span className="text-sm text-gray-600">Loading redaction settings...</span>
+        <div className="flex items-center gap-2 p-3 bg-muted rounded-lg border border-border">
+          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Loading redaction settings...</span>
         </div>
       )}
 
       {!isLoading && (loadFailed || !config) && (
-        <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
-          <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-amber-700">
+        <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-500/10 rounded-lg border border-amber-200 dark:border-amber-500/25">
+          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-300">
             Redaction settings could not be loaded. Your other preferences are unaffected — close
             and reopen Settings to try again.
           </p>
@@ -132,17 +132,17 @@ export default function RedactionSettings() {
 
       {!isLoading && config && (
         <>
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border">
             <div>
-              <h4 className="font-semibold text-gray-800">Redact sensitive content</h4>
-              <p className="text-sm text-gray-600">
+              <h4 className="font-semibold text-foreground">Redact sensitive content</h4>
+              <p className="text-sm text-muted-foreground">
                 {isSaving
                   ? 'Updating...'
                   : 'Scrub sensitive data from new transcripts before they are saved or summarized'}
               </p>
             </div>
             <div className="flex items-center gap-2 ml-4">
-              {isSaving && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
+              {isSaving && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
               <Switch
                 checked={config.enabled}
                 onCheckedChange={handleToggleEnabled}
@@ -152,13 +152,13 @@ export default function RedactionSettings() {
           </div>
 
           <div
-            className={`flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 ${
+            className={`flex items-center justify-between p-3 bg-muted rounded-lg border border-border ${
               !isEnabled ? 'opacity-50' : ''
             }`}
           >
             <div>
-              <h4 className="font-semibold text-gray-800">Built-in PII patterns</h4>
-              <p className="text-sm text-gray-600">
+              <h4 className="font-semibold text-foreground">Built-in PII patterns</h4>
+              <p className="text-sm text-muted-foreground">
                 Replaces emails with [EMAIL], phone numbers with [PHONE], credit card numbers with
                 [CARD], IBANs with [IBAN], and Turkish ID numbers (TC Kimlik No) with [ID]
               </p>
@@ -173,12 +173,12 @@ export default function RedactionSettings() {
           </div>
 
           <div
-            className={`p-3 bg-gray-50 rounded-lg border border-gray-200 ${
+            className={`p-3 bg-muted rounded-lg border border-border ${
               !isEnabled ? 'opacity-50' : ''
             }`}
           >
-            <h4 className="font-semibold text-gray-800">Custom terms</h4>
-            <p className="text-sm text-gray-600 mb-3">
+            <h4 className="font-semibold text-foreground">Custom terms</h4>
+            <p className="text-sm text-muted-foreground mb-3">
               Words or phrases to replace with [REDACTED], matched case-insensitively (for example
               project codenames or client names)
             </p>
@@ -188,14 +188,14 @@ export default function RedactionSettings() {
                 {config.custom_terms.map((term) => (
                   <span
                     key={term}
-                    className="inline-flex items-center gap-1 bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-xs text-gray-700"
+                    className="inline-flex items-center gap-1 bg-card border border-border rounded-full pl-2.5 pr-1 py-0.5 text-xs text-foreground"
                   >
                     {term}
                     <button
                       type="button"
                       onClick={() => handleRemoveTerm(term)}
                       disabled={subControlsDisabled}
-                      className="p-0.5 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                      className="p-0.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                       aria-label={`Remove custom term ${term}`}
                       title="Remove term"
                     >
@@ -205,7 +205,7 @@ export default function RedactionSettings() {
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-gray-500 mb-3">No custom terms added yet</p>
+              <p className="text-xs text-muted-foreground mb-3">No custom terms added yet</p>
             )}
 
             <div className="flex items-center gap-2">
@@ -220,7 +220,7 @@ export default function RedactionSettings() {
                 }}
                 placeholder="Add a term to redact..."
                 disabled={subControlsDisabled}
-                className="h-8 bg-white text-sm"
+                className="h-8 bg-card text-sm"
               />
               <Button
                 onClick={handleAddTerm}
@@ -235,9 +235,9 @@ export default function RedactionSettings() {
             </div>
           </div>
 
-          <div className="flex items-start gap-2 p-2 bg-blue-50 rounded border border-blue-200">
-            <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-            <div className="text-xs text-blue-700">
+          <div className="flex items-start gap-2 p-2 bg-accent rounded border border-primary/20">
+            <Info className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-primary">
               <p className="mb-1">
                 Redaction applies on this device before saving and before any summary provider
                 (including cloud providers) sees the text.

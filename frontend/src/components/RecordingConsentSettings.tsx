@@ -75,19 +75,19 @@ export default function RecordingConsentSettings() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-base font-semibold text-gray-800 mb-2">Recording Consent</h3>
-        <p className="text-sm text-gray-600 mb-4">
+        <h3 className="text-base font-semibold text-foreground mb-2">Recording Consent</h3>
+        <p className="text-sm text-muted-foreground mb-4">
           Before your first recording, Mityu reminds you that recording laws vary by
           jurisdiction and that you are responsible for ensuring all participants are
           informed or consent. This acknowledgment is stored locally on this device.
         </p>
       </div>
 
-      <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
-        <Users className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" aria-hidden="true" />
-        <div className="text-sm text-amber-900">
+      <div className="flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3">
+        <Users className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+        <div className="text-sm text-amber-900 dark:text-amber-200">
           <p className="font-semibold">Multi-party consent</p>
-          <p className="mt-1 text-amber-800">
+          <p className="mt-1 text-amber-800 dark:text-amber-200">
             Many jurisdictions require every participant to be informed or to consent
             before a conversation is recorded. Make sure everyone in the
             meeting/conversation is aware, and obtain any consent required where you
@@ -97,26 +97,26 @@ export default function RecordingConsentSettings() {
       </div>
 
       {isLoading && (
-        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
-          <span className="text-sm text-gray-600">Loading recording consent settings...</span>
+        <div className="flex items-center gap-2 p-3 bg-muted rounded-lg border border-border">
+          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Loading recording consent settings...</span>
         </div>
       )}
 
       {!isLoading && state && (
         <>
           {/* Current acknowledgment state */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border">
             <div className="flex items-start gap-2">
               <CheckCircle2
                 className={`mt-0.5 h-5 w-5 flex-shrink-0 ${
-                  state.acknowledged ? 'text-green-600' : 'text-gray-400'
+                  state.acknowledged ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'
                 }`}
                 aria-hidden="true"
               />
               <div>
-                <h4 className="font-semibold text-gray-800">Acknowledgment</h4>
-                <p className="text-sm text-gray-600">
+                <h4 className="font-semibold text-foreground">Acknowledgment</h4>
+                <p className="text-sm text-muted-foreground">
                   {state.acknowledged
                     ? 'You have acknowledged the consent reminder on this device.'
                     : 'The consent reminder will be shown before your next recording.'}
@@ -128,7 +128,7 @@ export default function RecordingConsentSettings() {
                 type="button"
                 onClick={handleResetAcknowledgment}
                 disabled={isSaving}
-                className="flex-shrink-0 ml-4 px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-100 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex-shrink-0 ml-4 px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Reset
               </button>
@@ -136,19 +136,19 @@ export default function RecordingConsentSettings() {
           </div>
 
           {/* Re-arm toggle: show the reminder before every recording */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border">
             <div>
-              <h4 className="font-semibold text-gray-800">
+              <h4 className="font-semibold text-foreground">
                 Show the consent reminder before each recording
               </h4>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 {isSaving
                   ? 'Updating...'
                   : 'When on, the reminder appears every time, even after you acknowledge it'}
               </p>
             </div>
             <div className="flex items-center gap-2 ml-4">
-              {isSaving && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
+              {isSaving && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
               <Switch
                 checked={state.alwaysAsk}
                 onCheckedChange={handleToggleAlwaysAsk}
@@ -157,9 +157,9 @@ export default function RecordingConsentSettings() {
             </div>
           </div>
 
-          <div className="flex items-start gap-2 p-2 bg-blue-50 rounded border border-blue-200">
-            <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-            <div className="text-xs text-blue-700">
+          <div className="flex items-start gap-2 p-2 bg-accent rounded border border-primary/20">
+            <Info className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-primary">
               <p>
                 Mityu cannot verify consent for you. This reminder is guidance only and
                 does not constitute legal advice; recording laws differ by country and
