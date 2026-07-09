@@ -10,6 +10,7 @@ import { TranscriptPanel } from '@/components/MeetingDetails/TranscriptPanel';
 import { SummaryPanel } from '@/components/MeetingDetails/SummaryPanel';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 import { FileText, Sparkles, PanelRightOpen } from 'lucide-react';
+import { ReportHeader } from '@/components/report/ReportHeader';
 
 // Custom hooks
 import { useMeetingData } from '@/hooks/meeting-details/useMeetingData';
@@ -212,20 +213,28 @@ export default function PageContent({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="flex flex-col h-screen bg-gray-50"
+      className="flex flex-col h-screen bg-background"
     >
+      {/* read.ai-style report header: title, date/duration meta, and an on-device
+          overview-metrics strip computed from the local transcript. */}
+      <ReportHeader
+        title={meetingData.meetingTitle}
+        createdAt={meeting.created_at}
+        transcripts={meetingData.transcripts}
+      />
+
       {/* Narrow-screen (< md) tab bar: switches which panel is visible so the
           transcript (primary content) is reachable on mobile/tablet. Hidden on
           md+ where both panels sit side by side. */}
-      <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
+      <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-border bg-card">
         <button
           type="button"
           onClick={() => setMobileTab('transcript')}
           aria-pressed={mobileTab === 'transcript'}
           className={`flex-1 inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
             mobileTab === 'transcript'
-              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-              : 'text-gray-600 hover:bg-gray-50 border border-transparent'
+              ? 'bg-accent text-primary border border-primary/20'
+              : 'text-muted-foreground hover:bg-muted border border-transparent'
           }`}
         >
           <FileText size={16} />
@@ -237,8 +246,8 @@ export default function PageContent({
           aria-pressed={mobileTab === 'summary'}
           className={`flex-1 inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
             mobileTab === 'summary'
-              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-              : 'text-gray-600 hover:bg-gray-50 border border-transparent'
+              ? 'bg-accent text-primary border border-primary/20'
+              : 'text-muted-foreground hover:bg-muted border border-transparent'
           }`}
         >
           <Sparkles size={16} />
@@ -256,7 +265,7 @@ export default function PageContent({
           className={`${
             mobileTab === 'transcript' ? 'flex' : 'hidden'
           } w-full min-w-0 md:flex md:flex-1 md:min-w-0 ${
-            isSummaryCollapsed ? '' : 'md:border-r md:border-gray-200'
+            isSummaryCollapsed ? '' : 'md:border-r md:border-border'
           }`}
         >
           <TranscriptPanel
@@ -347,13 +356,13 @@ export default function PageContent({
         {/* Collapsed-state expand rail (md+ only): a slim edge affordance to bring
             the summary panel back after it has been collapsed. */}
         {isSummaryCollapsed && (
-          <div className="hidden md:flex flex-col items-center border-l border-gray-200 bg-white shrink-0">
+          <div className="hidden md:flex flex-col items-center border-l border-border bg-card shrink-0">
             <button
               type="button"
               onClick={() => setIsSummaryCollapsed(false)}
               title="Show summary panel"
               aria-label="Show summary panel"
-              className="p-2 m-1 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+              className="p-2 m-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
             >
               <PanelRightOpen size={18} />
             </button>
