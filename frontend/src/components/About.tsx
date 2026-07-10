@@ -148,13 +148,6 @@ export function About() {
             <div className="pt-2 border-t border-border">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Acknowledgments</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                    Mityu is built on the open-source{' '}
-                    <button onClick={() => openExternalLink('https://github.com/Zackriya-Solutions/meeting-minutes')} className="underline hover:text-foreground">
-                        Meetily
-                    </button>{' '}
-                    by Zackriya Solutions (MIT license). Mityu is a separate product by bluedev and is not affiliated with, nor endorsed by, Meetily or Zackriya Solutions.
-                </p>
-                <p className="text-xs text-muted-foreground leading-relaxed mt-1.5">
                     On-device transcription is powered by{' '}
                     <button onClick={() => openExternalLink('https://github.com/ggerganov/whisper.cpp')} className="underline hover:text-foreground">
                         whisper.cpp
