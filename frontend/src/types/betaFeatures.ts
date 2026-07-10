@@ -36,7 +36,13 @@ export interface BetaFeatures {
 
 export const DEFAULT_BETA_FEATURES: BetaFeatures = {
   importAndRetranscribe: true, // Default: enabled
-  structuredSummaries: false, // Default: disabled (opt-in)
+  // Default: ENABLED (2026-07-10, owner call). The structured draft is the surface
+  // that satisfies CLAUDE.md §0.5 (every AI output is a source-linked draft behind
+  // human approval) and it is the read.ai-style Report (docs/DESIGN_READAI.md).
+  // The legacy BlockNote path has neither source links nor an approval gate, so it
+  // should not be what new users land on. Users who explicitly saved a preference
+  // keep it — loadBetaFeatures() merges saved values over these defaults.
+  structuredSummaries: true,
 };
 
 
