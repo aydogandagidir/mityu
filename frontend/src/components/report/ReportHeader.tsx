@@ -24,14 +24,20 @@ function formatDuration(sec: number): string {
 }
 
 function StatTile({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
+  // Compact, content-hugging stat: icon tile + stacked value/label. Deliberately
+  // NOT flex-1 — stretched, mostly-empty tiles read as dead space on wide windows.
   return (
-    <div className="flex-1 min-w-[120px] rounded-xl border border-border bg-card p-3.5">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        <span className="text-[11px] uppercase tracking-wide">{label}</span>
-      </div>
-      <div className="mt-1.5 text-xl font-semibold tracking-tight text-foreground">{value}</div>
-      {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
+    <div className="inline-flex items-center gap-3 rounded-xl border border-border bg-card py-2.5 pl-3 pr-5 shadow-sm">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
+        <Icon className="h-4 w-4" aria-hidden />
+      </span>
+      <span className="flex flex-col leading-tight">
+        <span className="text-lg font-semibold tracking-tight text-foreground tabular-nums">
+          {value}
+          {sub && <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">{sub}</span>}
+        </span>
+        <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">{label}</span>
+      </span>
     </div>
   );
 }
@@ -68,12 +74,15 @@ export function ReportHeader({
   const wpm = durationSec > 0 ? Math.round(words / (durationSec / 60)) : 0;
 
   return (
-    <header className="border-b border-border bg-background px-6 py-5">
-      <div className="mx-auto max-w-5xl space-y-4">
-        <div>
-          <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Meeting report</div>
-          <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-foreground truncate">{title || 'Untitled meeting'}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+    <header className="border-b border-border bg-background px-6 py-4">
+      {/* Full-width, left-aligned so the header shares a grid with the panels
+          below (a centered max-w column over full-width panels reads off-grid).
+          Title block left, stat tiles right; wraps on narrow windows. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-primary">Meeting report</div>
+          <h1 className="mt-0.5 truncate text-xl font-semibold tracking-tight text-foreground">{title || 'Untitled meeting'}</h1>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted-foreground">
             {dateLabel && <span>{dateLabel}</span>}
             {dateLabel && durationSec > 0 && <span aria-hidden>·</span>}
             {durationSec > 0 && <span>{formatDuration(durationSec)}</span>}
@@ -82,7 +91,7 @@ export function ReportHeader({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <StatTile icon={Clock} label="Duration" value={formatDuration(durationSec)} />
           <StatTile icon={FileText} label="Words" value={words.toLocaleString()} sub={wpm > 0 ? `~${wpm} wpm` : undefined} />
           <StatTile icon={Hash} label="Segments" value={String(segments)} />

@@ -4,6 +4,7 @@ import { Transcript, TranscriptSegmentData } from '@/types';
 import { TranscriptView } from '@/components/TranscriptView';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
+import { FileText } from 'lucide-react';
 import { useMemo } from 'react';
 
 interface TranscriptPanelProps {
@@ -77,9 +78,19 @@ export function TranscriptPanel({
     // Layout-neutral root: width, borders, and responsive show/hide are owned by
     // the wrapper in page-content.tsx so the split can be rebalanced and made
     // responsive/collapsible without threading layout state through every prop.
-    <div className="flex w-full h-full min-w-0 bg-white flex-col relative">
-      {/* Title area */}
-      <div className="p-4 border-b border-gray-200">
+    <div className="flex w-full h-full min-w-0 bg-background flex-col relative">
+      {/* Panel toolbar: identity (icon + title + segment count) on the left,
+          transcript actions on the right — replaces the floating centered row. */}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent text-accent-foreground">
+            <FileText className="h-3.5 w-3.5" aria-hidden />
+          </span>
+          <h2 className="truncate text-sm font-semibold text-foreground">Transcript</h2>
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+            {usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
+          </span>
+        </div>
         <TranscriptButtonGroup
           transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
           onCopyTranscript={onCopyTranscript}
@@ -114,10 +125,10 @@ export function TranscriptPanel({
 
       {/* Custom prompt input at bottom of transcript section */}
       {!isRecording && convertedSegments.length > 0 && (
-        <div className="p-1 border-t border-gray-200">
+        <div className="border-t border-border p-3">
           <textarea
-            placeholder="Add context for AI summary. For example people involved, meeting overview, objective etc..."
-            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm min-h-[80px] resize-y"
+            placeholder="Add context for the AI summary — people involved, meeting overview, objective…"
+            className="min-h-[72px] w-full resize-y rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring"
             value={customPrompt}
             onChange={(e) => onPromptChange(e.target.value)}
           />

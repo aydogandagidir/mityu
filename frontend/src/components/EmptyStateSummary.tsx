@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { FileQuestion, Sparkles } from 'lucide-react';
+import { Clock, ListChecks, MessageSquareQuote, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -24,12 +24,28 @@ export function EmptyStateSummary({ onGenerate, hasModel, isGenerating = false }
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className="flex flex-col items-center justify-center h-full p-8 text-center"
     >
-      <FileQuestion className="w-16 h-16 text-muted-foreground/40 mb-4" />
-      <h3 className="text-lg font-semibold text-foreground mb-2">
-        No Summary Generated Yet
+      {/* Brand empty-state mark: a primary tile flanked by the report's section icons. */}
+      <div className="mb-5 flex items-center gap-2.5" aria-hidden>
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-accent-foreground">
+          <MessageSquareQuote className="h-5 w-5" />
+        </span>
+        <span className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-md">
+          <Sparkles className="h-7 w-7" />
+        </span>
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-accent-foreground">
+          <ListChecks className="h-5 w-5" />
+        </span>
+      </div>
+      <h3 className="text-lg font-semibold tracking-tight text-foreground mb-1.5">
+        No summary yet
       </h3>
-      <p className="text-sm text-muted-foreground mb-6 max-w-md">
-        Generate an AI-powered summary of your meeting transcript to get key points, action items, and decisions.
+      <p className="text-sm text-muted-foreground mb-2 max-w-sm leading-relaxed">
+        Turn this transcript into a structured report — summary, key points and action
+        items, each linked to its source segment.
+      </p>
+      <p className="mb-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground/80">
+        <Clock className="h-3 w-3" aria-hidden />
+        Drafts stay on this device until you review and approve them.
       </p>
 
       <TooltipProvider>

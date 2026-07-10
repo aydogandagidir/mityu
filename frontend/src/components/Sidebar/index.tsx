@@ -458,10 +458,10 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={() => router.push('/')}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isHomePage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                className={`grid h-10 w-10 place-items-center rounded-xl transition-colors duration-150 ${isHomePage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
               >
-                <Home className="w-5 h-5 text-muted-foreground" />
+                <Home className="w-5 h-5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
@@ -474,7 +474,7 @@ const Sidebar: React.FC = () => {
               <button
                 onClick={handleRecordingToggle}
                 disabled={isRecording}
-                className={`p-2 ${isRecording ? 'bg-red-500 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'} rounded-full transition-colors duration-150 shadow-sm`}
+                className={`grid h-10 w-10 place-items-center rounded-xl text-white shadow-sm transition-colors duration-150 ${isRecording ? 'bg-red-500 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}
               >
                 {isRecording ? (
                   <Square className="w-5 h-5 text-white" />
@@ -493,9 +493,9 @@ const Sidebar: React.FC = () => {
               <TooltipTrigger asChild>
                 <button
                   onClick={() => openImportDialog()}
-                  className="p-2 rounded-lg transition-colors duration-150 hover:bg-accent bg-accent"
+                  className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-primary transition-colors duration-150 hover:bg-accent/80"
                 >
-                  <Upload className="w-5 h-5 text-primary" />
+                  <Upload className="w-5 h-5" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">
@@ -511,10 +511,10 @@ const Sidebar: React.FC = () => {
                   if (isCollapsed) toggleCollapse();
                   toggleFolder('meetings');
                 }}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isMeetingPage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                className={`grid h-10 w-10 place-items-center rounded-xl transition-colors duration-150 ${isMeetingPage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
               >
-                <NotebookPen className="w-5 h-5 text-muted-foreground" />
+                <NotebookPen className="w-5 h-5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
@@ -526,10 +526,10 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={() => router.push('/settings')}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isSettingsPage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                className={`grid h-10 w-10 place-items-center rounded-xl transition-colors duration-150 ${isSettingsPage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
               >
-                <Settings className="w-5 h-5 text-muted-foreground" />
+                <Settings className="w-5 h-5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
