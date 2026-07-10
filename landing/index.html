@@ -3,38 +3,44 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#090E1A">
-<title>Mityu — Meeting intelligence that never leaves your machine</title>
-<meta name="description" content="Mityu records meetings and field conversations, transcribes them locally with Whisper or Parakeet, and builds source-linked, human-approved reports. Windows &amp; macOS. Local-first. No bots.">
-<script>document.documentElement.classList.add("js")</script>
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#FFFFFF">
+<title>Mityu — Privacy-first meeting intelligence</title>
+<meta name="description" content="Mityu records meetings and field conversations on your device, transcribes them locally with Whisper or Parakeet, and builds source-linked, human-approved reports. Windows &amp; macOS. Works offline. No bots, no cloud, no account.">
+<script>if("IntersectionObserver" in window)document.documentElement.classList.add("js")</script>
 <style>
-/* ================= tokens & base ================= */
+/* ============ tokens & base ============ */
 :root{
-  --bg:#090E1A;
-  --bg-2:#0B1120;
-  --panel:#0D1526;
-  --primary:#1E56FF;
-  --secondary:#4B78FF;
+  --bg:#FFFFFF;
+  --band:#F5F8FF;
   --ink:#0F172A;
-  --line:rgba(228,228,231,.09);
-  --line-strong:rgba(228,228,231,.17);
-  --text:#EEF2F9;
-  --muted:#A5B1C6;
-  --muted-2:#7E8BA3;
-  --accent:#8FA8FF;
-  --grad-btn:linear-gradient(135deg,#1E56FF,#2F5EFF);
-  --ease:cubic-bezier(.22,1,.36,1);
-  --r-lg:22px;
+  --body:#475569;
+  --muted:#64748B;
+  --muted-2:#5D6B80;
+  --line:#E4E4E7;
+  --line-blue:#DCE6FF;
+  --tile:#EEF3FF;
+  --primary:#1E56FF;
+  --primary-deep:#1B4DE6;
+  --secondary:#4B78FF;
+  --overlap:#0A2ECB;
+  --green:#12B76A;
+  --green-ink:#067647;
+  --r-lg:20px;
   --r-md:16px;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 8px 24px -16px rgba(30,86,255,.18);
+  --shadow-md:0 1px 2px rgba(15,23,42,.05),0 16px 40px -20px rgba(30,86,255,.22);
+  --shadow-lg:0 2px 6px rgba(15,23,42,.05),0 32px 80px -32px rgba(30,86,255,.32);
+  --ease:cubic-bezier(.22,1,.36,1);
   --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-padding-top:96px;-webkit-text-size-adjust:100%}
-@media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
+html{scroll-padding-top:92px;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
 html,body{overflow-x:hidden}
 body{
-  background:var(--bg);color:var(--text);font-family:var(--font);
+  background:var(--bg);color:var(--ink);font-family:var(--font);
   font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
 }
 a{color:inherit;text-decoration:none}
@@ -42,719 +48,677 @@ ul{list-style:none}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 svg{display:inline-block;vertical-align:middle;flex:none}
 b,strong{font-weight:700}
-::selection{background:rgba(30,86,255,.5);color:#fff}
-:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:8px}
-.container{width:min(1160px,100% - 44px);margin-inline:auto}
-.skip{position:absolute;left:16px;top:-64px;z-index:200;background:var(--primary);color:#fff;padding:10px 18px;border-radius:12px;font-weight:600;transition:top .2s}
+h1,h2,h3{color:var(--ink);letter-spacing:-.022em;line-height:1.12;text-wrap:balance}
+::selection{background:rgba(30,86,255,.16);color:var(--ink)}
+:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:8px}
+.container{width:min(1140px,100% - 44px);margin-inline:auto}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.skip{position:absolute;left:16px;top:-64px;z-index:300;background:var(--primary);color:#fff;padding:10px 18px;border-radius:12px;font-weight:600;transition:top .2s}
 .skip:focus{top:14px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
-/* ================= reveal-on-scroll ================= */
-.js .reveal{
-  opacity:0;transform:translateY(26px);
-  transition:opacity .85s var(--ease),transform .85s var(--ease);
-  transition-delay:var(--d,0s);
-  will-change:opacity,transform;
-}
+/* ============ reveal-on-scroll (JS-off safe) ============ */
+.js .reveal{opacity:0;transform:translateY(22px);transition:opacity .8s var(--ease),transform .8s var(--ease);transition-delay:var(--d,0s)}
 .js .reveal.in{opacity:1;transform:translateY(0)}
-
-/* ================= buttons / chips / eyebrows ================= */
-.btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:9px;
-  font-weight:600;font-size:15px;line-height:1;border-radius:999px;
-  padding:15px 28px;border:1px solid transparent;cursor:pointer;
-  transition:transform .25s var(--ease),box-shadow .25s var(--ease),background .25s,border-color .25s;
-  white-space:nowrap;
-}
-.btn-primary{background:var(--grad-btn);color:#fff;box-shadow:0 12px 34px -10px rgba(75,120,255,.6)}
-.btn-primary:hover{transform:translateY(-2px);box-shadow:0 18px 44px -10px rgba(75,120,255,.75)}
-.btn-ghost{border-color:var(--line-strong);color:var(--text);background:rgba(255,255,255,.02)}
-.btn-ghost:hover{background:rgba(255,255,255,.06);border-color:rgba(228,228,231,.32);transform:translateY(-2px)}
-.btn-sm{padding:10px 20px;font-size:14px}
-.eyebrow{
-  display:inline-flex;align-items:center;gap:10px;
-  font-size:12.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
-}
-.eyebrow::before,.eyebrow::after{content:"";width:22px;height:1px;background:linear-gradient(90deg,transparent,rgba(75,120,255,.8))}
-.eyebrow::after{background:linear-gradient(90deg,rgba(75,120,255,.8),transparent)}
-.sec{padding:clamp(88px,11vw,148px) 0;position:relative}
-.sec-head{max-width:740px;margin:0 auto clamp(44px,6vw,64px);text-align:center}
-.sec-head h2{
-  font-size:clamp(30px,4.4vw,48px);line-height:1.07;letter-spacing:-.03em;font-weight:800;
-  margin:16px 0 16px;text-wrap:balance;
-}
-.sec-head p{color:var(--muted);font-size:clamp(15.5px,1.6vw,17.5px);max-width:620px;margin-inline:auto}
-
-/* ================= nav ================= */
-.nav{position:fixed;inset:0 0 auto 0;z-index:100;border-bottom:1px solid transparent;transition:background .35s,border-color .35s,box-shadow .35s}
-.nav.scrolled{
-  background:rgba(9,14,26,.72);
-  -webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);
-  border-bottom-color:var(--line);box-shadow:0 12px 40px -20px rgba(0,0,0,.6);
-}
-.nav-inner{display:flex;align-items:center;gap:28px;height:68px}
-.brand{display:inline-flex;align-items:center;gap:10px;font-weight:800;font-size:21px;letter-spacing:-.02em}
-.brand svg{filter:drop-shadow(0 4px 14px rgba(30,86,255,.45))}
-.nav-links{display:flex;align-items:center;gap:6px;margin-left:auto}
-.nav-links a:not(.btn){padding:9px 14px;border-radius:10px;font-size:14.5px;font-weight:500;color:var(--muted);transition:color .2s,background .2s}
-.nav-links a:not(.btn):hover{color:var(--text);background:rgba(255,255,255,.05)}
-.nav-links .btn{margin-left:10px}
-.menu-btn{display:none;width:42px;height:42px;border-radius:12px;border:1px solid var(--line-strong);background:rgba(255,255,255,.03);position:relative;margin-left:auto}
-.menu-btn span{position:absolute;left:12px;right:12px;height:2px;border-radius:2px;background:var(--text);transition:transform .3s var(--ease),top .3s var(--ease)}
-.menu-btn span:first-child{top:16px}
-.menu-btn span:last-child{top:24px}
-.nav.open .menu-btn span:first-child{top:20px;transform:rotate(45deg)}
-.nav.open .menu-btn span:last-child{top:20px;transform:rotate(-45deg)}
-@media (max-width:840px){
-  .menu-btn{display:block}
-  .nav-links{
-    position:absolute;top:100%;left:0;right:0;display:none;flex-direction:column;align-items:stretch;gap:4px;
-    padding:14px 22px 22px;margin:0;
-    background:rgba(9,14,26,.96);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
-    border-bottom:1px solid var(--line);
-  }
-  .nav.open .nav-links{display:flex}
-  .nav-links a:not(.btn){padding:13px 10px;font-size:16px}
-  .nav-links .btn{margin:10px 0 0}
+@media (prefers-reduced-motion:reduce){
+  .js .reveal{opacity:1;transform:none;transition:none}
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
 }
 
-/* ================= hero ================= */
-.hero{position:relative;padding:clamp(150px,19vh,200px) 0 clamp(90px,11vw,130px);text-align:center}
-.hero-bg{position:absolute;inset:0;pointer-events:none;overflow:visible}
-.hero-glow{
-  position:absolute;inset:-30% -10% auto;height:110%;
+/* ============ buttons / chips ============ */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;border-radius:14px;padding:12px 22px;font-size:15.5px;line-height:1.25;transition:transform .18s var(--ease),box-shadow .18s var(--ease),background-color .18s,border-color .18s;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:linear-gradient(180deg,#2E63FF,#1E56FF);border:1px solid var(--primary-deep);color:#fff;box-shadow:0 10px 24px -10px rgba(30,86,255,.55),inset 0 1px 0 rgba(255,255,255,.18)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 14px 30px -10px rgba(30,86,255,.6),inset 0 1px 0 rgba(255,255,255,.18)}
+.btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.btn-ghost:hover{border-color:#C7D4F7;background:#FAFBFF;transform:translateY(-1px)}
+.btn-lg{padding:15px 28px;font-size:16.5px;border-radius:16px}
+.btn-sm{padding:9px 16px;font-size:14px;border-radius:11px}
+.w-full{width:100%}
+.eyebrow{display:inline-block;color:var(--primary);font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-bottom:14px}
+.chip-ai{display:inline-flex;align-items:center;gap:5px;background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;font-size:11px;font-weight:650;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.chip-soon{display:inline-block;background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
+
+/* ============ header / nav ============ */
+#site-header{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.72);-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid transparent;transition:background-color .25s,border-color .25s,box-shadow .25s}
+#site-header.scrolled{background:rgba(255,255,255,.86);border-bottom-color:var(--line);box-shadow:0 10px 30px -24px rgba(15,23,42,.25)}
+.nav-inner{height:68px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+.brand{display:inline-flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:21px;color:var(--ink)}
+.brand .mark{filter:drop-shadow(0 2px 6px rgba(30,86,255,.28))}
+nav[aria-label="Main"]{display:flex;align-items:center}
+.nav-menu{display:flex;align-items:center;gap:28px}
+.nav-menu a:not(.btn){font-size:14.5px;font-weight:600;color:var(--muted);transition:color .18s}
+.nav-menu a:not(.btn):hover{color:var(--ink)}
+.menu-cta{margin-left:4px}
+.nav-burger{display:none;width:44px;height:44px;align-items:center;justify-content:center;border-radius:12px;color:var(--ink)}
+.nav-burger:hover{background:var(--tile)}
+.nav-burger .i-close{display:none}
+.nav-burger.is-open .i-close{display:block}
+.nav-burger.is-open .i-open{display:none}
+@media (max-width:860px){
+  .nav-burger{display:inline-flex}
+  .js .nav-menu{display:none;position:absolute;top:calc(100% + 8px);left:14px;right:14px;flex-direction:column;align-items:stretch;gap:2px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg);padding:10px}
+  .js .nav-menu.open{display:flex}
+  .js .nav-menu a:not(.btn){display:block;padding:12px 14px;border-radius:12px;font-size:16px;color:var(--ink)}
+  .js .nav-menu a:not(.btn):hover{background:var(--tile)}
+  .js .menu-cta{margin:8px 6px 4px}
+  .js .menu-cta .btn{width:100%}
+  html:not(.js) .nav-burger{display:none}
+  html:not(.js) .nav-menu{gap:14px;flex-wrap:wrap;justify-content:flex-end}
+}
+
+/* ============ sections scaffolding ============ */
+.sec{padding:clamp(72px,9vw,108px) 0;position:relative}
+.band{background:var(--band)}
+.sec-head{max-width:720px;margin:0 auto clamp(40px,6vw,60px);text-align:center}
+.sec-head h2{font-size:clamp(28px,3.4vw,40px);font-weight:800}
+.sec-head .sub{color:var(--muted-2);font-size:17px;margin-top:14px;text-wrap:pretty}
+.grad-text{background:linear-gradient(98deg,var(--primary) 10%,var(--secondary) 55%,#7C9BFF 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* ============ hero ============ */
+.hero{position:relative;padding:clamp(64px,9vw,104px) 0 clamp(20px,3vw,36px);text-align:center}
+.hero .fx,.tour .fx{content:"";position:absolute;inset:-12% -18%;pointer-events:none;z-index:-1;
   background:
-    radial-gradient(46% 38% at 50% 18%,rgba(30,86,255,.34),transparent 68%),
-    radial-gradient(28% 24% at 80% 40%,rgba(75,120,255,.16),transparent 70%),
-    radial-gradient(24% 20% at 14% 48%,rgba(30,86,255,.12),transparent 72%);
-}
-.hero-grid{
-  position:absolute;inset:0;
-  background:
-    linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);
-  background-size:74px 74px;
-  -webkit-mask-image:radial-gradient(62% 58% at 50% 4%,#000 26%,transparent 74%);
-  mask-image:radial-gradient(62% 58% at 50% 4%,#000 26%,transparent 74%);
-}
-.orb{position:absolute;border-radius:50%;filter:blur(72px);pointer-events:none;animation:drift 17s ease-in-out infinite alternate}
-.orb-a{width:440px;height:440px;top:-140px;left:-150px;background:radial-gradient(circle at 32% 32%,rgba(30,86,255,.5),transparent 68%)}
-.orb-b{width:380px;height:380px;top:16%;right:-170px;background:radial-gradient(circle at 60% 40%,rgba(75,120,255,.38),transparent 70%);animation-delay:2.5s}
-@keyframes drift{from{transform:translate3d(0,0,0)}to{transform:translate3d(26px,-34px,0)}}
-.hero-pill{
-  display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:#C9D5F2;
-  border:1px solid rgba(75,120,255,.35);background:rgba(30,86,255,.1);
-  padding:8px 16px;border-radius:999px;margin-bottom:28px;
-}
-.pulse{width:8px;height:8px;border-radius:50%;background:var(--secondary);box-shadow:0 0 0 0 rgba(75,120,255,.55);animation:pulse 2.6s infinite}
-.pulse.g{background:#2ECC8A;box-shadow:0 0 0 0 rgba(46,204,138,.5)}
-@keyframes pulse{70%{box-shadow:0 0 0 9px rgba(75,120,255,0)}100%{box-shadow:0 0 0 0 rgba(75,120,255,0)}}
-.hero h1{
-  font-size:clamp(42px,7vw,86px);line-height:1.02;letter-spacing:-.038em;font-weight:800;
-  max-width:1000px;margin:0 auto;text-wrap:balance;
-}
-.grad{
-  background:linear-gradient(95deg,#A9BEFF 0%,#5F87FF 55%,#3B69FF 100%);
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-}
-.hero-sub{
-  color:var(--muted);font-size:clamp(16px,2vw,19px);max-width:660px;margin:26px auto 0;text-wrap:pretty;
-}
-.hero-ctas{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:38px}
-.hero-note{margin-top:16px;font-size:13px;color:var(--muted-2)}
-.hero-badges{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:46px}
-.hero-badges li{
-  display:flex;align-items:center;gap:9px;padding:10px 17px;border-radius:999px;
-  border:1px solid var(--line);background:rgba(255,255,255,.03);
-  font-size:13.5px;font-weight:500;color:var(--muted);
-}
-.hero-badges svg{color:var(--accent)}
+    radial-gradient(48% 42% at 16% 6%,rgba(75,120,255,.11),transparent 62%),
+    radial-gradient(44% 40% at 86% 2%,rgba(30,86,255,.10),transparent 60%),
+    radial-gradient(58% 46% at 50% 112%,rgba(75,120,255,.09),transparent 64%)}
+.hero-badge{display:inline-flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--line-blue);border-radius:999px;padding:7px 15px;font-size:13px;font-weight:600;color:var(--muted-2);box-shadow:var(--shadow-sm)}
+.hero-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(18,183,106,.16);animation:pulse 2.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.4}}
+.hero h1{font-size:clamp(38px,5.6vw,64px);font-weight:800;letter-spacing:-.032em;line-height:1.04;margin:26px auto 0;max-width:820px}
+.hero .lede{color:var(--muted-2);font-size:clamp(16.5px,1.6vw,19px);line-height:1.65;max-width:660px;margin:20px auto 0;text-wrap:pretty}
+.hero-cta{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:32px}
+.trust-row{display:flex;justify-content:center;flex-wrap:wrap;gap:10px 26px;margin-top:30px}
+.trust-row li{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:550;color:var(--muted-2)}
+.trust-row svg{color:var(--green)}
 
-/* ================= product mock ================= */
-.mock-wrap{position:relative;max-width:1040px;margin:0 auto;isolation:isolate}
-.mock-glow{
-  position:absolute;inset:-14% -10%;z-index:-1;filter:blur(34px);
-  background:radial-gradient(48% 56% at 50% 46%,rgba(30,86,255,.3),transparent 72%);
+/* ============ product demo mock ============ */
+.tour{position:relative;padding:clamp(28px,4vw,48px) 0 clamp(76px,9vw,110px)}
+.window{max-width:980px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);overflow:hidden;text-align:left}
+.titlebar{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#FBFCFF,#F5F8FE)}
+.dots{display:inline-flex;gap:7px}
+.dots span{width:11px;height:11px;border-radius:50%}
+.dots span:nth-child(1){background:#FF5F57}
+.dots span:nth-child(2){background:#FEBC2E}
+.dots span:nth-child(3){background:#28C840}
+.title-name{font-size:13px;font-weight:600;color:var(--muted);margin-inline:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill-secure{display:inline-flex;align-items:center;gap:6px;background:#ECFDF3;color:var(--green-ink);border:1px solid #ABEFC6;border-radius:999px;padding:4px 11px;font-size:12px;font-weight:650;white-space:nowrap}
+.window-body{display:grid;grid-template-columns:1.04fr 1fr}
+.pane{padding:20px 22px 24px;min-width:0}
+.pane-live{border-right:1px solid var(--line)}
+.pane-report{background:#F8FAFF}
+.pane-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.pane-head h3{font-size:13.5px;font-weight:750;letter-spacing:.01em}
+.rec-pill{display:inline-flex;align-items:center;gap:7px;background:#FEF3F2;color:#B42318;border:1px solid #FECDCA;border-radius:999px;padding:4px 11px;font-size:12px;font-weight:650;white-space:nowrap}
+.rec-pill .rdot{width:7px;height:7px;border-radius:50%;background:#F04438;animation:pulse 1.6s ease-in-out infinite}
+.t-row{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:9px 10px;border-radius:11px;border:1px solid transparent}
+.t-row + .t-row{margin-top:5px}
+.t-time{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:600;color:var(--primary);padding-top:2px}
+.t-row p{font-size:13.5px;line-height:1.55;color:var(--body);min-width:0}
+.t-row p strong{color:var(--ink);font-weight:650;margin-right:4px}
+.t-row.linked{background:var(--tile);border-color:var(--line-blue)}
+.tag-src{display:inline-block;background:var(--primary);color:#fff;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2.5px 8px;border-radius:999px;margin-left:8px;vertical-align:1.5px;white-space:nowrap}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px}
+.stat .k{display:block;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.stat .v{display:block;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:15.5px;font-weight:700;color:var(--ink);margin-top:1px}
+.mini-label{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+.chapters{display:flex;flex-wrap:wrap;gap:7px}
+.chapters li{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600;color:var(--body)}
+.chapters .c-t{font-family:var(--mono);font-size:11px;font-weight:650;color:var(--primary)}
+.sum-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 15px}
+.sum-card .row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.sum-card .row .t{font-size:13px;font-weight:750;color:var(--ink)}
+.sum-card p{font-size:13.5px;line-height:1.6;color:var(--body)}
+.ai-item{display:grid;grid-template-columns:auto 1fr;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.ai-item + .ai-item{margin-top:7px}
+.ai-check{width:17px;height:17px;border-radius:5.5px;border:1.5px solid #C4D0E6;background:#fff;display:inline-flex;align-items:center;justify-content:center;margin-top:2px}
+.ai-check.done{background:var(--primary);border-color:var(--primary);color:#fff}
+.ai-item .txt{font-size:13.5px;line-height:1.5;color:var(--ink);font-weight:550;min-width:0}
+.ai-item .meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:3px}
+.src-link{font-family:var(--mono);font-size:11.5px;font-weight:650;color:var(--primary);white-space:nowrap}
+.approve-gate{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;background:linear-gradient(180deg,#2E63FF,#1E56FF);border:1px solid var(--primary-deep);color:#fff;border-radius:13px;padding:12px 16px;font-size:14px;font-weight:650;box-shadow:0 10px 24px -12px rgba(30,86,255,.5)}
+.approve-gate .left{display:inline-flex;align-items:center;gap:9px}
+.approve-gate .count{font-size:12.5px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap}
+.tour figcaption{text-align:center;color:var(--muted);font-size:13px;max-width:620px;margin:18px auto 0;text-wrap:pretty}
+@media (max-width:880px){
+  .window-body{grid-template-columns:1fr}
+  .pane-live{border-right:0;border-bottom:1px solid var(--line)}
+  .title-name{display:none}
+  .titlebar{justify-content:space-between}
 }
-.window{
-  border-radius:var(--r-lg);border:1px solid rgba(228,228,231,.13);overflow:hidden;
-  background:linear-gradient(180deg,#0E1728,#0A101E);
-  box-shadow:0 48px 130px -36px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.05);
-}
-.win-bar{display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
-.dot{width:11px;height:11px;border-radius:50%}
-.dot.dr{background:#FF5F57}.dot.dy{background:#FEBC2E}.dot.dg{background:#28C840}
-.win-title{margin-left:10px;font-size:12.5px;color:var(--muted-2)}
-.win-pill{
-  margin-left:auto;display:inline-flex;align-items:center;gap:8px;
-  font-size:11.5px;font-weight:600;color:#8FE7B6;
-  background:rgba(46,204,138,.09);border:1px solid rgba(46,204,138,.28);
-  padding:5px 12px;border-radius:999px;
-}
-.win-body{padding:clamp(18px,3vw,30px)}
-.report-head{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
-.report-title{font-size:clamp(18px,2.2vw,23px);font-weight:700;letter-spacing:-.02em}
-.report-meta{font-size:13px;color:var(--muted-2);margin-top:4px}
-.stats{display:flex;flex-wrap:wrap;gap:10px}
-.stat{border:1px solid var(--line);border-radius:13px;padding:10px 16px;background:rgba(255,255,255,.02);min-width:96px}
-.stat b{font-size:17px;letter-spacing:-.01em;font-variant-numeric:tabular-nums;display:block}
-.stat span{font-size:10.5px;color:var(--muted-2);text-transform:uppercase;letter-spacing:.09em}
-.chapters{display:flex;flex-wrap:wrap;gap:9px;padding-bottom:22px;border-bottom:1px solid var(--line);margin-bottom:22px}
-.chip{
-  font-size:12.5px;font-weight:500;padding:7px 14px;border-radius:999px;
-  border:1px solid rgba(75,120,255,.3);background:rgba(30,86,255,.09);color:#AFC2FF;
-}
-.chip.on{background:var(--grad-btn);color:#fff;border-color:transparent;font-weight:600}
-.win-grid{display:grid;gap:20px}
-@media (min-width:880px){.win-grid{grid-template-columns:1.12fr .95fr;align-items:start}}
-.win-label{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--muted-2);margin-bottom:12px}
-.transcript{border:1px solid var(--line);border-radius:var(--r-md);padding:18px;background:rgba(255,255,255,.015)}
-.t-line{padding:11px 10px;border-bottom:1px dashed rgba(228,228,231,.08);position:relative;border-radius:12px}
-.t-line:last-child{border-bottom:0}
-.t-meta{display:flex;align-items:center;gap:9px;margin-bottom:4px}
-.t-time{font-size:11px;font-variant-numeric:tabular-nums;color:var(--muted-2);background:rgba(255,255,255,.05);padding:2px 8px;border-radius:6px}
-.t-speaker{font-size:12.5px;font-weight:700}
-.s1{color:#8FA8FF}.s2{color:#7EE2A8}
-.t-line > p{font-size:13.5px;line-height:1.55;color:var(--muted)}
-.t-line.hl{background:rgba(30,86,255,.09);border:1px solid rgba(75,120,255,.4);margin:6px 0;padding:12px 10px}
-.t-line.hl > p{color:#D7DFF2}
-.hl-tag{
-  position:absolute;top:10px;right:10px;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-  color:#AFC2FF;background:rgba(30,86,255,.18);border:1px solid rgba(75,120,255,.4);
-  padding:3px 8px;border-radius:999px;
-}
-.sum-card{
-  border:1px solid rgba(75,120,255,.28);border-radius:var(--r-md);padding:20px;
-  background:linear-gradient(180deg,rgba(30,86,255,.11),rgba(30,86,255,.02));
-}
-.sum-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px}
-.sum-head .win-label{margin-bottom:0}
-.ai-chip{
-  font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
-  color:#FFD9A0;background:rgba(255,170,60,.1);border:1px solid rgba(255,170,60,.32);
-  padding:4px 10px;border-radius:999px;white-space:nowrap;
-}
-.sum-text{font-size:13.5px;line-height:1.6;color:#C7D2E5;margin:12px 0 18px}
-.actions{display:grid;gap:8px;margin-bottom:18px}
-.actions li{
-  display:flex;align-items:flex-start;gap:10px;font-size:13px;color:#D5DCEB;
-  padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:rgba(9,14,26,.4);
-}
-.cb{width:15px;height:15px;border-radius:5px;border:1.5px solid rgba(228,228,231,.35);margin-top:2px}
-.src{
-  margin-left:auto;font-size:11px;font-variant-numeric:tabular-nums;font-weight:600;
-  color:#AFC2FF;background:rgba(30,86,255,.14);border:1px solid rgba(75,120,255,.32);
-  padding:2px 9px;border-radius:7px;white-space:nowrap;
-}
-.src::before{content:"→ ";opacity:.75}
-.sum-foot{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
-.approve-btn{
-  display:inline-block;background:var(--grad-btn);color:#fff;font-size:13px;font-weight:600;
-  padding:10px 18px;border-radius:11px;box-shadow:0 8px 22px -8px rgba(75,120,255,.55);
-}
-.draft-note{font-size:12px;color:var(--muted-2)}
-.float-pill{
-  position:absolute;z-index:2;display:flex;align-items:center;gap:9px;
-  font-size:12.5px;font-weight:600;color:#DDE5F4;padding:11px 17px;border-radius:999px;
-  border:1px solid var(--line-strong);background:rgba(13,21,38,.88);
-  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
-  box-shadow:0 20px 55px -18px rgba(0,0,0,.75);
-  animation:bob 7s ease-in-out infinite alternate;
-}
-.fp-a{top:-20px;right:3%}
-.fp-b{bottom:-18px;left:3%;animation-delay:1.4s}
-.fp-b svg{color:#7EE2A8}
-@keyframes bob{from{transform:translateY(-5px)}to{transform:translateY(6px)}}
-@media (max-width:760px){.float-pill{display:none}}
 
-/* ================= features ================= */
-.features-grid{display:grid;gap:18px;grid-template-columns:1fr}
-@media (min-width:640px){.features-grid{grid-template-columns:repeat(2,1fr)}}
-@media (min-width:1000px){.features-grid{grid-template-columns:repeat(3,1fr)}}
-.card{
-  position:relative;border:1px solid var(--line);border-radius:20px;padding:28px 26px;
-  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
-  transition:transform .35s var(--ease),border-color .35s,box-shadow .35s;
+/* ============ how it works ============ */
+.hiw{display:grid;grid-template-columns:repeat(3,1fr);gap:36px 28px;position:relative}
+.hiw::before{content:"";position:absolute;top:26px;left:16.7%;right:16.7%;height:2px;background:repeating-linear-gradient(90deg,#C9D6FF 0 9px,transparent 9px 18px)}
+.step{text-align:center;position:relative}
+.step .num{width:52px;height:52px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;font-size:20px;font-weight:800;box-shadow:0 12px 26px -10px rgba(30,86,255,.55)}
+.step h3{font-size:18.5px;font-weight:750;margin-top:20px}
+.step p{color:var(--muted-2);font-size:14.5px;line-height:1.65;margin-top:10px;max-width:340px;margin-inline:auto;text-wrap:pretty}
+@media (max-width:880px){
+  .hiw{grid-template-columns:1fr;gap:40px}
+  .hiw::before{display:none}
 }
-.card:hover{transform:translateY(-4px);border-color:rgba(75,120,255,.42);box-shadow:0 24px 60px -24px rgba(30,86,255,.3)}
-.card .icon{
-  width:44px;height:44px;border-radius:13px;display:grid;place-items:center;margin-bottom:20px;
-  background:linear-gradient(135deg,rgba(30,86,255,.28),rgba(75,120,255,.1));
-  border:1px solid rgba(75,120,255,.38);color:#9DB4FF;
-}
-.card h3{font-size:17.5px;font-weight:700;letter-spacing:-.015em;margin-bottom:9px}
-.card p{color:var(--muted);font-size:14.5px;line-height:1.66}
 
-/* ================= privacy ================= */
-.privacy-panel{
-  position:relative;overflow:hidden;text-align:center;
-  border:1px solid rgba(75,120,255,.28);border-radius:30px;
-  padding:clamp(48px,7vw,88px) clamp(22px,5vw,76px);
-  background:linear-gradient(180deg,rgba(30,86,255,.13),rgba(30,86,255,.02));
-}
-.privacy-panel::before{
-  content:"";position:absolute;inset:-45% -20% auto;height:130%;pointer-events:none;
-  background:radial-gradient(50% 42% at 50% 4%,rgba(30,86,255,.3),transparent 70%);
-}
-.privacy-panel > *{position:relative}
-.privacy-panel h2{font-size:clamp(30px,4.4vw,50px);line-height:1.06;letter-spacing:-.032em;font-weight:800;margin:16px 0;text-wrap:balance}
-.privacy-panel .lede{color:var(--muted);font-size:clamp(15.5px,1.7vw,18px);max-width:640px;margin:0 auto}
-.privacy-stats{display:grid;gap:14px;grid-template-columns:1fr;margin-top:44px;text-align:left}
-@media (min-width:720px){.privacy-stats{grid-template-columns:repeat(3,1fr)}}
-.pstat{
-  border:1px solid var(--line);border-radius:16px;padding:22px;
-  background:rgba(9,14,26,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
-}
-.pstat b{display:block;font-size:24px;letter-spacing:-.02em;margin-bottom:6px;color:#CFE0FF}
-.pstat span{color:var(--muted);font-size:13.5px;line-height:1.55;display:block}
+/* ============ why mityu (features) ============ */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--r-md);padding:26px 24px;box-shadow:var(--shadow-sm);transition:transform .22s var(--ease),box-shadow .22s var(--ease),border-color .22s}
+.card:hover{transform:translateY(-3px);border-color:#C9D6FF;box-shadow:var(--shadow-md)}
+.icon-tile{width:42px;height:42px;border-radius:12px;background:var(--tile);border:1px solid var(--line-blue);display:inline-flex;align-items:center;justify-content:center;color:var(--primary)}
+.card h3{font-size:16.5px;font-weight:750;margin-top:16px}
+.card p{color:var(--muted);font-size:14.5px;line-height:1.65;margin-top:8px;text-wrap:pretty}
+.card p small{display:block;color:var(--muted);font-size:12.5px;margin-top:6px}
+@media (max-width:1023px){.feat-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:680px){.feat-grid{grid-template-columns:1fr}}
 
-/* ================= pricing ================= */
-.plans{display:grid;gap:20px;grid-template-columns:1fr;max-width:1040px;margin:0 auto;align-items:stretch}
-@media (min-width:920px){.plans{grid-template-columns:repeat(3,1fr)}}
-.plan{
-  position:relative;display:flex;flex-direction:column;
-  border:1px solid var(--line);border-radius:22px;padding:32px 28px;
-  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
-  transition:transform .35s var(--ease),border-color .35s,box-shadow .35s;
-}
-.plan:hover{transform:translateY(-4px);border-color:rgba(75,120,255,.4)}
-.plan.featured{
-  border-color:rgba(75,120,255,.55);
-  background:linear-gradient(180deg,rgba(30,86,255,.16),rgba(30,86,255,.03));
-  box-shadow:0 36px 90px -34px rgba(30,86,255,.5);
-}
-.badge-pop{
-  position:absolute;top:-14px;left:50%;transform:translateX(-50%);
-  background:var(--grad-btn);color:#fff;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
-  padding:6px 16px;border-radius:999px;box-shadow:0 10px 26px -8px rgba(30,86,255,.7);white-space:nowrap;
-}
-.plan-name{font-size:15px;font-weight:700;letter-spacing:.02em;color:#C9D5F2;text-transform:uppercase}
-.price{font-size:44px;font-weight:800;letter-spacing:-.035em;margin-top:12px;line-height:1}
-.price-sub{font-size:13px;color:var(--muted-2);margin-top:7px}
-.plan ul{display:grid;gap:11px;margin:24px 0 30px;color:var(--muted);font-size:14.5px}
-.plan li{display:flex;align-items:flex-start;gap:10px;line-height:1.5}
-.plan li svg{color:var(--accent);margin-top:3px}
-.plan .btn{margin-top:auto;width:100%}
-.soon{
-  font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
-  color:#AFC2FF;background:rgba(75,120,255,.14);border:1px solid rgba(75,120,255,.38);
-  padding:3px 9px;border-radius:999px;white-space:nowrap;margin-left:2px;
-}
-.plans-note{text-align:center;color:var(--muted-2);font-size:13px;margin-top:30px}
+/* ============ platforms ============ */
+.plat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.plat{background:#fff;border:1px solid var(--line);border-radius:var(--r-md);padding:30px 24px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;align-items:center;text-align:center;transition:transform .22s var(--ease),box-shadow .22s var(--ease),border-color .22s}
+.plat:hover{transform:translateY(-3px);border-color:#C9D6FF;box-shadow:var(--shadow-md)}
+.plat h3{font-size:18px;font-weight:750;margin-top:16px}
+.plat .meta{color:var(--muted);font-size:13.5px;line-height:1.6;margin-top:8px;max-width:280px;text-wrap:pretty}
+.plat .btn{margin-top:auto}
+.plat .spacer{height:20px}
+.plat .exp-chip{display:inline-block;background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;margin-top:10px}
+@media (max-width:880px){.plat-grid{grid-template-columns:1fr;max-width:460px;margin-inline:auto}}
 
-/* ================= FAQ ================= */
-.faq-list{max-width:760px;margin:0 auto;display:grid;gap:12px}
-.faq-list details{
-  border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.02);
-  transition:border-color .3s,background .3s;overflow:hidden;
-}
-.faq-list details[open]{border-color:rgba(75,120,255,.4);background:rgba(30,86,255,.05)}
-.faq-list summary{
-  cursor:pointer;padding:19px 22px;font-weight:600;font-size:15.5px;
-  display:flex;align-items:center;justify-content:space-between;gap:16px;list-style:none;
-}
-.faq-list summary::-webkit-details-marker{display:none}
-.faq-list summary::after{
-  content:"+";font-size:22px;font-weight:400;color:var(--accent);line-height:1;
-  transition:transform .3s var(--ease);flex:none;
-}
-.faq-list details[open] summary::after{transform:rotate(45deg)}
-.faq-a{padding:0 22px 20px;color:var(--muted);font-size:14.5px;line-height:1.7;max-width:66ch}
+/* ============ trust strip ============ */
+.trust-strip{padding:clamp(52px,6vw,72px) 0}
+.trust-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.tbadge{display:flex;align-items:flex-start;gap:12px;background:#F7F9FF;border:1px solid #E6ECFB;border-radius:14px;padding:16px}
+.tbadge .icon-tile{width:36px;height:36px;border-radius:10px;background:#fff}
+.tbadge .t{font-size:13.5px;font-weight:700;color:var(--ink);line-height:1.35}
+.tbadge .s{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+@media (max-width:900px){.trust-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.trust-grid{grid-template-columns:1fr}}
 
-/* ================= footer ================= */
-.footer{border-top:1px solid var(--line);padding:60px 0 44px;background:linear-gradient(180deg,transparent,rgba(30,86,255,.06))}
-.foot-top{display:flex;flex-wrap:wrap;gap:28px;justify-content:space-between;align-items:flex-start;margin-bottom:40px}
-.foot-brand p{color:var(--muted-2);font-size:13.5px;margin-top:10px;max-width:34ch}
-.foot-links{display:flex;flex-wrap:wrap;gap:8px 26px;font-size:14px;color:var(--muted)}
-.foot-links a{padding:4px 0;transition:color .2s}
-.foot-links a:hover{color:var(--text)}
-.foot-legal{border-top:1px solid var(--line);padding-top:24px;display:grid;gap:7px;color:var(--muted-2);font-size:12.5px;line-height:1.6}
+/* ============ pricing ============ */
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch}
+.plan{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:30px 26px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column}
+.plan-pro{border-color:#B9CBFF;box-shadow:var(--shadow-lg)}
+.badge-pop{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;font-size:12px;font-weight:700;letter-spacing:.03em;padding:5px 14px;border-radius:999px;box-shadow:0 8px 18px -8px rgba(30,86,255,.6);white-space:nowrap}
+.plan .name{font-size:15px;font-weight:750;color:var(--ink)}
+.plan .price{display:flex;align-items:baseline;gap:8px;margin-top:12px}
+.plan .price .n{font-size:38px;font-weight:800;letter-spacing:-.03em}
+.plan .price .term{font-size:13.5px;color:var(--muted);font-weight:550}
+.plan .desc{color:var(--muted);font-size:14px;line-height:1.6;margin-top:8px}
+.plan ul{margin:20px 0 24px;display:grid;gap:10px}
+.plan li{display:flex;align-items:flex-start;gap:9px;font-size:14.5px;color:var(--body);line-height:1.5}
+.plan li svg{color:var(--primary);margin-top:3px}
+.plan .btn{margin-top:auto}
+.price-note{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--muted-2);font-size:13.5px;margin-top:28px;text-align:center;flex-wrap:wrap}
+@media (max-width:900px){.plans{grid-template-columns:1fr;max-width:460px;margin-inline:auto}.plan-pro{order:-1}}
 
-/* ================= reduced motion ================= */
-@media (prefers-reduced-motion: reduce){
-  html{scroll-behavior:auto}
-  *,*::before,*::after{
-    animation-duration:.01ms !important;animation-iteration-count:1 !important;
-    transition-duration:.01ms !important;transition-delay:0s !important;
-  }
-  .js .reveal{opacity:1;transform:none}
-}
+/* ============ faq ============ */
+.faq{max-width:760px;margin:0 auto}
+.faq details{border-bottom:1px solid var(--line)}
+.faq details:first-of-type{border-top:1px solid var(--line)}
+.faq summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:19px 4px;cursor:pointer;font-size:16.5px;font-weight:650;color:var(--ink);list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary:hover{color:var(--primary)}
+.faq summary .chev{color:var(--muted);transition:transform .25s var(--ease)}
+.faq details[open] summary .chev{transform:rotate(180deg)}
+.faq details p{padding:0 4px 20px;color:var(--body);font-size:15px;line-height:1.7;max-width:66ch;text-wrap:pretty}
+
+/* ============ values strip ============ */
+.values{background:linear-gradient(180deg,var(--band),#EDF2FF);text-align:center}
+.values-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:32px 28px;max-width:980px;margin:0 auto}
+.value .vmark{width:14px;height:14px;border-radius:5px;background:linear-gradient(135deg,var(--primary),var(--secondary));margin:0 auto;box-shadow:0 6px 14px -6px rgba(30,86,255,.6)}
+.value h3{font-size:17.5px;font-weight:750;margin-top:14px}
+.value p{color:var(--muted-2);font-size:14.5px;line-height:1.65;margin-top:8px;max-width:300px;margin-inline:auto;text-wrap:pretty}
+.values .cta{margin-top:44px}
+@media (max-width:880px){.values-grid{grid-template-columns:1fr;gap:34px}}
+
+/* ============ footer ============ */
+footer{border-top:1px solid var(--line);padding:clamp(52px,7vw,72px) 0 40px}
+.foot-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:36px 28px}
+.foot-brand p{color:var(--muted);font-size:14px;line-height:1.65;margin-top:14px;max-width:280px;text-wrap:pretty}
+.foot-col .h{font-size:12.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);margin-bottom:14px}
+.foot-col ul{display:grid;gap:10px}
+.foot-col a{font-size:14.5px;color:var(--muted);transition:color .18s}
+.foot-col a:hover{color:var(--ink)}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;gap:12px 24px;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:44px;padding-top:24px}
+.foot-bottom p{color:var(--muted);font-size:13px}
+@media (max-width:880px){.foot-grid{grid-template-columns:1fr 1fr}}
+@media (max-width:520px){.foot-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body id="top">
 <a class="skip" href="#main">Skip to content</a>
 
-<!-- ===================== NAV ===================== -->
-<header id="site-nav" class="nav">
+<!-- ============ 1. nav ============ -->
+<header id="site-header">
   <div class="container nav-inner">
     <a class="brand" href="#top" aria-label="Mityu — home">
-      <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <rect x="11.5" y="11.5" width="19" height="19" rx="6" fill="#4B78FF" fill-opacity=".45"/>
-        <rect x="1.5" y="1.5" width="19" height="19" rx="6" fill="#1E56FF"/>
-        <rect x="11.5" y="11.5" width="9" height="9" rx="4" fill="#0A2ECB"/>
+      <svg class="mark" width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect x="10.5" y="10.5" width="17" height="17" rx="5" fill="#4B78FF" opacity=".45"/>
+        <rect x="4.5" y="4.5" width="17" height="17" rx="5" fill="#1E56FF"/>
+        <rect x="10.5" y="10.5" width="11" height="11" rx="3.5" fill="#0A2ECB"/>
       </svg>
       <span>mityu</span>
     </a>
-    <nav class="nav-links" id="menu" aria-label="Primary">
-      <a href="#features">Features</a>
-      <a href="#privacy">Privacy</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#faq">FAQ</a>
-      <a class="btn btn-primary btn-sm" href="#pricing">Download</a>
+    <nav aria-label="Main">
+      <button id="nav-toggle" class="nav-burger" aria-expanded="false" aria-controls="site-menu">
+        <span class="sr-only">Menu</span>
+        <svg class="i-open" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <svg class="i-close" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+      <ul id="site-menu" class="nav-menu">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li class="menu-cta"><a class="btn btn-primary btn-sm" href="#platforms">Download</a></li>
+      </ul>
     </nav>
-    <button id="menu-btn" class="menu-btn" aria-expanded="false" aria-controls="menu" aria-label="Toggle navigation menu">
-      <span></span><span></span>
-    </button>
   </div>
 </header>
 
 <main id="main">
 
-  <!-- ===================== HERO ===================== -->
-  <section class="hero" aria-labelledby="hero-title">
-    <div class="hero-bg" aria-hidden="true">
-      <div class="hero-glow"></div>
-      <div class="hero-grid"></div>
-      <div class="orb orb-a"></div>
-      <div class="orb orb-b"></div>
+<!-- ============ 2. hero ============ -->
+<section class="hero" aria-labelledby="hero-title">
+  <div class="fx" aria-hidden="true"></div>
+  <div class="container">
+    <p class="hero-badge reveal"><span class="dot" aria-hidden="true"></span>100% on-device · No bots · Offline ready</p>
+    <h1 id="hero-title" class="reveal" style="--d:.06s">Privacy-first <span class="grad-text">meeting intelligence</span>.</h1>
+    <p class="lede reveal" style="--d:.12s">Mityu records the meeting audio already on your machine — Zoom, Teams, Meet, or a conversation in the field — transcribes it locally, and builds a source-linked report you approve. No bots in your calls. No audio in the cloud. No account.</p>
+    <div class="hero-cta reveal" style="--d:.18s">
+      <a class="btn btn-primary btn-lg" href="#pricing">Buy now — $79</a>
+      <a class="btn btn-ghost btn-lg" href="#platforms">Start 14-day free trial</a>
     </div>
-    <div class="container">
-      <p class="hero-pill reveal"><span class="pulse" aria-hidden="true"></span>On-device AI · no cloud required</p>
-      <h1 id="hero-title" class="reveal" style="--d:.08s">Meeting intelligence that <span class="grad">never leaves your machine.</span></h1>
-      <p class="hero-sub reveal" style="--d:.16s">
-        Mityu records meetings and field conversations, transcribes them locally with Whisper or Parakeet,
-        and builds source-linked reports — summaries and action items that you approve before they count.
-      </p>
-      <div class="hero-ctas reveal" style="--d:.24s">
-        <a class="btn btn-primary" href="#pricing">Buy &amp; Download
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </a>
-        <a class="btn btn-ghost" href="#product">See how it works</a>
-      </div>
-      <p class="hero-note reveal" style="--d:.3s">Free 14-day trial · Pro is a one-time purchase</p>
-      <ul class="hero-badges reveal" style="--d:.36s" role="list">
-        <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>100% on-device</li>
-        <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Windows &amp; macOS</li>
-        <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>No bots join your calls</li>
-      </ul>
-    </div>
-  </section>
+    <ul class="trust-row reveal" style="--d:.24s">
+      <li><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Works with Zoom, Teams, Meet</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Runs fully offline</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Open-source core (MIT)</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>No account required</li>
+    </ul>
+  </div>
+</section>
 
-  <!-- ===================== PRODUCT MOCK ===================== -->
-  <section id="product" class="sec" aria-labelledby="product-title">
-    <div class="container">
-      <div class="sec-head reveal">
-        <p class="eyebrow">The report</p>
-        <h2 id="product-title">From raw conversation to a report you can defend.</h2>
-        <p>Chapters, stats, transcript and summary in one place — every AI claim linked to its source segment, every draft waiting for your approval.</p>
-      </div>
-      <div class="mock-wrap reveal" style="--d:.12s">
-        <div class="mock-glow" aria-hidden="true"></div>
-        <div class="window" role="img" aria-label="Mityu app window showing a meeting report: duration, word and segment stats, chapter chips, a transcript, and an AI-generated summary marked review-required with source-linked action items and an approve button.">
-          <div class="win-bar">
-            <span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span>
-            <span class="win-title">Mityu — Meeting report</span>
-            <span class="win-pill"><span class="pulse g"></span>Local · Encrypted</span>
+<!-- ============ 3. product demo mock ============ -->
+<section class="tour" aria-label="Product preview">
+  <div class="fx" aria-hidden="true"></div>
+  <div class="container">
+    <figure class="reveal" style="--d:.1s">
+      <div class="window">
+        <div class="titlebar">
+          <span class="dots" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span class="title-name">Mityu — Weekly ops sync</span>
+          <span class="pill-secure"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Local · Encrypted</span>
+        </div>
+        <div class="window-body">
+          <div class="pane pane-live">
+            <div class="pane-head">
+              <h3>Live transcription</h3>
+              <span class="rec-pill"><span class="rdot" aria-hidden="true"></span>Recording 12:42</span>
+            </div>
+            <div class="t-row"><span class="t-time">12:18</span><p><strong>Selin</strong> Let’s lock the pilot rollout for the week of May 4.</p></div>
+            <div class="t-row"><span class="t-time">12:24</span><p><strong>Marco</strong> Facilities still needs the safety checklist before Friday.</p></div>
+            <div class="t-row"><span class="t-time">12:31</span><p><strong>Selin</strong> Budget stays at 40k unless legal flags the vendor terms.</p></div>
+            <div class="t-row"><span class="t-time">12:36</span><p><strong>Ayşe</strong> Procurement also wants the license count confirmed.</p></div>
+            <div class="t-row linked"><span class="t-time">12:42</span><p><strong>Deniz</strong> I’ll take the vendor review and report back on Tuesday.<span class="tag-src">Linked source</span></p></div>
           </div>
-          <div class="win-body">
-            <div class="report-head">
-              <div>
-                <div class="report-title">Acme Manufacturing — site visit</div>
-                <p class="report-meta">Recorded Jul 8, 2026 · stored on this device</p>
-              </div>
-              <div class="stats">
-                <div class="stat"><b>42:18</b><span>Duration</span></div>
-                <div class="stat"><b>6,204</b><span>Words</span></div>
-                <div class="stat"><b>187</b><span>Segments</span></div>
-              </div>
+          <div class="pane pane-report">
+            <div class="pane-head">
+              <h3>Meeting report</h3>
             </div>
-            <div class="chapters">
-              <span class="chip on">Overview</span>
-              <span class="chip">Site walkthrough</span>
-              <span class="chip">Maintenance backlog</span>
-              <span class="chip">Pricing</span>
-              <span class="chip">Next steps</span>
+            <div class="stats">
+              <div class="stat"><span class="k">Duration</span><span class="v">42:10</span></div>
+              <div class="stat"><span class="k">Words</span><span class="v">6,480</span></div>
+              <div class="stat"><span class="k">Segments</span><span class="v">214</span></div>
             </div>
-            <div class="win-grid">
-              <div class="transcript">
-                <p class="win-label">Transcript</p>
-                <div class="t-line">
-                  <div class="t-meta"><span class="t-time">00:12</span><span class="t-speaker s1">Aylin</span></div>
-                  <p>Let's start at press two — the vibration got worse after Monday's shift.</p>
-                </div>
-                <div class="t-line">
-                  <div class="t-meta"><span class="t-time">03:47</span><span class="t-speaker s2">Mehmet</span></div>
-                  <p>Bearings were last replaced in March. We logged temperature spikes twice since.</p>
-                </div>
-                <div class="t-line hl">
-                  <span class="hl-tag">Linked source</span>
-                  <div class="t-meta"><span class="t-time">12:42</span><span class="t-speaker s1">Aylin</span></div>
-                  <p>Send the revised maintenance quote by Friday and we'll sign off on the contract.</p>
-                </div>
-                <div class="t-line">
-                  <div class="t-meta"><span class="t-time">27:05</span><span class="t-speaker s2">Mehmet</span></div>
-                  <p>And on the next visit, let's recalibrate the sensors on line one.</p>
-                </div>
+            <p class="mini-label">Chapters</p>
+            <ul class="chapters">
+              <li><span class="c-t">00:00</span>Kickoff &amp; goals</li>
+              <li><span class="c-t">14:20</span>Vendor review</li>
+              <li><span class="c-t">31:05</span>Rollout plan</li>
+            </ul>
+            <p class="mini-label">Summary</p>
+            <div class="sum-card">
+              <div class="row">
+                <span class="t">Draft summary</span>
+                <span class="chip-ai">AI-generated · review required</span>
               </div>
-              <aside class="sum-card">
-                <div class="sum-head">
-                  <p class="win-label">Summary</p>
-                  <span class="ai-chip">AI-generated · review required</span>
-                </div>
-                <p class="sum-text">
-                  Acme reports worsening vibration on press two, likely bearing wear — temperature spikes
-                  logged twice since March. The client signs off once the revised maintenance quote arrives by Friday.
-                </p>
-                <p class="win-label">Action items</p>
-                <ul class="actions">
-                  <li><span class="cb"></span><span>Send revised maintenance quote by Friday</span><span class="src">12:42</span></li>
-                  <li><span class="cb"></span><span>Schedule bearing inspection for press two</span><span class="src">03:47</span></li>
-                  <li><span class="cb"></span><span>Recalibrate line-one sensors next visit</span><span class="src">27:05</span></li>
-                </ul>
-                <div class="sum-foot">
-                  <span class="approve-btn">Approve summary</span>
-                  <span class="draft-note">Draft · 0 of 3 approved</span>
-                </div>
-              </aside>
+              <p>Pilot rollout confirmed for the week of May 4. Budget stays capped at 40k pending legal review of vendor terms; safety checklist due to facilities by Friday.</p>
+            </div>
+            <p class="mini-label">Action items</p>
+            <div class="ai-item">
+              <span class="ai-check done" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <div><p class="txt">Review vendor terms with legal</p><p class="meta"><span>Deniz · Tue</span><span class="src-link">→ 12:42 source</span></p></div>
+            </div>
+            <div class="ai-item">
+              <span class="ai-check" aria-hidden="true"></span>
+              <div><p class="txt">Send safety checklist to facilities</p><p class="meta"><span>Marco · Fri</span><span class="src-link">→ 08:56 source</span></p></div>
+            </div>
+            <div class="ai-item">
+              <span class="ai-check" aria-hidden="true"></span>
+              <div><p class="txt">Publish rollout note to the team</p><p class="meta"><span>Selin · May 4</span><span class="src-link">→ 38:14 source</span></p></div>
+            </div>
+            <div class="approve-gate">
+              <span class="left"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Approve summary</span>
+              <span class="count">1 of 3 approved</span>
             </div>
           </div>
         </div>
-        <div class="float-pill fp-a" aria-hidden="true"><span class="pulse"></span>Transcribing locally · whisper large-v3</div>
-        <div class="float-pill fp-b" aria-hidden="true">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          Every claim linked to its segment
-        </div>
       </div>
-    </div>
-  </section>
+      <figcaption>Simplified preview. Every AI-generated line stays an editable draft until a human approves it — with a link back to the exact transcript moment.</figcaption>
+    </figure>
+  </div>
+</section>
 
-  <!-- ===================== FEATURES ===================== -->
-  <section id="features" class="sec" aria-labelledby="features-title">
-    <div class="container">
-      <div class="sec-head reveal">
-        <p class="eyebrow">Capabilities</p>
-        <h2 id="features-title">Powerful where it counts. Private by default.</h2>
-        <p>Everything runs on your hardware — with the verification and approval workflow that enterprise conversations deserve.</p>
-      </div>
-      <div class="features-grid">
-        <article class="card reveal" style="--d:.02s">
-          <div class="icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>
-          </div>
-          <h3>Local transcription</h3>
-          <p>Whisper large-v3 and NVIDIA Parakeet run directly on your hardware. Audio is transcribed on-device — nothing is uploaded, ever.</p>
-        </article>
-        <article class="card reveal" style="--d:.08s">
-          <div class="icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          </div>
-          <h3>Source-linked reports</h3>
-          <p>Every AI claim carries a link to the exact transcript segment and timestamp, so you can verify the source before you rely on it.</p>
-        </article>
-        <article class="card reveal" style="--d:.14s">
-          <div class="icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg>
-          </div>
-          <h3>Human-in-the-loop</h3>
-          <p>Summaries and action items stay clearly-labeled drafts until you approve them. Nothing is published on your behalf.</p>
-        </article>
-        <article class="card reveal" style="--d:.02s">
-          <div class="icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-          </div>
-          <h3>Works with any meeting app</h3>
-          <p>Captures system audio from Google Meet, Zoom, Teams and more — no bot joins your call. macOS &amp; Windows; Linux experimental.</p>
-        </article>
-        <article class="card reveal" style="--d:.08s">
-          <div class="icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78Zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-          </div>
-          <h3>Your models, your keys</h3>
-          <p>Summarize fully offline with Ollama, or bring your own key for OpenAI, Anthropic, Groq or OpenRouter — your account, your terms.</p>
-        </article>
-        <article class="card reveal" style="--d:.14s">
-          <div class="icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><circle cx="12" cy="10.5" r="1.6"/><path d="M12 12.1V15"/></svg>
-          </div>
-          <h3>Encrypted at rest</h3>
-          <p>The local database is encrypted with SQLCipher, and built-in PII redaction masks sensitive details before you export or share.</p>
-        </article>
-      </div>
+<!-- ============ 4. how it works ============ -->
+<section id="how" class="sec band" aria-labelledby="how-title">
+  <div class="container">
+    <div class="sec-head reveal">
+      <p class="eyebrow">How it works</p>
+      <h2 id="how-title">From conversation to approved report — on your device.</h2>
+      <p class="sub">Three steps. Zero cloud dependency in the core path.</p>
     </div>
-  </section>
+    <div class="hiw">
+      <div class="step reveal"><div class="num" aria-hidden="true">1</div><h3>Record</h3><p>Mityu captures system audio and your microphone directly on your machine. It never joins your call — no bots, nothing visible to other participants.</p></div>
+      <div class="step reveal" style="--d:.1s"><div class="num" aria-hidden="true">2</div><h3>Transcribe locally</h3><p>Whisper large-v3 or NVIDIA Parakeet runs on your hardware, GPU-accelerated where available. Fully offline — audio never leaves the device.</p></div>
+      <div class="step reveal" style="--d:.2s"><div class="num" aria-hidden="true">3</div><h3>Review &amp; approve</h3><p>You get a source-linked draft: summary, action items, chapters, playback. Nothing is published or exported as final until you approve it.</p></div>
+    </div>
+  </div>
+</section>
 
-  <!-- ===================== PRIVACY ===================== -->
-  <section id="privacy" class="sec" aria-labelledby="privacy-title">
-    <div class="container">
-      <div class="privacy-panel reveal">
-        <p class="eyebrow">Privacy</p>
-        <h2 id="privacy-title">Your conversations stay yours.</h2>
-        <p class="lede">
-          Audio, transcripts and summaries live in an encrypted database on your device — never uploaded by default.
-          Analytics are strictly opt-in and never contain meeting content. No account. No cloud dependency. No bots.
-        </p>
-        <div class="privacy-stats">
-          <div class="pstat reveal" style="--d:.08s"><b>Zero</b><span>audio or transcripts uploaded by default — everything is processed on-device</span></div>
-          <div class="pstat reveal" style="--d:.16s"><b>Opt-in</b><span>analytics stay off until you enable them, and never include meeting content</span></div>
-          <div class="pstat reveal" style="--d:.24s"><b>No account</b><span>no sign-in and no server required — the app is fully functional offline</span></div>
-        </div>
+<!-- ============ 5. why mityu ============ -->
+<section id="features" class="sec" aria-labelledby="features-title">
+  <div class="container">
+    <div class="sec-head reveal">
+      <p class="eyebrow">Why Mityu</p>
+      <h2 id="features-title">Meeting intelligence without the cloud tradeoff.</h2>
+      <p class="sub">Everything the cloud recorders do — minus the part where your conversations live on someone else’s servers.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="card reveal">
+        <span class="icon-tile"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-3 8.1-7 10-4-1.9-7-5.4-7-10V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <h3>100% private by default</h3>
+        <p>Capture, transcription, and storage run on your device. No cloud dependency in the core path — unplug the network and everything still works.</p>
+      </div>
+      <div class="card reveal" style="--d:.06s">
+        <span class="icon-tile"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M9 21h6M12 17v4"/></svg></span>
+        <h3>Any meeting app</h3>
+        <p>System-audio capture works with Zoom, Teams, Meet, Webex — or no app at all, for in-person conversations. Not a bot; nothing joins your call.<small>Linux support is experimental, microphone-only for now.</small></p>
+      </div>
+      <div class="card reveal" style="--d:.12s">
+        <span class="icon-tile"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
+        <h3>Source-linked reports</h3>
+        <p>Every summary sentence and action item links to the exact transcript segment and timestamp behind it. Click to verify, jump, and replay.</p>
+      </div>
+      <div class="card reveal" style="--d:.18s">
+        <span class="icon-tile"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg></span>
+        <h3>Human-in-the-loop</h3>
+        <p>AI output ships as a labeled draft — “AI-generated · review required” — and needs your explicit approval before it counts. Built for EU AI Act Art. 50 transparency.</p>
+      </div>
+      <div class="card reveal" style="--d:.24s">
+        <span class="icon-tile"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></span>
+        <h3>Your models, your keys</h3>
+        <p>Run everything locally with Ollama or the built-in models — or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Keys live in your OS keychain.</p>
+      </div>
+      <div class="card reveal" style="--d:.3s">
+        <span class="icon-tile"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+        <h3>Encrypted &amp; redacted</h3>
+        <p>Your library is encrypted at rest with SQLCipher. Opt-in PII redaction can scrub names, numbers, and emails from transcripts and reports.</p>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- ===================== PRICING ===================== -->
-  <section id="pricing" class="sec" aria-labelledby="pricing-title">
-    <div class="container">
-      <div class="sec-head reveal">
-        <p class="eyebrow">Launch pricing</p>
-        <h2 id="pricing-title">Simple, honest pricing.</h2>
-        <p>Start free for 14 days. Whatever you choose, your data stays on your machine.</p>
-      </div>
-      <div class="plans">
-        <article class="plan reveal" style="--d:.04s" aria-label="Trial plan">
-          <p class="plan-name">Trial</p>
-          <p class="price">Free</p>
-          <p class="price-sub">14 days · no card, no account</p>
-          <ul role="list">
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>All features unlocked</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Local transcription &amp; summaries</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Source-linked reports &amp; approvals</li>
-          </ul>
-          <a class="btn btn-ghost" href="#" data-todo="gumroad-checkout">Download free trial</a>
-        </article>
-        <article class="plan featured reveal" style="--d:.12s" aria-label="Pro plan, most popular">
-          <p class="badge-pop">Most popular</p>
-          <p class="plan-name">Pro</p>
-          <p class="price">$79</p>
-          <p class="price-sub">one-time · per user</p>
-          <ul role="list">
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Use on 2 devices</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>All features included</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>1 year of updates</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Email support</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>14-day money-back guarantee</li>
-          </ul>
-          <a class="btn btn-primary" href="#" data-todo="gumroad-checkout">Buy Pro</a>
-        </article>
-        <article class="plan reveal" style="--d:.2s" aria-label="Business plan">
-          <p class="plan-name">Business</p>
-          <p class="price">$59</p>
-          <p class="price-sub">per user · per year</p>
-          <ul role="list">
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Everything in Pro</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Priority support</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Volume licensing</li>
-            <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Team workspace <span class="soon">coming soon</span></li>
-          </ul>
-          <a class="btn btn-ghost" href="#" data-todo="gumroad-checkout">Buy Business</a>
-        </article>
-      </div>
-      <p class="plans-note reveal">Launch pricing. Secure checkout via Gumroad — links activate at launch.</p>
+<!-- ============ 6. platforms ============ -->
+<section id="platforms" class="sec band" aria-labelledby="platforms-title">
+  <div class="container">
+    <div class="sec-head reveal">
+      <p class="eyebrow">Downloads</p>
+      <h2 id="platforms-title">Runs where you work.</h2>
+      <p class="sub">A native desktop app — no browser tab, no extension, no meeting bot.</p>
     </div>
-  </section>
+    <div class="plat-grid">
+      <div class="plat reveal">
+        <span class="icon-tile"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg></span>
+        <h3>Windows 10 / 11</h3>
+        <p class="meta">Full support, including system-audio capture via WASAPI loopback.</p>
+        <span class="spacer"></span>
+        <a class="btn btn-primary" href="#" data-todo="release-download">Download .msi</a>
+      </div>
+      <div class="plat reveal" style="--d:.08s">
+        <span class="icon-tile"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg></span>
+        <h3>macOS 13+</h3>
+        <p class="meta">Full support. macOS asks once for the screen-recording permission to enable system-audio capture.</p>
+        <span class="spacer"></span>
+        <a class="btn btn-primary" href="#" data-todo="release-download">Download .dmg</a>
+      </div>
+      <div class="plat reveal" style="--d:.16s">
+        <span class="icon-tile"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg></span>
+        <h3>Linux</h3>
+        <p class="meta">Community path for tinkerers — capture from the microphone and keep every other local-first feature.</p>
+        <span class="exp-chip">Experimental · microphone-only for now</span>
+        <span class="spacer"></span>
+        <a class="btn btn-ghost" href="#" data-todo="release-download">Build from source</a>
+      </div>
+    </div>
+  </div>
+</section>
 
-  <!-- ===================== FAQ ===================== -->
-  <section id="faq" class="sec" aria-labelledby="faq-title">
-    <div class="container">
-      <div class="sec-head reveal">
-        <p class="eyebrow">FAQ</p>
-        <h2 id="faq-title">Questions, answered.</h2>
-        <p>The short version: it runs on your machine, and you stay in control.</p>
+<!-- ============ 7. trust strip ============ -->
+<section class="trust-strip" aria-labelledby="trust-title">
+  <div class="container">
+    <h2 id="trust-title" class="sr-only">Compliance and trust</h2>
+    <div class="trust-grid">
+      <div class="tbadge reveal">
+        <span class="icon-tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-3 8.1-7 10-4-1.9-7-5.4-7-10V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <div><p class="t">Designed for GDPR &amp; KVKK</p><p class="s">Local processing by design and by default.</p></div>
       </div>
-      <div class="faq-list">
-        <details class="reveal" style="--d:.02s">
-          <summary>Is my audio uploaded anywhere?</summary>
-          <p class="faq-a">No. Recording, transcription and — by default — summarization all run locally on your machine. Cloud LLMs are used only if you add your own API key, and transcripts sent to them are governed by your agreement with that provider.</p>
-        </details>
-        <details class="reveal" style="--d:.06s">
-          <summary>Does Mityu join my calls as a bot?</summary>
-          <p class="faq-a">No. Mityu captures system audio directly on your device. Nothing joins the meeting and nothing appears in the participant list — it works the same for Google Meet, Zoom, Teams or an in-person conversation.</p>
-        </details>
-        <details class="reveal" style="--d:.1s">
-          <summary>Which platforms are supported?</summary>
-          <p class="faq-a">Windows 10/11 and macOS 13 or later. Linux support is experimental and currently microphone-only.</p>
-        </details>
-        <details class="reveal" style="--d:.14s">
-          <summary>Do I need an internet connection?</summary>
-          <p class="faq-a">No. Capture, transcription and summarization work fully offline with local models — Whisper or Parakeet for speech-to-text, Ollama for summaries. Internet is only needed if you choose a cloud LLM with your own key.</p>
-        </details>
-        <details class="reveal" style="--d:.18s">
-          <summary>What is the refund policy?</summary>
-          <p class="faq-a">Every purchase comes with a 14-day money-back guarantee. If Mityu is not for you, write to us and we will refund it.</p>
-        </details>
+      <div class="tbadge reveal" style="--d:.06s">
+        <span class="icon-tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2H2v10l9.3 9.3a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8Z"/><circle cx="7" cy="7" r="1.5"/></svg></span>
+        <div><p class="t">EU AI Act Art. 50 transparency</p><p class="s">Every AI output carries a visible label.</p></div>
+      </div>
+      <div class="tbadge reveal" style="--d:.12s">
+        <span class="icon-tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+        <div><p class="t">SQLCipher encryption at rest</p><p class="s">Your database is encrypted on disk.</p></div>
+      </div>
+      <div class="tbadge reveal" style="--d:.18s">
+        <span class="icon-tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg></span>
+        <div><p class="t">MIT open-source core</p><p class="s">Auditable foundations, no black box.</p></div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
+
+<!-- ============ 8. pricing ============ -->
+<section id="pricing" class="sec band" aria-labelledby="pricing-title">
+  <div class="container">
+    <div class="sec-head reveal">
+      <p class="eyebrow">Launch pricing</p>
+      <h2 id="pricing-title">Simple, honest pricing.</h2>
+      <p class="sub">Try everything free for 14 days. Keep it forever with a one-time purchase.</p>
+    </div>
+    <div class="plans">
+      <div class="plan reveal">
+        <p class="name">Trial</p>
+        <p class="price"><span class="n">Free</span><span class="term">14 days</span></p>
+        <p class="desc">The full product, not a crippled demo.</p>
+        <ul>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>All features unlocked</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Local transcription &amp; source-linked reports</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>No account, no credit card</li>
+        </ul>
+        <a class="btn btn-ghost w-full" href="#" data-todo="gumroad-checkout">Start free trial</a>
+      </div>
+      <div class="plan plan-pro reveal" style="--d:.08s">
+        <span class="badge-pop">Most popular</span>
+        <p class="name">Pro</p>
+        <p class="price"><span class="n">$79</span><span class="term">one-time · per user</span></p>
+        <p class="desc">Buy once, own it. No subscription.</p>
+        <ul>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Everything in Trial, permanent license</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Use on 2 devices</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>1 year of app updates</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Email support</li>
+        </ul>
+        <a class="btn btn-primary w-full" href="#" data-todo="gumroad-checkout">Buy Pro — $79</a>
+      </div>
+      <div class="plan reveal" style="--d:.16s">
+        <p class="name">Business</p>
+        <p class="price"><span class="n">$59</span><span class="term">per user / year</span></p>
+        <p class="desc">For teams that want support and scale.</p>
+        <ul>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Everything in Pro, per seat</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Priority support</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Volume licensing</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Team workspace<span class="chip-soon">coming soon</span></li>
+        </ul>
+        <a class="btn btn-ghost w-full" href="#" data-todo="gumroad-checkout">Get Business</a>
+      </div>
+    </div>
+    <p class="price-note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Secure checkout via Gumroad — links activate at launch. 14-day money-back guarantee.</p>
+  </div>
+</section>
+
+<!-- ============ 9. faq ============ -->
+<section id="faq" class="sec" aria-labelledby="faq-title">
+  <div class="container">
+    <div class="sec-head reveal">
+      <p class="eyebrow">FAQ</p>
+      <h2 id="faq-title">Frequently asked questions.</h2>
+    </div>
+    <div class="faq reveal" style="--d:.08s">
+      <details>
+        <summary>Is my audio uploaded anywhere?<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <p>No. Recording, transcription, and storage all happen on your device, and the app works with the network unplugged. Data only leaves your machine if you explicitly configure a cloud model with your own API key — and even then it is transcript text sent for summarization, never your audio. Analytics are off unless you opt in, and never include meeting content.</p>
+      </details>
+      <details>
+        <summary>Does Mityu join my calls as a bot?<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <p>No. Mityu captures the audio already playing on your computer plus your microphone, so nothing joins the meeting and nothing appears in the participant list. A clear indicator is always visible while recording — and it is on you to follow local consent rules when you record others.</p>
+      </details>
+      <details>
+        <summary>Which platforms are supported?<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <p>Windows 10/11 and macOS 13+ are fully supported, including system-audio capture (macOS asks once for the screen-recording permission — that is how the OS gates system audio). Linux is experimental and microphone-only for now, built from source.</p>
+      </details>
+      <details>
+        <summary>Does it really work offline?<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <p>Yes — fully. Record, transcribe, summarize with local models, search, and export with no internet connection at all. You only need a connection for optional cloud models (bring your own key) and for update checks.</p>
+      </details>
+      <details>
+        <summary>Which AI models does it use — do I need an API key?<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <p>No key required. Transcription runs locally with Whisper large-v3 or NVIDIA Parakeet. Summaries can run locally too, via Ollama or the built-in pipeline. If you prefer a cloud model, bring your own key for OpenAI, Anthropic, Groq, or OpenRouter — keys are stored in your OS keychain, never in plaintext.</p>
+      </details>
+      <details>
+        <summary>How do source links work?<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <p>Every AI-generated sentence and action item is bound to the transcript segment and timestamp it came from. Click any claim to jump to that exact moment and replay the audio. Items stay labeled “AI-generated · review required” until a human approves them.</p>
+      </details>
+      <details>
+        <summary>Do I get updates after purchase?<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <p>Pro includes one year of app updates; after that, your license and your data keep working forever on the version you have. Business subscriptions include updates for as long as the subscription is active.</p>
+      </details>
+      <details>
+        <summary>What is the refund policy?<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <p>Every purchase comes with a 14-day money-back guarantee. If Mityu is not for you, email support within 14 days and we will refund it — no questions asked.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10. values strip ============ -->
+<section class="sec values" aria-labelledby="values-title">
+  <div class="container">
+    <div class="sec-head reveal" style="margin-bottom:44px">
+      <h2 id="values-title">What we stand for.</h2>
+    </div>
+    <div class="values-grid">
+      <div class="value reveal"><span class="vmark" aria-hidden="true"></span><h3>Local-first, forever</h3><p>The core product will always run fully on your device. Servers are optional, never required.</p></div>
+      <div class="value reveal" style="--d:.08s"><span class="vmark" aria-hidden="true"></span><h3>Humans approve AI</h3><p>Every AI-generated line stays a labeled, source-linked, editable draft until you approve it.</p></div>
+      <div class="value reveal" style="--d:.16s"><span class="vmark" aria-hidden="true"></span><h3>No lock-in</h3><p>An MIT open-source core, open export, and your data in a local encrypted database you control.</p></div>
+    </div>
+    <div class="cta reveal" style="--d:.2s">
+      <a class="btn btn-primary btn-lg" href="#pricing">Get Mityu</a>
+    </div>
+  </div>
+</section>
 
 </main>
 
-<!-- ===================== FOOTER ===================== -->
-<footer class="footer">
+<!-- ============ 11. footer ============ -->
+<footer>
   <div class="container">
-    <div class="foot-top">
+    <div class="foot-grid">
       <div class="foot-brand">
         <a class="brand" href="#top" aria-label="Mityu — back to top">
-          <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-            <rect x="11.5" y="11.5" width="19" height="19" rx="6" fill="#4B78FF" fill-opacity=".45"/>
-            <rect x="1.5" y="1.5" width="19" height="19" rx="6" fill="#1E56FF"/>
-            <rect x="11.5" y="11.5" width="9" height="9" rx="4" fill="#0A2ECB"/>
+          <svg class="mark" width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect x="10.5" y="10.5" width="17" height="17" rx="5" fill="#4B78FF" opacity=".45"/>
+            <rect x="4.5" y="4.5" width="17" height="17" rx="5" fill="#1E56FF"/>
+            <rect x="10.5" y="10.5" width="11" height="11" rx="3.5" fill="#0A2ECB"/>
           </svg>
           <span>mityu</span>
         </a>
-        <p>Enterprise, local-first meeting intelligence for Windows &amp; macOS.</p>
+        <p>Privacy-first meeting intelligence that never leaves your device.</p>
       </div>
-      <nav class="foot-links" aria-label="Footer">
-        <a href="#features">Features</a>
-        <a href="#privacy">Privacy</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#faq">FAQ</a>
-        <a href="#">Privacy Policy</a>
-        <a href="#">Terms</a>
-      </nav>
+      <div class="foot-col">
+        <p class="h">Product</p>
+        <ul>
+          <li><a href="#platforms">Download</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#features">Features</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <p class="h">Resources</p>
+        <ul>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="#">Privacy Policy</a></li>
+          <li><a href="#">Terms</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <p class="h">Company</p>
+        <ul>
+          <li><a href="#">bluedev</a></li>
+          <li><a href="#">GitHub</a></li>
+        </ul>
+      </div>
     </div>
-    <div class="foot-legal">
-      <p>© 2026 bluedev. All rights reserved.</p>
-      <p>Built on the open-source Meetily (MIT) by Zackriya Solutions. Mityu is an independent product and is not affiliated with or endorsed by Zackriya Solutions.</p>
+    <div class="foot-bottom">
+      <p>Built on the open-source Meetily (MIT) by Zackriya Solutions.</p>
+      <p>© 2026 bluedev</p>
     </div>
   </div>
 </footer>
 
 <script>
 (function(){
-  "use strict";
-  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var d=document;
+  var header=d.getElementById("site-header");
+  function onScroll(){header.classList.toggle("scrolled",window.scrollY>8)}
+  onScroll();
+  addEventListener("scroll",onScroll,{passive:true});
 
-  /* sticky nav state */
-  var nav = document.getElementById("site-nav");
-  var menuBtn = document.getElementById("menu-btn");
-  var menu = document.getElementById("menu");
-  function setScrolled(){ nav.classList.toggle("scrolled", window.scrollY > 10); }
-  setScrolled();
-  window.addEventListener("scroll", setScrolled, { passive: true });
+  var burger=d.getElementById("nav-toggle");
+  var menu=d.getElementById("site-menu");
+  function setMenu(open){
+    burger.setAttribute("aria-expanded",String(open));
+    burger.classList.toggle("is-open",open);
+    menu.classList.toggle("open",open);
+  }
+  if(burger&&menu){
+    burger.addEventListener("click",function(){setMenu(burger.getAttribute("aria-expanded")!=="true")});
+    menu.addEventListener("click",function(e){if(e.target.closest("a"))setMenu(false)});
+    d.addEventListener("keydown",function(e){
+      if(e.key==="Escape"&&burger.getAttribute("aria-expanded")==="true"){setMenu(false);burger.focus()}
+    });
+  }
 
-  /* mobile nav toggle */
-  function closeMenu(){ nav.classList.remove("open"); menuBtn.setAttribute("aria-expanded", "false"); }
-  menuBtn.addEventListener("click", function(){
-    var open = nav.classList.toggle("open");
-    menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
-  });
-  menu.addEventListener("click", function(e){
-    if (e.target.closest("a")) closeMenu();
-  });
-  document.addEventListener("keydown", function(e){
-    if (e.key === "Escape" && nav.classList.contains("open")) { closeMenu(); menuBtn.focus(); }
-  });
-
-  /* reveal-on-scroll (smooth scrolling itself is CSS scroll-behavior, gated on reduced motion) */
-  var els = document.querySelectorAll(".reveal");
-  if (reduce || !("IntersectionObserver" in window)) {
-    els.forEach(function(el){ el.classList.add("in"); });
-  } else {
-    var io = new IntersectionObserver(function(entries){
-      entries.forEach(function(entry){
-        if (entry.isIntersecting) { entry.target.classList.add("in"); io.unobserve(entry.target); }
+  var els=d.querySelectorAll(".reveal");
+  var reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if(reduce||!("IntersectionObserver" in window)){
+    els.forEach(function(el){el.classList.add("in")});
+  }else{
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if(en.isIntersecting){en.target.classList.add("in");io.unobserve(en.target)}
       });
-    }, { threshold: 0.12, rootMargin: "0px 0px -48px 0px" });
-    els.forEach(function(el){ io.observe(el); });
+    },{rootMargin:"0px 0px -8% 0px",threshold:.08});
+    els.forEach(function(el){io.observe(el)});
   }
 })();
 </script>
