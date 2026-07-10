@@ -320,11 +320,15 @@ export default function PageContent({
         {/* Summary wrapper — the CAPPED / SHRINKING panel (no longer dominant).
             - Mobile: full width, visible only when its tab is active.
             - md+: capped to ~half the width (max 640px) and does not grow, so
-              the transcript keeps comfortable room. Hidden when collapsed. */}
+              the transcript keeps comfortable room. Hidden when collapsed.
+            - min-w-[340px]: the floor at which the panel toolbar still fits
+              fully icon-only (~338px measured) without scrolling; below md the
+              tab switcher takes over, so the transcript (min-w-0) absorbs the
+              remaining squeeze. */}
         <div
           className={`${
             mobileTab === 'summary' ? 'flex' : 'hidden'
-          } w-full min-w-0 md:w-1/2 md:max-w-[640px] md:shrink-0 ${
+          } w-full min-w-0 md:w-1/2 md:min-w-[340px] md:max-w-[640px] md:shrink-0 ${
             isSummaryCollapsed ? 'md:hidden' : 'md:flex'
           }`}
         >

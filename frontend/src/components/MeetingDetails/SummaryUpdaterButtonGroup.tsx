@@ -24,13 +24,18 @@ export function SummaryUpdaterButtonGroup({
   onOpenFolder,
   hasSummary
 }: SummaryUpdaterButtonGroupProps) {
+  // Labels show from 2xl only: this group lives in the summary panel toolbar,
+  // and that panel is capped at 640px wide (page-content), so the app-wide
+  // `lg` label breakpoint would overflow it. Icon-only below 2xl; the title
+  // tooltips keep the buttons self-explanatory. shrink-0 everywhere so the
+  // toolbar's overflow-x-auto backstop scrolls instead of squishing buttons.
   return (
-    <ButtonGroup>
+    <ButtonGroup className="shrink-0">
       {/* Save button */}
       <Button
         variant="outline"
         size="sm"
-        className={`${isDirty ? 'bg-green-200' : ""}`}
+        className={`shrink-0 ${isDirty ? 'bg-green-200' : ""}`}
         title={isSaving ? "Saving" : "Save Changes"}
         onClick={() => {
           Analytics.trackButtonClick('save_changes', 'meeting_details');
@@ -41,12 +46,12 @@ export function SummaryUpdaterButtonGroup({
         {isSaving ? (
           <>
             <Loader2 className="animate-spin" />
-            <span className="hidden lg:inline">Saving...</span>
+            <span className="hidden 2xl:inline">Saving...</span>
           </>
         ) : (
           <>
             <Save />
-            <span className="hidden lg:inline">Save</span>
+            <span className="hidden 2xl:inline">Save</span>
           </>
         )}
       </Button>
@@ -61,10 +66,10 @@ export function SummaryUpdaterButtonGroup({
           onCopy();
         }}
         disabled={!hasSummary}
-        className="cursor-pointer"
+        className="shrink-0 cursor-pointer"
       >
         <Copy />
-        <span className="hidden lg:inline">Copy</span>
+        <span className="hidden 2xl:inline">Copy</span>
       </Button>
 
       {/* Find button */}

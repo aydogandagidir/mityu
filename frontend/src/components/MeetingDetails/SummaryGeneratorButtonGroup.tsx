@@ -244,14 +244,22 @@ export function SummaryGeneratorButtonGroup({
 
   const isGenerating = summaryStatus === 'processing' || summaryStatus === 'summarizing' || summaryStatus === 'regenerating';
 
+  // Responsive labels — the summary panel is CAPPED at 640px (page-content),
+  // so viewport breakpoints must run later than the app-wide `lg` convention:
+  //  - < xl: everything icon-only (panel can be as narrow as ~340px);
+  //  - xl+:  the primary Generate/Stop label appears;
+  //  - 2xl+: language value + Save/Copy labels appear (~620px total, fits 640).
+  // "AI Model"/"Template" stay icon-only at EVERY width: all six labels total
+  // ~730px and can never fit the 640px cap — these two are static names whose
+  // meaning the icons + title tooltips already carry.
   return (
-    <ButtonGroup>
+    <ButtonGroup className="shrink-0">
       {/* Generate Summary or Stop button */}
       {isGenerating ? (
         <Button
           variant="outline"
           size="sm"
-          className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 xl:px-4"
+          className="shrink-0 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 xl:px-4"
           onClick={() => {
             Analytics.trackButtonClick('stop_summary_generation', 'meeting_details');
             onStopGeneration();
@@ -259,12 +267,12 @@ export function SummaryGeneratorButtonGroup({
           title="Stop summary generation"
         >
           <Square className="xl:mr-2" size={18} fill="currentColor" />
-          <span className="hidden lg:inline xl:inline">Stop</span>
+          <span className="hidden xl:inline">Stop</span>
         </Button>
       ) : (
         <Button
           size="sm"
-          className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 xl:px-4"
+          className="shrink-0 bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 xl:px-4"
           onClick={() => {
             Analytics.trackButtonClick('generate_summary', 'meeting_details');
             checkOllamaModelsAndGenerate();
@@ -286,7 +294,7 @@ export function SummaryGeneratorButtonGroup({
           ) : (
             <>
               <Sparkles className="xl:mr-2" size={18} />
-              <span className="hidden lg:inline xl:inline">{hasSummary ? 'Regenerate Summary' : 'Generate Summary'}</span>
+              <span className="hidden xl:inline">{hasSummary ? 'Regenerate Summary' : 'Generate Summary'}</span>
             </>
           )}
         </Button>
@@ -294,16 +302,18 @@ export function SummaryGeneratorButtonGroup({
 
       {languageSlot}
 
-      {/* Settings button */}
+      {/* Settings button — icon-only at every width (see width budget above);
+          the title tooltip names it. */}
       <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
         <DialogTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            title="Summary Settings"
+            className="shrink-0"
+            title="Summary Settings (AI Model)"
+            aria-label="Summary settings (AI model)"
           >
             <Settings />
-            <span className="hidden lg:inline">AI Model</span>
           </Button>
         </DialogTrigger>
         <DialogContent
@@ -325,17 +335,19 @@ export function SummaryGeneratorButtonGroup({
         </DialogContent>
       </Dialog>
 
-      {/* Template selector dropdown */}
+      {/* Template selector dropdown — icon-only at every width (see width
+          budget above); the title tooltip names it. */}
       {availableTemplates.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
               size="sm"
+              className="shrink-0"
               title="Select summary template"
+              aria-label="Select summary template"
             >
               <FileText />
-              <span className="hidden lg:inline">Template</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

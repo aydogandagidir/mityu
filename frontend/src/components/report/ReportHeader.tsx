@@ -26,8 +26,9 @@ function formatDuration(sec: number): string {
 function StatTile({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
   // Compact, content-hugging stat: icon tile + stacked value/label. Deliberately
   // NOT flex-1 — stretched, mostly-empty tiles read as dead space on wide windows.
+  // shrink-0: a tile never squishes; at extreme widths the row scrolls instead.
   return (
-    <div className="inline-flex items-center gap-3 rounded-xl border border-border bg-card py-2.5 pl-3 pr-5 shadow-sm">
+    <div className="inline-flex shrink-0 items-center gap-3 rounded-xl border border-border bg-card py-2.5 pl-3 pr-5 shadow-sm">
       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
         <Icon className="h-4 w-4" aria-hidden />
       </span>
@@ -91,7 +92,11 @@ export function ReportHeader({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        {/* Stat tiles: wrap first (flex-wrap drops them under the title on
+            narrow windows); min-w-0 + max-w-full keep the row inside the
+            header, and overflow-x-auto is the never-clip backstop for widths
+            where even a single tile can't fit. */}
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2.5 overflow-x-auto [scrollbar-width:thin]">
           <StatTile icon={Clock} label="Duration" value={formatDuration(durationSec)} />
           <StatTile icon={FileText} label="Words" value={words.toLocaleString()} sub={wpm > 0 ? `~${wpm} wpm` : undefined} />
           <StatTile icon={Hash} label="Segments" value={String(segments)} />

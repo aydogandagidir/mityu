@@ -260,11 +260,16 @@ export function SummaryPanel({
         <Button
           variant="outline"
           size="sm"
+          className="shrink-0"
           title={`Summary language: ${effectiveLangLabel}${isLocalFallbackLanguage ? ' (saved on this device)' : ''}`}
           aria-label="Set summary language"
         >
           <Languages size={18} />
-          <span className="hidden lg:inline">{effectiveLangLabel}</span>
+          {/* Language VALUE label: 2xl only (the panel is capped at 640px, so
+              labels fit later than the viewport-lg the rest of the app uses),
+              truncated so unbounded language names can't overflow the toolbar.
+              The full name always lives in the title tooltip above. */}
+          <span className="hidden 2xl:inline max-w-[6rem] truncate">{effectiveLangLabel}</span>
           <ChevronDown size={14} className="text-muted-foreground" />
         </Button>
       </PopoverTrigger>
@@ -308,7 +313,15 @@ export function SummaryPanel({
           <span aria-hidden />
         )}
 
-        <div className="flex min-w-0 items-center justify-end gap-1.5">
+        {/* Action cluster. min-w-0 lets it shrink inside justify-between;
+            overflow-x-auto is the no-clip backstop: below ~340px of panel the
+            cluster scrolls horizontally instead of spilling over the transcript
+            border (scroll, not flex-wrap, so this toolbar keeps the exact same
+            single-row height/axis as the transcript panel's toolbar).
+            justify-end was dropped on purpose: with content-sized children the
+            outer justify-between already right-aligns the cluster, and end-
+            justified overflow would be unreachable in a scroll container. */}
+        <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:thin]">
           <SummaryGeneratorButtonGroup
             modelConfig={modelConfig}
             setModelConfig={setModelConfig}
