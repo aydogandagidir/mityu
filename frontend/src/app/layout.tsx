@@ -1,7 +1,7 @@
 'use client'
 
 import './globals.css'
-import { Source_Sans_3 } from 'next/font/google'
+import { DM_Sans } from 'next/font/google'
 import Sidebar from '@/components/Sidebar'
 import { SidebarProvider } from '@/components/Sidebar/SidebarProvider'
 import MainContent from '@/components/MainContent'
@@ -31,10 +31,13 @@ import { isTauri } from '@/lib/isTauri'
 import { ThemeProvider } from '@/components/theme-provider'
 
 
-const sourceSans3 = Source_Sans_3({
+// Same face as the landing page (closest open-license match to the reference
+// site's Google Sans, which is proprietary). Self-hosted by next/font at build
+// time — no runtime network dependency (local-first).
+const dmSans = DM_Sans({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-source-sans-3',
+  variable: '--font-dm-sans',
 })
 
 // Module-level component — stable reference across RootLayout re-renders.
@@ -245,7 +248,7 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${sourceSans3.variable} font-sans antialiased`}>
+      <body className={`${dmSans.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
         <AnalyticsProvider>
           <RecordingStateProvider>
