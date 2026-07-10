@@ -11,6 +11,7 @@ import { SummaryPanel } from '@/components/MeetingDetails/SummaryPanel';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 import { FileText, Sparkles, PanelRightOpen } from 'lucide-react';
 import { ReportHeader } from '@/components/report/ReportHeader';
+import { TopicsTimeline } from '@/components/report/TopicsTimeline';
 
 // Custom hooks
 import { useMeetingData } from '@/hooks/meeting-details/useMeetingData';
@@ -222,6 +223,11 @@ export default function PageContent({
         createdAt={meeting.created_at}
         transcripts={meetingData.transcripts}
       />
+
+      {/* On-device chapters strip (pause-based, deterministic). Clicking a chapter
+          jumps the transcript to its first segment via the C1.6 mechanism. Renders
+          nothing for short/gap-less meetings. */}
+      <TopicsTimeline transcripts={meetingData.transcripts} onJumpToSegment={handleJumpToSource} />
 
       {/* Narrow-screen (< md) tab bar: switches which panel is visible so the
           transcript (primary content) is reachable on mobile/tablet. Hidden on
