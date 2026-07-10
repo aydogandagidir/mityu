@@ -153,6 +153,18 @@ export type FieldPatch =
  * unchanged (the backend defaults an absent `assignee`/`due` to `{ op: 'keep' }`
  * and an absent `text` to no-op). Mirror of the Rust `EditActionItemRequest`.
  */
+/** Wire shape of `api_get_open_action_items` (Home dashboard). */
+export interface OpenActionItem {
+  id: string;
+  meeting_id: string;
+  meeting_title: string;
+  text: string;
+  assignee: string | null;
+  due: string | null;
+  status: BlockStatus;
+  source_chunk_id: string;
+}
+
 export interface EditActionItemRequest {
   /** New action text; omit to leave unchanged. */
   text?: string;
@@ -219,6 +231,14 @@ export class SummaryDraftService {
    */
   async approveSummary(meetingId: string): Promise<boolean> {
     return invoke<boolean>('api_approve_summary', { meetingId });
+  }
+
+  /**
+   * Cross-meeting open action items for the Home dashboard (Phase C): every
+   * non-rejected, non-deleted item in the workspace, newest first, capped.
+   */
+  async getOpenActionItems(limit = 20): Promise<OpenActionItem[]> {
+    return invoke<OpenActionItem[]>('api_get_open_action_items', { limit });
   }
 
   /**

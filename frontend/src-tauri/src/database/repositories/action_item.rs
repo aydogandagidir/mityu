@@ -193,6 +193,52 @@ impl ActionItemsRepository {
             .collect()
     }
 
+    /// Cross-meeting "open" action items for the Home dashboard (Phase C):
+    /// every non-rejected, non-deleted item in the workspace, newest meetings
+    /// first, joined with the meeting title so the UI can attribute each item.
+    /// Tenant-scoped on BOTH tables (the join predicate carries workspace_id,
+    /// the C3 lesson) and capped by `limit`.
+    pub async fn list_open(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        limit: i64,
+    ) -> Result<Vec<(ActionItemRow, String)>, SummaryDraftError> {
+        let rows = sqlx::query(
+            "SELECT a.id, a.meeting_id, a.text, a.assignee, a.due, a.status, \
+             a.source_chunk_id, a.position, a.original_text, a.rev, \
+             m.title AS meeting_title \
+             FROM action_items a \
+             JOIN meetings m ON m.id = a.meeting_id AND m.workspace_id = a.workspace_id \
+             WHERE a.workspace_id = ? AND a.deleted_at IS NULL AND a.status != 'rejected' \
+             ORDER BY a.created_at DESC, a.position ASC, a.id ASC \
+             LIMIT ?",
+        )
+        .bind(ctx.tenant_id.as_str())
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok((
+                    ActionItemRow {
+                        id: row.get("id"),
+                        meeting_id: row.get("meeting_id"),
+                        text: row.get("text"),
+                        assignee: row.get("assignee"),
+                        due: row.get("due"),
+                        status: block_status_from_db(&row.get::<String, _>("status"))?,
+                        source_chunk_id: row.get("source_chunk_id"),
+                        position: row.get("position"),
+                        original_text: row.get("original_text"),
+                        rev: row.get("rev"),
+                    },
+                    row.get("meeting_title"),
+                ))
+            })
+            .collect()
+    }
+
     /// Applies the shared status machine ([`block_transition_allowed`]) to one
     /// item. Approving RE-validates that the item's `source_chunk_id` resolves
     /// NOW ([`resolve_source_chunk_ids`] — ADR-0019). `Ok(false)` (with a

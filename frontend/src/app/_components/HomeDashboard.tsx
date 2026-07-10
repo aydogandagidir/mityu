@@ -11,9 +11,12 @@
  * renamed meetings simply show no date. Deliberately no fabricated metrics.
  */
 
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, FileText, Mic, NotebookPen } from 'lucide-react';
+import { ChevronRight, FileText, ListChecks, Mic, NotebookPen } from 'lucide-react';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
+import { summaryDraftService, OpenActionItem } from '@/services/summaryDraftService';
+import { isTauri } from '@/lib/isTauri';
 
 function parseTitleDate(title: string): string | null {
   const m = title.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
@@ -33,6 +36,24 @@ export function HomeDashboard() {
   const { meetings, setCurrentMeeting } = useSidebar();
 
   const recent = meetings.slice(0, 9);
+
+  // Open action items across meetings (api_get_open_action_items). Failure is
+  // silent by design — the dashboard degrades to meetings-only.
+  const [actionItems, setActionItems] = useState<OpenActionItem[]>([]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    summaryDraftService
+      .getOpenActionItems(8)
+      .then((items) => { if (!cancelled) setActionItems(items); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [meetings.length]);
+
+  const openMeeting = (id: string, title: string) => {
+    setCurrentMeeting({ id, title });
+    router.push(`/meeting-details?id=${id}`);
+  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -65,10 +86,7 @@ export function HomeDashboard() {
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => {
-                      setCurrentMeeting({ id: m.id, title: m.title });
-                      router.push(`/meeting-details?id=${m.id}`);
-                    }}
+                    onClick={() => openMeeting(m.id, m.title)}
                     className="group flex items-start gap-3 rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
                   >
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
@@ -89,6 +107,46 @@ export function HomeDashboard() {
                   </button>
                 );
               })}
+            </div>
+          </section>
+        )}
+
+        {actionItems.length > 0 && (
+          <section className="mt-8">
+            <div className="mb-3 flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-muted-foreground" aria-hidden />
+              <h2 className="text-sm font-semibold text-foreground">Open action items</h2>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                {actionItems.length}
+              </span>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <ul className="divide-y divide-border">
+                {actionItems.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => openMeeting(item.meeting_id, item.meeting_title)}
+                      className="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                    >
+                      <span
+                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                          item.status === 'approved' ? 'bg-green-500' : 'bg-primary'
+                        }`}
+                        title={item.status === 'approved' ? 'Approved' : 'Awaiting review'}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-foreground">{item.text}</span>
+                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                          {item.meeting_title}
+                          {item.due ? ` · due ${item.due}` : ''}
+                        </span>
+                      </span>
+                      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 transition-all group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           </section>
         )}

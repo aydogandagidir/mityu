@@ -785,6 +785,51 @@ pub async fn api_approve_action_item(
         .map_err(summary_draft_err)
 }
 
+/// Cross-meeting open action items for the Home dashboard (Phase C). Returns
+/// every non-rejected, non-deleted item in the current workspace (newest
+/// meetings first, capped), each with its meeting id/title so the UI can link
+/// back to the report. Read-only; tenant-scoped via the ambient context.
+///
+/// TS binding: `invoke("api_get_open_action_items", { limit? }) -> OpenActionItem[]`.
+#[derive(serde::Serialize)]
+pub struct OpenActionItem {
+    pub id: String,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub text: String,
+    pub assignee: Option<String>,
+    pub due: Option<String>,
+    pub status: BlockStatus,
+    pub source_chunk_id: String,
+}
+
+#[tauri::command]
+pub async fn api_get_open_action_items(
+    state: tauri::State<'_, AppState>,
+    limit: Option<i64>,
+) -> Result<Vec<OpenActionItem>, String> {
+    let limit = limit.unwrap_or(20).clamp(1, 100);
+    log_info!("api_get_open_action_items called (limit {})", limit);
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    let rows = ActionItemsRepository::list_open(pool, &ctx, limit)
+        .await
+        .map_err(summary_draft_err)?;
+    Ok(rows
+        .into_iter()
+        .map(|(item, meeting_title)| OpenActionItem {
+            id: item.id,
+            meeting_id: item.meeting_id,
+            meeting_title,
+            text: item.text,
+            assignee: item.assignee,
+            due: item.due,
+            status: item.status,
+            source_chunk_id: item.source_chunk_id,
+        })
+        .collect())
+}
+
 /// Human REJECT of one action item. `Ok(false)` = illegal transition or
 /// unknown item in this workspace.
 ///

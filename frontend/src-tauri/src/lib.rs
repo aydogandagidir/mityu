@@ -697,6 +697,7 @@ pub fn run() {
             summary::commands::api_edit_summary_block,
             summary::commands::api_restore_summary_block,
             summary::commands::api_approve_summary,
+            summary::commands::api_get_open_action_items,
             summary::commands::api_approve_action_item,
             summary::commands::api_reject_action_item,
             summary::commands::api_restore_action_item,
