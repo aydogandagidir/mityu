@@ -86,24 +86,24 @@
    * so the whole app inherits the brand and responds to light/dark automatically.
    */
   :root {
-    --background: 43 30% 95%;
-    --foreground: 240 11% 7%;
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 240 11% 7%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 11% 7%;
+    --popover-foreground: 222 47% 11%;
     --primary: 225 100% 56%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 42 24% 91%;
-    --secondary-foreground: 240 11% 7%;
-    --muted: 42 24% 91%;
-    --muted-foreground: 47 6% 33%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
     --accent: 225 100% 96%;
     --accent-foreground: 225 70% 40%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 42 21% 87%;
-    --input: 42 21% 87%;
+    --border: 240 5% 90%;
+    --input: 240 5% 90%;
     --ring: 225 100% 56%;
     --radius: 0.625rem;
     --chart-1: 225 100% 56%;

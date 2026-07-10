@@ -9,16 +9,8 @@ module.exports = {
   theme: {
   	extend: {
   		fontFamily: {
-  			// Same system grotesque stack as the landing page (paper/ink design).
   			sans: [
-  				'ui-sans-serif',
-  				'system-ui',
-  				'-apple-system',
-  				'"Segoe UI"',
-  				'Roboto',
-  				'Inter',
-  				'Arial',
-  				'sans-serif'
+  				'var(--font-source-sans-3)'
   			]
   		},
   		colors: {
