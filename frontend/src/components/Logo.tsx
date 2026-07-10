@@ -19,9 +19,15 @@ const Logo = React.forwardRef<HTMLButtonElement, LogoProps>(({ isCollapsed }, re
         </DialogTrigger>
       ) : (
         <DialogTrigger asChild>
-          <span className="text-lg text-center border border-border rounded-full bg-accent font-semibold text-primary mb-2 block items-center cursor-pointer hover:opacity-80 transition-opacity">
-            <span>Mityu</span>
-          </span>
+          {/* Premium wordmark: product mark + gradient lowercase wordmark (bluedev
+              brand DNA), a quiet hover surface instead of the old washed pill. */}
+          <button className="group -mx-1 flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors hover:bg-muted">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/mityu-mark.svg" alt="" width={26} height={26} className="shrink-0" />
+            <span className="bg-gradient-to-r from-primary to-[#4B78FF] bg-clip-text text-[17px] font-bold leading-none tracking-tight text-transparent">
+              mityu
+            </span>
+          </button>
         </DialogTrigger>
       )}
       <DialogContent>

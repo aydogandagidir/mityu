@@ -69,6 +69,14 @@ export const BETA_FEATURE_DESCRIPTIONS: Record<keyof BetaFeatures, string> = {
 export type BetaFeatureKey = keyof BetaFeatures;
 
 /**
+ * Version stamp persisted alongside saved preferences (as `_v`). Bump it to
+ * re-apply a changed default ONCE to preferences saved under an older version;
+ * any save after that carries the current version, so explicit user choices are
+ * never overridden again. v2 = structuredSummaries re-defaulted to true.
+ */
+export const BETA_PREFS_VERSION = 2;
+
+/**
  * Load beta features from localStorage
  *
  * @returns BetaFeatures object with values from localStorage or defaults
@@ -81,9 +89,26 @@ export function loadBetaFeatures(): BetaFeatures {
   try {
     const saved = localStorage.getItem('betaFeatures');
     if (saved) {
-      const parsed = JSON.parse(saved) as Partial<BetaFeatures>;
+      const parsed = JSON.parse(saved) as Partial<BetaFeatures> & { _v?: number };
+
+      // One-time re-default (owner call, 2026-07-10): structuredSummaries became
+      // the primary summary surface (source-linked HITL report — CLAUDE.md §0.5),
+      // but preferences saved before that carry the old `false` default forever.
+      // Bump stored prefs below version 2 to the new default ONCE; from then on
+      // the user's explicit toggle (saved with _v: 2) always wins.
+      if ((parsed._v ?? 1) < BETA_PREFS_VERSION) {
+        const migrated: BetaFeatures = {
+          ...DEFAULT_BETA_FEATURES,
+          ...parsed,
+          structuredSummaries: true,
+        };
+        saveBetaFeatures(migrated);
+        return migrated;
+      }
+
       // Merge with defaults to handle missing keys (graceful degradation)
-      return { ...DEFAULT_BETA_FEATURES, ...parsed };
+      const { _v, ...rest } = parsed;
+      return { ...DEFAULT_BETA_FEATURES, ...rest };
     }
   } catch (error) {
     console.error('[BetaFeatures] Failed to load from localStorage:', error);
@@ -101,7 +126,9 @@ export function saveBetaFeatures(features: BetaFeatures): void {
   if (typeof window === 'undefined') return;
 
   try {
-    localStorage.setItem('betaFeatures', JSON.stringify(features));
+    // Stamp the prefs version so one-time default migrations (loadBetaFeatures)
+    // never re-run over an explicit user choice.
+    localStorage.setItem('betaFeatures', JSON.stringify({ ...features, _v: BETA_PREFS_VERSION }));
   } catch (error) {
     console.error('[BetaFeatures] Failed to save to localStorage:', error);
   }
