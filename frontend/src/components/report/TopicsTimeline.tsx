@@ -84,7 +84,8 @@ export function TopicsTimeline({
   onJumpToSegment,
 }: {
   transcripts: Transcript[];
-  onJumpToSegment?: (segmentId: string) => void;
+  /** Receives the chapter's first segment id AND its start second (scroll + seek). */
+  onJumpToSegment?: (segmentId: string, startSec: number) => void;
 }) {
   const chapters = deriveChapters(transcripts);
   if (chapters.length === 0) return null;
@@ -105,7 +106,7 @@ export function TopicsTimeline({
               key={`${c.firstSegmentId}-${i}`}
               role="listitem"
               type="button"
-              onClick={() => onJumpToSegment?.(c.firstSegmentId)}
+              onClick={() => onJumpToSegment?.(c.firstSegmentId, c.startSec)}
               title={`${fmt(c.startSec)} — ${c.label}`}
               style={{ flexGrow: Math.max(1, Math.round(((c.endSec - c.startSec) / total) * 100)) }}
               className="group min-w-[28px] basis-0 overflow-hidden rounded-md bg-muted px-2 text-left transition-colors hover:bg-accent"

@@ -12,6 +12,7 @@ import { ModelConfig } from '@/components/ModelSettingsModal';
 import { FileText, Sparkles, PanelRightOpen } from 'lucide-react';
 import { ReportHeader } from '@/components/report/ReportHeader';
 import { TopicsTimeline } from '@/components/report/TopicsTimeline';
+import { PlaybackBar, PlaybackBarHandle } from '@/components/report/PlaybackBar';
 
 // Custom hooks
 import { useMeetingData } from '@/hooks/meeting-details/useMeetingData';
@@ -81,6 +82,11 @@ export default function PageContent({
 
   // Ref to store the modal open function from SummaryGeneratorButtonGroup
   const openModelSettingsRef = useRef<(() => void) | null>(null);
+
+  // Phase D (playback sync): imperative handle into the meeting's audio bar so
+  // transcript timestamps and chapter blocks can click-to-play.
+  const playbackRef = useRef<PlaybackBarHandle>(null);
+  const handleSeekToTime = (sec: number) => playbackRef.current?.seekTo(sec);
 
   // Sidebar context
   const { serverAddress } = useSidebar();
@@ -227,7 +233,16 @@ export default function PageContent({
       {/* On-device chapters strip (pause-based, deterministic). Clicking a chapter
           jumps the transcript to its first segment via the C1.6 mechanism. Renders
           nothing for short/gap-less meetings. */}
-      <TopicsTimeline transcripts={meetingData.transcripts} onJumpToSegment={handleJumpToSource} />
+      <TopicsTimeline
+        transcripts={meetingData.transcripts}
+        onJumpToSegment={(segmentId, startSec) => {
+          handleJumpToSource(segmentId);
+          handleSeekToTime(startSec);
+        }}
+      />
+
+      {/* Local audio playback (asset protocol); transcript timestamps + chapters seek into it. */}
+      <PlaybackBar ref={playbackRef} folderPath={meeting.folder_path} />
 
       {/* Narrow-screen (< md) tab bar: switches which panel is visible so the
           transcript (primary content) is reachable on mobile/tablet. Hidden on
@@ -298,6 +313,7 @@ export default function PageContent({
           scrollToSegmentId={scrollToSegmentId}
           scrollNonce={scrollNonce}
           onRequestSegment={handleRequestSegment}
+          onSeekToTime={handleSeekToTime}
           />
         </div>
 

@@ -35,6 +35,8 @@ interface TranscriptPanelProps {
   scrollToSegmentId?: string | null;
   scrollNonce?: number;
   onRequestSegment?: (segmentId: string) => void;
+  /** Click-to-play: seek meeting audio to a segment's start time. */
+  onSeekToTime?: (sec: number) => void;
 }
 
 export function TranscriptPanel({
@@ -58,6 +60,7 @@ export function TranscriptPanel({
   scrollToSegmentId,
   scrollNonce,
   onRequestSegment,
+  onSeekToTime,
 }: TranscriptPanelProps) {
   // Convert transcripts to segments if pagination is not used but we want virtualization
   const convertedSegments = useMemo(() => {
@@ -120,6 +123,7 @@ export function TranscriptPanel({
           scrollToSegmentId={scrollToSegmentId}
           scrollNonce={scrollNonce}
           onRequestSegment={onRequestSegment}
+          onSeekToTime={onSeekToTime}
         />
       </div>
 

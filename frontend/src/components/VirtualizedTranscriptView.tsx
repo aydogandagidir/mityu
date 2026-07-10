@@ -43,6 +43,8 @@ export interface VirtualizedTranscriptViewProps {
     // same id be re-targeted (repeat clicks on the same source).
     /** Segment id to scroll to and highlight; `null`/`undefined` = no-op (default). */
     scrollToSegmentId?: string | null;
+    /** When provided, segment timestamps become click-to-play (seek audio). */
+    onSeekToTime?: (sec: number) => void;
     /** Bump to re-trigger a jump to the same `scrollToSegmentId`. */
     scrollNonce?: number;
     /** Ask the parent to load a segment that isn't in the current page. */
@@ -85,6 +87,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     isStreaming,
     showConfidence,
     isHighlighted = false,
+    onSeek,
 }: {
     id: string;
     timestamp: number;
@@ -93,6 +96,8 @@ const TranscriptSegment = memo(function TranscriptSegment({
     isStreaming: boolean;
     showConfidence: boolean;
     isHighlighted?: boolean;
+    /** Jump audio playback to this segment (meeting report view only). */
+    onSeek?: (sec: number) => void;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
 
@@ -105,10 +110,21 @@ const TranscriptSegment = memo(function TranscriptSegment({
         >
             <div className="flex items-start gap-2">
                 <Tooltip>
-                    <TooltipTrigger>
-                        <span className="mt-1 min-w-[46px] flex-shrink-0 text-[11px] tabular-nums text-muted-foreground/70">
-                            {formatRecordingTime(timestamp)}
-                        </span>
+                    <TooltipTrigger asChild>
+                        {onSeek ? (
+                            <button
+                                type="button"
+                                onClick={() => onSeek(timestamp)}
+                                aria-label="Play from this segment"
+                                className="mt-1 min-w-[46px] flex-shrink-0 rounded text-left text-[11px] tabular-nums text-muted-foreground/70 transition-colors hover:text-primary"
+                            >
+                                {formatRecordingTime(timestamp)}
+                            </button>
+                        ) : (
+                            <span className="mt-1 min-w-[46px] flex-shrink-0 text-[11px] tabular-nums text-muted-foreground/70">
+                                {formatRecordingTime(timestamp)}
+                            </span>
+                        )}
                     </TooltipTrigger>
                     <TooltipContent>
                         {confidence !== undefined && showConfidence && (
@@ -145,6 +161,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     loadedCount = 0,
     onLoadMore,
     scrollToSegmentId,
+    onSeekToTime,
     scrollNonce,
     onRequestSegment,
 }) => {
@@ -381,6 +398,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                     <TranscriptSegment
                                         id={segment.id}
                                         timestamp={segment.timestamp}
+                                        onSeek={onSeekToTime}
                                         text={getDisplayText(segment)}
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
@@ -438,6 +456,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                     <TranscriptSegment
                                         id={segment.id}
                                         timestamp={segment.timestamp}
+                                        onSeek={onSeekToTime}
                                         text={getDisplayText(segment)}
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
