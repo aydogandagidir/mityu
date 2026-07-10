@@ -11,7 +11,7 @@ import { SummaryUpdaterButtonGroup } from './SummaryUpdaterButtonGroup';
 import Analytics from '@/lib/analytics';
 import { useEffect, useRef, useState, RefObject } from 'react';
 import { toast } from 'sonner';
-import { Languages, ChevronDown, PanelRightClose, Sparkles } from 'lucide-react';
+import { Languages, ChevronDown, PanelRightClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { LanguagePickerPopover } from '@/components/LanguagePickerPopover';
@@ -285,21 +285,30 @@ export function SummaryPanel({
   return (
     // Layout-neutral root: the wrapper in page-content.tsx owns width, the left
     // border, and responsive show/hide (mobile tab + desktop collapse).
-    <div className="flex w-full h-full min-w-0 flex-col bg-background overflow-hidden">
+    // Subtle brand tint marks this whole panel as the AI zone (the identity label
+    // was dropped from the toolbar to de-crowd it); cards render on top in bg-card.
+    <div className="flex w-full h-full min-w-0 flex-col bg-accent/25 dark:bg-accent/10 overflow-hidden">
       {/* Panel toolbar — single row, same height/axis as the transcript panel's
-          toolbar (px-4 py-2.5, border-b) so the two panel headers align. Identity
-          on the left; the generator/updater actions + collapse on the right. The
-          generator group renders in EVERY state (it adapts via its props), which
-          keeps the toolbar from jumping between states. */}
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground">
-            <Sparkles className="h-3.5 w-3.5" aria-hidden />
-          </span>
-          <h2 className="truncate text-sm font-semibold text-foreground">Summary</h2>
-        </div>
+          toolbar (py-2.5, border-b). Collapse sits on the leading edge (the panel
+          folds away to the right); actions keep the right side. The generator
+          group renders in EVERY state so the toolbar never jumps. */}
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-accent/50 dark:bg-accent/25 px-2.5 py-2.5">
+        {showCollapseButton && onCollapse ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hidden shrink-0 md:inline-flex text-muted-foreground hover:text-foreground"
+            onClick={onCollapse}
+            title="Collapse summary panel"
+            aria-label="Collapse summary panel"
+          >
+            <PanelRightClose size={18} />
+          </Button>
+        ) : (
+          <span aria-hidden />
+        )}
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-center justify-end gap-1.5">
           <SummaryGeneratorButtonGroup
             modelConfig={modelConfig}
             setModelConfig={setModelConfig}
@@ -333,21 +342,6 @@ export function SummaryPanel({
             />
           )}
 
-          {/* Collapse chevron (desktop only): lets a user who just wants the
-              transcript reclaim the full width. Always rendered so the panel is
-              collapsible in every state. State lives in page-content. */}
-          {showCollapseButton && onCollapse && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="hidden md:inline-flex text-muted-foreground hover:text-foreground"
-              onClick={onCollapse}
-              title="Collapse summary panel"
-              aria-label="Collapse summary panel"
-            >
-              <PanelRightClose size={18} />
-            </Button>
-          )}
         </div>
       </div>
 
