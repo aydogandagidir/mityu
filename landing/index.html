@@ -1,609 +1,487 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<meta name="theme-color" content="#F7F5F0">
-<title>Mityu — Your meetings, understood. Never uploaded.</title>
-<meta name="description" content="Mityu is a privacy-first meeting intelligence desktop app. It records, transcribes, and summarizes entirely on your device — works with Zoom, Meet, and Teams without joining the call. Whisper &amp; Parakeet local transcription, human-approved reports. Windows &amp; macOS.">
-<script>if("IntersectionObserver" in window)document.documentElement.classList.add("js")</script>
+<title>Mityu — every meeting, understood. On your device.</title>
+<meta name="description" content="Mityu records, transcribes, and reports on your meetings — entirely on your machine. No bots. No uploads. No account.">
 <style>
-/* ================= tokens ================= */
 :root{
-  --paper:#F7F5F0;
-  --paper-2:#FAF9F6;
-  --white:#FFFFFF;
-  --ink:#101014;
-  --muted:#57574E;
-  --faint:#6B6B60;
-  --hair:#E5E2DA;
-  --hair-2:#DCD8CC;
+  --ink:#0B0B0F;
+  --gray:#5F6368;
+  --hair:#E5E7EB;
+  --soft:#F4F5F7;
   --blue:#1E56FF;
-  --blue-2:#4B78FF;
-  --ease:cubic-bezier(.22,1,.36,1);
-  --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
-  --mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
+  --blue-bg:#E9F0FF;
+  --div:#E0E0E0;
 }
-
-/* ================= base ================= */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-padding-top:84px;-webkit-text-size-adjust:100%}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
 @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
-html,body{overflow-x:hidden}
-body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{margin:0;background:#FFFFFF;color:var(--ink);font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p,ul{margin:0}
+ul{padding:0;list-style:none}
 a{color:inherit;text-decoration:none}
-ul{list-style:none}
-svg{display:inline-block;vertical-align:middle;flex:none}
-h1,h2,h3{letter-spacing:-.028em;line-height:1.08;font-weight:600;text-wrap:balance}
-::selection{background:rgba(30,86,255,.15);color:var(--ink)}
-:focus-visible{outline:2px solid var(--blue);outline-offset:3px;border-radius:6px}
-.wrap{width:min(1100px,100% - 44px);margin-inline:auto}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.skip{position:absolute;left:16px;top:-56px;z-index:300;background:var(--ink);color:var(--paper);padding:10px 20px;border-radius:999px;font-weight:600;font-size:14px;transition:top .2s}
+.skip{position:absolute;left:16px;top:-56px;z-index:100;background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;font-size:14px}
 .skip:focus{top:12px}
-.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
-.kicker{font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--faint)}
-.a-link{color:var(--blue)}
-.a-link:hover{text-decoration:underline;text-underline-offset:3px}
+.container{max-width:1200px;margin:0 auto;padding-left:24px;padding-right:24px}
 
-/* ================= reveal (JS-off safe) ================= */
-.js .reveal{opacity:0;transform:translateY(18px);transition:opacity .8s var(--ease),transform .8s var(--ease);transition-delay:var(--d,0s)}
-.js .reveal.in{opacity:1;transform:translateY(0)}
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 20px;border-radius:999px;font-size:14px;font-weight:500;white-space:nowrap;transition:background .15s ease}
+.btn-black{background:var(--ink);color:#fff}
+.btn-black:hover{background:#26262E}
+.btn-gray{background:#F1F3F4;color:var(--ink)}
+.btn-gray:hover{background:#E8EAED}
+.btn-gray2{background:#E8EAED;color:var(--ink)}
+.btn-gray2:hover{background:#DDE0E4}
+.btn-sm{height:36px;padding:0 18px;font-size:13px}
+.btn svg{flex:none}
 
-/* ================= pills ================= */
-.pill{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;font-weight:600;letter-spacing:-.008em;font-size:15.5px;padding:13px 26px;line-height:1.2;white-space:nowrap;transition:transform .18s var(--ease),box-shadow .18s var(--ease),background-color .18s,border-color .18s}
-.pill:active{transform:translateY(0)}
-.pill-ink{background:var(--ink);color:var(--paper)}
-.pill-ink:hover{transform:translateY(-2px);box-shadow:0 14px 28px -14px rgba(16,16,20,.45)}
-.pill-line{border:1px solid rgba(16,16,20,.5);color:var(--ink);background:transparent}
-.pill-line:hover{transform:translateY(-2px);background:rgba(16,16,20,.04)}
-.pill-sm{padding:9px 19px;font-size:14px}
-.pill-lg{padding:15px 32px;font-size:16.5px}
-.pill-xs{padding:7px 15px;font-size:12.5px}
-
-/* ================= doodles (space line-art) ================= */
-.doodle{position:absolute;color:var(--ink);pointer-events:none;z-index:0}
-.o-22{opacity:.22}.o-28{opacity:.28}.o-32{opacity:.32}
-.float{animation:floaty 6s ease-in-out infinite alternate}
-@keyframes floaty{from{transform:translateY(0)}to{transform:translateY(-12px)}}
-@media (max-width:860px){.doodle{display:none}}
-
-/* ================= nav ================= */
-#top-nav{position:sticky;top:0;z-index:100;background:transparent;border-bottom:1px solid transparent;transition:background-color .25s,border-color .25s,backdrop-filter .25s}
-#top-nav.scrolled{background:rgba(247,245,240,.8);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);border-bottom-color:var(--hair)}
-.nav-in{height:64px;display:flex;align-items:center;justify-content:space-between;gap:20px}
-.brand{display:inline-flex;align-items:center;gap:9px;font-weight:600;letter-spacing:-.02em;font-size:19px}
-.nav-right{display:flex;align-items:center;gap:28px}
-.nav-links{display:flex;gap:26px}
-.nav-links a{font-size:14.5px;font-weight:500;color:var(--muted);transition:color .18s}
+/* ---------- nav ---------- */
+.nav{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid transparent;transition:border-color .2s ease}
+.nav.scrolled{border-bottom-color:var(--hair)}
+.nav-inner{max-width:1280px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;gap:44px}
+.brand{display:inline-flex;align-items:center;gap:10px}
+.brand svg{display:block}
+.wordmark{font-size:17px;font-weight:500;letter-spacing:-.01em;color:var(--ink)}
+.nav-links{display:flex;gap:28px}
+.nav-links a{color:var(--gray);font-size:14px}
 .nav-links a:hover{color:var(--ink)}
-@media (max-width:700px){.nav-links{display:none}}
+.nav-cta{margin-left:auto}
+@media (max-width:719px){.nav-links{display:none}}
 
-/* ================= hero ================= */
-.hero{position:relative;text-align:center;padding:clamp(72px,10vw,128px) 0 clamp(16px,2.5vw,32px)}
-.hero .wrap{position:relative;z-index:1}
-.hero h1{font-size:clamp(2.8rem,7vw,5.5rem);letter-spacing:-.03em;line-height:1.03;margin:22px auto 0;max-width:980px}
-.grad{color:var(--blue)}
-@supports ((-webkit-background-clip:text) or (background-clip:text)){
-  .grad{background:linear-gradient(94deg,var(--blue) 8%,var(--blue-2) 88%);-webkit-background-clip:text;background-clip:text;color:transparent}
-}
-.hero .lede{color:var(--muted);font-size:clamp(17px,1.7vw,19px);line-height:1.6;max-width:640px;margin:24px auto 0;text-wrap:pretty}
-.hero-cta{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:34px}
-.plat-note{margin-top:18px;font-size:13.5px;color:var(--faint)}
-.d-orbit1{left:max(-40px,2vw);top:16%}
-.d-star1{right:12%;top:14%}
-.d-planet1{right:max(-10px,4vw);top:56%}
-.d-star2{left:16%;bottom:4%}
+/* ---------- hero ---------- */
+.hero{padding:clamp(90px,15vh,170px) 24px clamp(80px,12vh,130px);padding-left:max(24px,15%)}
+@media (max-width:600px){.hero{padding-left:24px}}
+.headline{font-size:clamp(3.5rem,8vw,6.5rem);font-weight:500;letter-spacing:-.035em;line-height:1.05;min-height:3.3em}
+@media (min-width:520px){.headline{min-height:2.2em}}
+.typed{white-space:pre-wrap}
+.caret{display:inline-block;width:6px;height:.82em;margin-left:.07em;border-radius:3px;background:linear-gradient(180deg,#1E56FF 0%,#4B78FF 55%,#9BB6FF 100%);vertical-align:-.08em;animation:blink 1.12s steps(1,end) infinite}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:0}}
+.hero-sub{margin-top:44px;max-width:620px}
+.sub{color:var(--gray);font-size:clamp(1.05rem,1.5vw,1.25rem);line-height:1.65;max-width:560px}
+.hero-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.platforms{margin-top:18px;color:var(--gray);font-size:13px}
+.js .hero-sub{opacity:0;transform:translateY(10px);transition:opacity .7s ease,transform .7s ease}
+.js .hero-sub.show{opacity:1;transform:none}
 
-/* ================= showcase window ================= */
-.showcase{position:relative;padding:clamp(36px,5vw,60px) 0 clamp(84px,10vw,128px)}
-.orbit-behind{position:absolute;left:50%;top:52%;width:min(1280px,116vw);height:auto;transform:translate(-50%,-50%) rotate(-4deg);color:var(--ink);opacity:.2;pointer-events:none;z-index:0}
-.window-wrap{position:relative;z-index:1}
-.window{max-width:960px;margin:0 auto;background:var(--white);border:1px solid var(--hair-2);border-radius:20px;overflow:hidden;text-align:left;box-shadow:0 40px 90px -50px rgba(16,16,20,.28),0 2px 6px rgba(16,16,20,.05)}
-@media (prefers-reduced-motion:no-preference){.window{animation:floaty 7s ease-in-out infinite alternate}}
-.titlebar{display:flex;align-items:center;gap:14px;padding:11px 16px;background:var(--paper);border-bottom:1px solid var(--hair)}
-.dots{display:inline-flex;gap:6px}
-.dots span{width:10px;height:10px;border-radius:50%;background:#ECE9E0;border:1px solid var(--hair-2)}
-.tb-title{font-size:12.5px;font-weight:500;color:var(--faint);margin-inline:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tb-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hair-2);background:var(--white);border-radius:999px;padding:4px 11px;font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap}
-.tb-pill svg{color:var(--blue)}
-.window-body{display:grid;grid-template-columns:1.02fr 1fr}
-.pane{padding:18px 20px 22px;min-width:0}
-.pane-rail{border-right:1px solid var(--hair)}
-.pane-report{background:var(--paper-2)}
-.pane-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
-.pane-head h3{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
-.rec{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--hair-2);background:var(--white);border-radius:999px;padding:4px 11px;font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap}
-.rec-dot{width:7px;height:7px;border-radius:50%;background:var(--blue);animation:pulse 2s ease-in-out infinite}
-@keyframes pulse{50%{opacity:.35}}
-.t-row{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:8px 9px;border-radius:10px;border:1px solid transparent}
-.t-row + .t-row{margin-top:4px}
-.t-time{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:600;color:var(--blue);padding-top:2px}
-.t-row p{font-size:13.5px;line-height:1.55;color:var(--muted);min-width:0}
-.t-row p strong{color:var(--ink);font-weight:600;margin-right:4px}
-.t-row.linked{background:rgba(30,86,255,.05);border-color:rgba(30,86,255,.28)}
-.tag-src{display:inline-block;background:var(--blue);color:#fff;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:1.5px;white-space:nowrap}
-.stats{display:flex;flex-wrap:wrap;gap:7px}
-.stat{border:1px solid var(--hair);background:var(--white);border-radius:10px;padding:7px 11px}
-.stat .k{display:block;font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
-.stat .v{display:block;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:14px;font-weight:600;color:var(--ink);margin-top:1px}
-.mini-label{font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin:15px 0 7px}
-.chaps{display:flex;flex-wrap:wrap;gap:6px}
-.chaps li{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hair);background:var(--white);border-radius:999px;padding:4px 11px;font-size:12px;font-weight:500;color:var(--muted)}
-.chaps .c-t{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--blue)}
-.chip-ai{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--hair-2);background:var(--paper);border-radius:999px;font-size:10.5px;font-weight:600;color:var(--muted);padding:3px 9px;white-space:nowrap}
-.chip-ai svg{color:var(--blue)}
-.sum-card{background:var(--white);border:1px solid var(--hair);border-radius:12px;padding:12px 14px}
-.sum-card .row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:7px}
-.sum-card .row .t{font-size:12.5px;font-weight:600;color:var(--ink)}
-.sum-card > p{font-size:13px;line-height:1.6;color:var(--muted)}
-.ai-item{display:grid;grid-template-columns:auto 1fr;gap:10px;background:var(--white);border:1px solid var(--hair);border-radius:11px;padding:9px 11px}
-.ai-item + .ai-item{margin-top:6px}
-.ck{width:16px;height:16px;border-radius:5px;border:1.5px solid #C8C4B8;background:var(--white);display:inline-flex;align-items:center;justify-content:center;margin-top:2px}
-.ck.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.ai-item .txt{font-size:13px;line-height:1.5;color:var(--ink);font-weight:500;min-width:0}
-.ai-item .meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--faint);margin-top:2px}
-.src-link{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--blue);white-space:nowrap}
-.approve-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--hair)}
-.approve-count{font-size:12px;color:var(--faint);white-space:nowrap}
-.showcase figcaption{text-align:center;color:var(--faint);font-size:13px;max-width:560px;margin:20px auto 0;text-wrap:pretty}
-@media (max-width:860px){
-  .window-body{grid-template-columns:1fr}
-  .pane-rail{border-right:0;border-bottom:1px solid var(--hair)}
-  .tb-title{display:none}
-  .titlebar{justify-content:space-between}
-}
+/* ---------- product window mock ---------- */
+.mock{padding:0 24px}
+.window{max-width:1120px;margin:0 auto;background:#fff;border:1px solid var(--hair);border-radius:24px;display:grid;grid-template-columns:minmax(280px,340px) 1fr;overflow:hidden}
+.win-left{border-right:1px solid var(--hair);padding:26px 22px}
+.win-right{padding:26px 30px 30px}
+@media (max-width:860px){.window{grid-template-columns:1fr}.win-left{border-right:0;border-bottom:1px solid var(--hair)}}
+.pane-label{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--gray);margin-bottom:16px}
+.t-line{display:flex;gap:10px;padding:9px 10px;border-radius:12px;font-size:13px;line-height:1.55}
+.t-line p{color:var(--ink)}
+.t-time{flex:none;color:var(--gray);font-size:12px;font-variant-numeric:tabular-nums;padding-top:2px}
+.t-line.hl{background:var(--blue-bg)}
+.t-tag{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;color:var(--blue)}
+.chip-row{display:flex;flex-wrap:wrap;gap:8px}
+.chip-row+.chip-row{margin-top:10px}
+.chip{display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:999px;background:var(--soft);color:var(--gray);font-size:12px}
+.chip-ai{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:500;white-space:nowrap}
+.report-block{margin-top:24px}
+.report-block h3{font-size:15px;font-weight:600}
+.sum-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.report-block>p{margin-top:10px;color:var(--gray);font-size:13.5px;line-height:1.65;max-width:58ch}
+.item{display:flex;align-items:flex-start;gap:10px;margin-top:12px}
+.item p{font-size:13.5px;color:var(--ink);line-height:1.5}
+.box{flex:none;width:16px;height:16px;border:1.5px solid #C6CAD1;border-radius:5px;margin-top:2px}
+.src{color:var(--blue);font-weight:500;white-space:nowrap}
+.approve-row{display:flex;align-items:center;gap:14px;margin-top:26px;padding-top:22px;border-top:1px solid var(--hair);flex-wrap:wrap}
+.approved{color:var(--gray);font-size:13px}
 
-/* ================= feature passages ================= */
-.passages{position:relative}
-.passage{display:grid;grid-template-columns:1.08fr 1fr;gap:clamp(36px,6vw,84px);align-items:center;padding:clamp(56px,8vw,92px) 0}
-.passage + .passage{border-top:1px solid var(--hair)}
-.passage h2{font-size:clamp(1.9rem,3.8vw,2.9rem);margin-top:14px}
-.passage .body{color:var(--muted);font-size:17px;line-height:1.7;margin-top:16px;max-width:54ch;text-wrap:pretty}
-.passage:nth-of-type(even) .pass-frag{order:-1}
-.d-star3{right:0;top:38px}
-.frag{background:var(--white);border:1px solid var(--hair-2);border-radius:18px;padding:20px;max-width:430px;margin-inline:auto;width:100%}
-.frag-meta{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:14px}
-.wave{width:100%;height:40px;margin-top:16px;color:var(--ink)}
-.m-row{display:flex;gap:10px;align-items:baseline}
-.m-row + .m-row{margin-top:9px}
-.m-time{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--blue)}
-.m-row p{font-size:13px;color:var(--muted);line-height:1.5}
-.frag .sum-line{font-size:13px;color:var(--muted);line-height:1.6;margin-top:10px}
-.frag .approve-mini{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--hair)}
-@media (max-width:900px){
-  .passage{grid-template-columns:1fr;gap:30px}
-  .passage:nth-of-type(even) .pass-frag{order:0}
-}
+/* ---------- soft cards (features + pricing) ---------- */
+.features{margin-top:150px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media (max-width:940px){.grid3{grid-template-columns:1fr;max-width:560px;margin-left:auto;margin-right:auto}}
+.card{background:var(--soft);border-radius:24px;padding:28px;display:flex;flex-direction:column}
+.badge{align-self:flex-start;display:inline-flex;align-items:center;height:24px;padding:0 12px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:500}
+.card h3{margin-top:18px;font-size:26px;font-weight:500;letter-spacing:-.02em;line-height:1.15}
+.desc{margin-top:12px;color:var(--gray);font-size:14px;line-height:1.6}
+.divider{height:1px;background:var(--div);margin:22px 0 18px}
+.features .desc{margin-bottom:8px}
+.features .divider{margin-top:auto}
+.includes-label{font-size:13px;font-weight:600}
+.checks{display:grid;gap:10px}
+.includes-label+.checks{margin-top:12px}
+.checks li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--gray);line-height:1.5}
+.ck{color:var(--ink);font-weight:600;flex:none}
+.ast{color:var(--blue);font-weight:600}
 
-/* ================= principles ================= */
-.principles{background:var(--paper-2);border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:clamp(64px,8vw,96px) 0}
-.principles .kicker{display:block;margin-bottom:26px}
-.prow{display:grid;grid-template-columns:64px 250px 1fr;gap:16px 28px;align-items:baseline;padding:24px 0;border-top:1px solid var(--hair)}
-.prow:last-of-type{border-bottom:1px solid var(--hair)}
-.prow .num{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--blue)}
-.prow h3{font-size:20px;letter-spacing:-.015em}
-.prow p{color:var(--muted);font-size:16px;line-height:1.65;text-wrap:pretty}
-@media (max-width:760px){
-  .prow{grid-template-columns:44px 1fr}
-  .prow p{grid-column:2}
-}
+/* ---------- pricing ---------- */
+.pricing{margin-top:160px}
+.pricing-head{position:relative;padding:24px 0 56px}
+.big-h{text-align:center;font-size:clamp(2.4rem,5vw,4rem);font-weight:500;letter-spacing:-.03em;line-height:1.1}
+.caret-h{height:.74em;vertical-align:-.05em;margin-left:.09em}
+.confetti{position:absolute;inset:0;pointer-events:none}
+.confetti i{position:absolute;display:block;border-radius:50%}
+@media (max-width:700px){.confetti{display:none}}
+.price{display:flex;align-items:baseline;gap:8px;margin-top:14px}
+.amount{font-size:38px;font-weight:500;letter-spacing:-.02em;line-height:1.1}
+.per{color:var(--gray);font-size:15px}
+.pricing .desc{margin-top:8px}
+.cta-stack{display:grid;gap:10px;margin-top:auto;padding-top:26px}
+.cta-stack .btn{width:100%}
+.pricing .divider{margin:24px 0 18px}
+.footnote{text-align:center;color:var(--gray);font-size:13px;margin-top:30px}
 
-/* ================= pricing ================= */
-.pricing{padding:clamp(72px,9vw,110px) 0;position:relative}
-.pricing .sec-head{margin-bottom:clamp(32px,5vw,48px)}
-.pricing h2{font-size:clamp(2rem,4.2vw,3.1rem);margin-top:14px;max-width:640px}
-.plans{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
-.plan{padding:34px 30px;display:flex;flex-direction:column}
-.plan + .plan{border-left:1px solid var(--hair)}
-.plan .tier{font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
-.pop{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);margin-bottom:10px}
-.pop .dot{width:7px;height:7px;border-radius:50%;background:var(--blue)}
-.pop-space{height:25px}
-.plan .price{display:flex;align-items:baseline;gap:9px;margin-top:14px}
-.plan .price .n{font-size:clamp(2rem,3vw,2.5rem);font-weight:600;letter-spacing:-.02em;line-height:1}
-.plan .price .per{font-size:13.5px;color:var(--faint)}
-.plan .desc{color:var(--muted);font-size:14.5px;line-height:1.6;margin-top:10px}
-.plan ul{margin:18px 0 26px;display:grid;gap:8px}
-.plan li{font-size:15px;color:var(--muted);line-height:1.55}
-.chip-soon{display:inline-block;border:1px solid var(--hair-2);background:var(--paper-2);color:var(--faint);font-size:10.5px;font-weight:600;padding:1px 8px;border-radius:999px;margin-left:6px;vertical-align:1px;white-space:nowrap}
-.plan .pill{margin-top:auto;align-self:flex-start}
-.plans-note{margin-top:22px;font-size:13.5px;color:var(--faint)}
-@media (max-width:860px){
-  .plans{grid-template-columns:1fr}
-  .plan + .plan{border-left:0;border-top:1px solid var(--hair)}
-  .pop-space{display:none}
-}
-
-/* ================= faq ================= */
-.faq-sec{padding:clamp(72px,9vw,110px) 0;background:var(--paper-2);border-top:1px solid var(--hair)}
-.faq{max-width:780px;margin:0 auto}
-.faq .sec-head{margin-bottom:clamp(28px,4vw,40px)}
-.faq h2{font-size:clamp(2rem,4.2vw,3.1rem);margin-top:14px}
+/* ---------- faq ---------- */
+.faq{margin-top:160px}
+.faq-inner{max-width:840px;margin:0 auto;padding:0 24px}
+.faq-h{font-size:clamp(1.7rem,3vw,2.4rem);font-weight:500;letter-spacing:-.02em;margin-bottom:26px}
 .faq details{border-top:1px solid var(--hair)}
 .faq details:last-of-type{border-bottom:1px solid var(--hair)}
-.faq summary{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:21px 2px;cursor:pointer;font-size:17.5px;font-weight:600;letter-spacing:-.01em;list-style:none}
+.faq summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 0;cursor:pointer;font-size:16px;font-weight:500;list-style:none}
 .faq summary::-webkit-details-marker{display:none}
-.faq summary:hover{color:var(--blue)}
-.faq .plus{color:var(--faint);transition:transform .25s var(--ease)}
-.faq details[open] .plus{transform:rotate(45deg)}
-.faq details p{padding:0 2px 24px;color:var(--muted);font-size:16px;line-height:1.7;max-width:64ch;text-wrap:pretty}
+.faq summary::after{content:"+";flex:none;color:var(--gray);font-size:22px;font-weight:300;line-height:1;transition:transform .18s ease}
+.faq details[open] summary::after{transform:rotate(45deg)}
+.faq .a{padding:0 0 22px;color:var(--gray);font-size:14.5px;line-height:1.65;max-width:64ch}
 
-/* ================= final cta ================= */
-.cta-band{position:relative;text-align:center;padding:clamp(84px,12vw,140px) 0;border-top:1px solid var(--hair)}
-.cta-band h2{font-size:clamp(2.5rem,6vw,4.5rem);letter-spacing:-.03em}
-.cta-band p{color:var(--muted);font-size:17.5px;margin-top:16px}
-.cta-band .pill{margin-top:32px}
-.d-star4{left:14%;top:26%}
-.d-star5{right:15%;bottom:22%}
-
-/* ================= footer ================= */
-footer{border-top:1px solid var(--hair);padding:32px 0 38px}
-.foot-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 28px}
-.foot-links{display:flex;flex-wrap:wrap;gap:24px}
-.foot-links a{font-size:14px;color:var(--muted);transition:color .18s}
+/* ---------- footer ---------- */
+.footer{margin-top:170px}
+.foot-top{display:flex;justify-content:space-between;align-items:flex-start;gap:44px;flex-wrap:wrap}
+.foot-line{font-size:clamp(2rem,4vw,3.4rem);font-weight:500;letter-spacing:-.03em;line-height:1.1}
+.foot-cols{display:flex;gap:72px}
+.foot-cols a{display:inline-block;color:var(--gray);font-size:14px;padding:5px 0}
+.foot-cols a:hover{color:var(--ink)}
+.foot-word-wrap{overflow:hidden;margin-top:76px}
+.foot-word{font-size:26vw;font-weight:500;letter-spacing:-.05em;line-height:.98;text-align:center;white-space:nowrap;margin-bottom:-.03em;color:var(--ink)}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding-top:18px;padding-bottom:26px}
+.foot-brand{font-size:14px;font-weight:500}
+.foot-links{display:flex;align-items:center;gap:10px;color:var(--gray);font-size:13px}
+.foot-links a{color:var(--gray)}
 .foot-links a:hover{color:var(--ink)}
-.foot-copy{font-size:13.5px;color:var(--faint)}
-.foot-attr{margin-top:14px;font-size:13px;color:var(--faint)}
 
-/* ================= reduced motion ================= */
 @media (prefers-reduced-motion:reduce){
-  .js .reveal{opacity:1;transform:none;transition:none}
-  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  .caret{animation:none}
+  .js .hero-sub{transition:none;transform:none}
+  .nav,.btn,.faq summary::after{transition:none}
 }
 </style>
 </head>
-<body id="top">
+<body>
 <a class="skip" href="#main">Skip to content</a>
 
-<!-- ============ 01 · nav ============ -->
-<header id="top-nav">
-  <div class="wrap nav-in">
-    <a class="brand" href="#top" aria-label="Mityu — home">
-      <svg width="25" height="25" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <rect x="10.5" y="10.5" width="17" height="17" rx="5" fill="#4B78FF" opacity=".45"/>
-        <rect x="4.5" y="4.5" width="17" height="17" rx="5" fill="#1E56FF"/>
-        <rect x="10.5" y="10.5" width="11" height="11" rx="3.5" fill="#0A2ECB"/>
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#" aria-label="Mityu home">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+        <rect x="1" y="1" width="16" height="16" rx="5.5" fill="#1E56FF"/>
+        <rect x="9" y="9" width="16" height="16" rx="5.5" fill="#4B78FF" fill-opacity="0.45"/>
+        <rect x="9" y="9" width="8" height="8" rx="2.5" fill="#0A2ECB"/>
       </svg>
-      <span>mityu</span>
+      <span class="wordmark">mityu</span>
     </a>
-    <nav class="nav-right" aria-label="Main">
-      <div class="nav-links">
-        <a href="#how">How it works</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#faq">FAQ</a>
-      </div>
-      <a class="pill pill-ink pill-sm" href="#pricing">Download</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
     </nav>
+    <a class="btn btn-black nav-cta" href="#" data-todo="checkout">Download
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4v11"/><path d="m6.5 10.5 5.5 5 5.5-5"/><path d="M4.5 20h15"/></svg>
+    </a>
   </div>
 </header>
 
 <main id="main">
 
-<!-- ============ 02 · hero ============ -->
-<section class="hero" aria-labelledby="hero-h">
-  <svg class="doodle o-22 d-orbit1" width="230" height="130" viewBox="0 0 230 130" fill="none" aria-hidden="true">
-    <ellipse cx="115" cy="65" rx="104" ry="45" stroke="currentColor" stroke-dasharray="5 8" transform="rotate(-8 115 65)"/>
-    <circle cx="46" cy="30" r="4" fill="currentColor"/>
-  </svg>
-  <svg class="doodle o-32 d-star1 float" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M12 2c.8 5.4 4.6 9.2 10 10-5.4.8-9.2 4.6-10 10-.8-5.4-4.6-9.2-10-10 5.4-.8 9.2-4.6 10-10Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
-  </svg>
-  <svg class="doodle o-28 d-planet1" width="66" height="66" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-    <circle cx="32" cy="32" r="13" stroke="currentColor"/>
-    <ellipse cx="32" cy="32" rx="26" ry="8.5" stroke="currentColor" stroke-dasharray="4 6" transform="rotate(-18 32 32)"/>
-  </svg>
-  <svg class="doodle o-22 d-star2" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M12 2c.8 5.4 4.6 9.2 10 10-5.4.8-9.2 4.6-10 10-.8-5.4-4.6-9.2-10-10 5.4-.8 9.2-4.6 10-10Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-  </svg>
-  <div class="wrap">
-    <p class="kicker reveal">Meeting intelligence · 100% on-device</p>
-    <h1 id="hero-h" class="reveal" style="--d:.06s">Your meetings, <span class="grad">understood</span>.<br>Never uploaded.</h1>
-    <p class="lede reveal" style="--d:.12s">Mityu records, transcribes, and reports on your meetings entirely on your own machine — no bot joins your call, no audio leaves your device, no account required.</p>
-    <div class="hero-cta reveal" style="--d:.18s">
-      <a class="pill pill-ink pill-lg" href="#pricing">Buy now — $79</a>
-      <a class="pill pill-line pill-lg" href="#pricing">Free 14-day trial</a>
+  <!-- ================= hero ================= -->
+  <section class="hero" aria-label="Introduction">
+    <h1 class="headline">
+      <span class="sr-only">Every meeting, understood.</span>
+      <span aria-hidden="true"><span class="typed" id="typed">Every meeting, understood.</span><span class="caret"></span></span>
+    </h1>
+    <div class="hero-sub" id="heroSub">
+      <p class="sub">Mityu records, transcribes, and reports on your meetings — entirely on your machine. No bots. No uploads. No account.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-black" href="#" data-todo="checkout">Download
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4v11"/><path d="m6.5 10.5 5.5 5 5.5-5"/><path d="M4.5 20h15"/></svg>
+        </a>
+        <a class="btn btn-gray" href="#pricing">See pricing</a>
+      </div>
+      <p class="platforms">Windows 10/11 · macOS 13+ · Linux experimental</p>
     </div>
-    <p class="plat-note reveal" style="--d:.24s">Windows · macOS — Linux experimental</p>
-  </div>
-</section>
+  </section>
 
-<!-- ============ 03 · floating product window ============ -->
-<section class="showcase" aria-label="Product preview">
-  <svg class="orbit-behind" viewBox="0 0 1300 460" fill="none" aria-hidden="true">
-    <ellipse cx="650" cy="230" rx="628" ry="204" stroke="currentColor" stroke-dasharray="7 11"/>
-    <circle cx="140" cy="90" r="5" fill="currentColor"/>
-  </svg>
-  <div class="wrap window-wrap">
-    <figure class="reveal" style="--d:.1s">
-      <div class="window">
-        <div class="titlebar">
-          <span class="dots" aria-hidden="true"><span></span><span></span><span></span></span>
-          <span class="tb-title">Weekly ops sync — Mityu</span>
-          <span class="tb-pill"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Local · Encrypted</span>
+  <!-- ================= product window ================= -->
+  <section class="mock" id="how">
+    <h2 class="sr-only">How it works</h2>
+    <div class="window">
+      <div class="win-left">
+        <p class="pane-label">Transcript</p>
+        <div class="t-line"><span class="t-time">12:04</span><p>Okay, let’s lock the launch. I’d rather slip a week than ship the old onboarding.</p></div>
+        <div class="t-line"><span class="t-time">12:19</span><p>Design can’t finish until the final copy lands. Friday is the real deadline.</p></div>
+        <div class="t-line hl"><span class="t-time">12:42</span><div><p>Amira will send the revised budget to finance before Thursday’s review.</p><span class="t-tag">Linked source</span></div></div>
+        <div class="t-line"><span class="t-time">13:05</span><p>Then we confirm the new date with vendors and move the check-in to Thursday.</p></div>
+      </div>
+      <div class="win-right">
+        <p class="pane-label">Report</p>
+        <div class="chip-row">
+          <span class="chip">Duration 42:18</span>
+          <span class="chip">Words 6,204</span>
+          <span class="chip">Segments 87</span>
         </div>
-        <div class="window-body">
-          <div class="pane pane-rail">
-            <div class="pane-head">
-              <h3>Transcript</h3>
-              <span class="rec"><span class="rec-dot" aria-hidden="true"></span>Recording 42:10</span>
-            </div>
-            <div class="t-row"><span class="t-time">12:18</span><p><strong>Selin</strong> Let’s lock the pilot rollout for the week of May 4.</p></div>
-            <div class="t-row"><span class="t-time">12:24</span><p><strong>Marco</strong> Facilities still needs the safety checklist before Friday.</p></div>
-            <div class="t-row"><span class="t-time">12:31</span><p><strong>Ayşe</strong> Budget stays at 40k unless legal flags the vendor terms.</p></div>
-            <div class="t-row linked"><span class="t-time">12:42</span><p><strong>Deniz</strong> I’ll take the vendor review and report back on Tuesday.<span class="tag-src">Linked source</span></p></div>
+        <div class="chip-row">
+          <span class="chip">Kickoff</span>
+          <span class="chip">Budget review</span>
+          <span class="chip">Next steps</span>
+        </div>
+        <div class="report-block">
+          <div class="sum-head">
+            <h3>Summary</h3>
+            <span class="chip-ai">AI-generated · review required</span>
           </div>
-          <div class="pane pane-report">
-            <div class="pane-head"><h3>Report</h3></div>
-            <div class="stats">
-              <div class="stat"><span class="k">Duration</span><span class="v">42:10</span></div>
-              <div class="stat"><span class="k">Words</span><span class="v">6,480</span></div>
-              <div class="stat"><span class="k">Segments</span><span class="v">214</span></div>
-            </div>
-            <p class="mini-label">Chapters</p>
-            <ul class="chaps">
-              <li><span class="c-t">00:00</span>Kickoff &amp; goals</li>
-              <li><span class="c-t">14:20</span>Vendor review</li>
-              <li><span class="c-t">31:05</span>Rollout plan</li>
-            </ul>
-            <p class="mini-label">Summary</p>
-            <div class="sum-card">
-              <div class="row">
-                <span class="t">Draft summary</span>
-                <span class="chip-ai"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2c.8 5.4 4.6 9.2 10 10-5.4.8-9.2 4.6-10 10-.8-5.4-4.6-9.2-10-10 5.4-.8 9.2-4.6 10-10Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>AI-generated · review required</span>
-              </div>
-              <p>Pilot rollout confirmed for the week of May 4. Budget capped at 40k pending legal review of vendor terms; safety checklist due to facilities by Friday.</p>
-            </div>
-            <p class="mini-label">Action items</p>
-            <div class="ai-item">
-              <span class="ck on" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-              <div><p class="txt">Review vendor terms with legal</p><p class="meta"><span>Deniz · Tue</span><span class="src-link">→ 12:42 source</span></p></div>
-            </div>
-            <div class="ai-item">
-              <span class="ck" aria-hidden="true"></span>
-              <div><p class="txt">Send safety checklist to facilities</p><p class="meta"><span>Marco · Fri</span><span class="src-link">→ 08:56 source</span></p></div>
-            </div>
-            <div class="approve-row">
-              <span class="pill pill-ink pill-xs">Approve summary</span>
-              <span class="approve-count">1 of 3 approved</span>
-            </div>
-          </div>
+          <p>The team agreed to move the launch to March 21, pending vendor confirmation. The revised budget goes to finance this week, and design is blocked on final copy until Friday.</p>
+        </div>
+        <div class="report-block">
+          <h3>Action items</h3>
+          <div class="item"><span class="box"></span><p>Send the revised budget to finance — Amira <span class="src">→ 12:42 source</span></p></div>
+          <div class="item"><span class="box"></span><p>Confirm the new launch date with vendors <span class="src">→ 13:05 source</span></p></div>
+        </div>
+        <div class="approve-row">
+          <span class="btn btn-black btn-sm">Approve summary</span>
+          <span class="approved">1 of 3 approved</span>
         </div>
       </div>
-      <figcaption>Simplified preview. Every AI-generated line stays an editable draft — linked to its exact transcript moment — until you approve it.</figcaption>
-    </figure>
-  </div>
-</section>
-
-<!-- ============ 04 · feature passages ============ -->
-<section id="how" class="passages" aria-label="How it works">
-  <div class="wrap" style="position:relative">
-    <svg class="doodle o-22 d-star3" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 2c.8 5.4 4.6 9.2 10 10-5.4.8-9.2 4.6-10 10-.8-5.4-4.6-9.2-10-10 5.4-.8 9.2-4.6 10-10Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
-    </svg>
-
-    <article class="passage reveal">
-      <div class="pass-copy">
-        <p class="kicker">Capture</p>
-        <h2>Records anything you can hear.</h2>
-        <p class="body">Mityu captures system audio and your microphone directly on your device, so it works with Zoom, Meet, Teams, Webex — or no app at all, for conversations in the field. Nothing joins the meeting, nothing appears in the participant list: it is not a bot. A clear indicator stays visible whenever recording is on.</p>
-      </div>
-      <div class="pass-frag">
-        <div class="frag">
-          <span class="rec"><span class="rec-dot" aria-hidden="true"></span>Recording 12:42</span>
-          <svg class="wave" viewBox="0 0 160 40" fill="none" preserveAspectRatio="none" aria-hidden="true">
-            <path d="M3 15v10M10 11v18M17 7v26M24 13v14M31 5v30M38 10v20M45 16v8M52 8v24M73 9v22M80 14v12M87 6v28M94 11v18M101 16v8M108 8v24M115 5v30M122 13v14M129 10v20M136 7v26M143 15v10M150 11v18M157 17v6" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity=".45"/>
-            <path d="M59 4v32M66 12v16" stroke="#1E56FF" stroke-width="3" stroke-linecap="round"/>
-          </svg>
-          <p class="frag-meta">system + microphone · 48 kHz</p>
-        </div>
-      </div>
-    </article>
-
-    <article class="passage reveal">
-      <div class="pass-copy">
-        <p class="kicker">Transcribe</p>
-        <h2>Transcribed on your silicon.</h2>
-        <p class="body">Whisper large-v3 or NVIDIA Parakeet run locally on your hardware, GPU-accelerated where available. Unplug the network and everything still works — recording, transcription, summaries, search. Your audio never leaves the machine, and your library is encrypted at rest with SQLCipher.</p>
-      </div>
-      <div class="pass-frag">
-        <div class="frag">
-          <div class="m-row"><span class="m-time">00:04</span><p>Okay — budget first, then the vendor list.</p></div>
-          <div class="m-row"><span class="m-time">00:11</span><p>Facilities flagged the checklist again.</p></div>
-          <div class="m-row"><span class="m-time">00:19</span><p>Let’s lock May 4 for the pilot.</p></div>
-          <p class="frag-meta">whisper-large-v3 · local · 0 bytes uploaded</p>
-        </div>
-      </div>
-    </article>
-
-    <article class="passage reveal">
-      <div class="pass-copy">
-        <p class="kicker">Approve</p>
-        <h2>AI you approve, line by line.</h2>
-        <p class="body">Every summary sentence and action item arrives as an editable draft, labeled “AI-generated · review required” and linked to the exact transcript segment behind it — EU AI Act Article 50 transparency by construction. Nothing is final until you approve it. Summarize with local models via Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter — keys live in your OS keychain.</p>
-      </div>
-      <div class="pass-frag">
-        <div class="frag">
-          <span class="chip-ai"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2c.8 5.4 4.6 9.2 10 10-5.4.8-9.2 4.6-10 10-.8-5.4-4.6-9.2-10-10 5.4-.8 9.2-4.6 10-10Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>AI-generated · review required</span>
-          <p class="sum-line">Pilot rollout confirmed for the week of May 4; budget capped at 40k pending legal review.</p>
-          <div class="approve-mini">
-            <span class="pill pill-ink pill-xs">Approve</span>
-            <span class="src-link">→ 31:05 source</span>
-          </div>
-        </div>
-      </div>
-    </article>
-
-  </div>
-</section>
-
-<!-- ============ 05 · principles ============ -->
-<section class="principles" aria-labelledby="principles-h">
-  <div class="wrap">
-    <p class="kicker" id="principles-h">Principles</p>
-    <div class="prow reveal">
-      <span class="num" aria-hidden="true">01</span>
-      <h3>Local-first, forever</h3>
-      <p>Capture, transcription, and storage run on your device — offline, encrypted at rest. Servers are optional, never required.</p>
     </div>
-    <div class="prow reveal" style="--d:.08s">
-      <span class="num" aria-hidden="true">02</span>
-      <h3>Humans approve AI</h3>
-      <p>Every AI line stays a labeled, source-linked, editable draft until a person approves it. No silent automation.</p>
-    </div>
-    <div class="prow reveal" style="--d:.16s">
-      <span class="num" aria-hidden="true">03</span>
-      <h3>No lock-in</h3>
-      <p>Open export and your data in a local database you control — leave any time, take everything.</p>
-    </div>
-  </div>
-</section>
+  </section>
 
-<!-- ============ 06 · pricing ============ -->
-<section id="pricing" class="pricing" aria-labelledby="pricing-h">
-  <div class="wrap">
-    <div class="sec-head reveal">
-      <p class="kicker">Launch pricing</p>
-      <h2 id="pricing-h">Buy once. Own it.</h2>
-    </div>
-    <div class="plans reveal" style="--d:.08s">
-      <div class="plan">
-        <span class="pop-space" aria-hidden="true"></span>
-        <p class="tier">Trial</p>
-        <p class="price"><span class="n">Free</span><span class="per">14 days</span></p>
-        <p class="desc">The full product, not a demo.</p>
-        <ul>
-          <li>All features unlocked</li>
-          <li>Local transcription &amp; reports</li>
-          <li>No account, no card</li>
+  <!-- ================= features ================= -->
+  <section class="features container" aria-label="Why Mityu">
+    <h2 class="sr-only">Why Mityu</h2>
+    <div class="grid3">
+      <article class="card">
+        <span class="badge">On-device</span>
+        <h3>Transcription that never leaves.</h3>
+        <p class="desc">Recording and transcription run locally with Whisper large-v3 or Parakeet — no network needed, from capture to finished report.</p>
+        <div class="divider"></div>
+        <ul class="checks">
+          <li><span class="ck">✓</span><span>Whisper large-v3 &amp; Parakeet, fully offline</span></li>
+          <li><span class="ck">✓</span><span>SQLCipher encryption at rest</span></li>
+          <li><span class="ck">✓</span><span>Opt-in PII redaction</span></li>
         </ul>
-        <a class="pill pill-line" href="#" data-todo="release-download">Start free trial</a>
-      </div>
-      <div class="plan">
-        <p class="pop"><span class="dot" aria-hidden="true"></span>Most popular</p>
-        <p class="tier">Pro</p>
-        <p class="price"><span class="n">$79</span><span class="per">one-time · per user</span></p>
-        <p class="desc">A license, not a subscription.</p>
-        <ul>
-          <li>Use on 2 devices</li>
-          <li>1 year of app updates</li>
-          <li>Email support</li>
+      </article>
+      <article class="card">
+        <span class="badge">Any meeting app</span>
+        <h3>No bot joins your call.</h3>
+        <p class="desc">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Meet, or Teams without joining the meeting.</p>
+        <div class="divider"></div>
+        <ul class="checks">
+          <li><span class="ck">✓</span><span>Zoom, Google Meet, Microsoft Teams</span></li>
+          <li><span class="ck">✓</span><span>Windows 10/11 · macOS 13+</span></li>
+          <li><span class="ck">✓</span><span>Linux experimental, microphone-only</span></li>
         </ul>
-        <a class="pill pill-ink" href="#" data-todo="checkout">Buy Pro — $79</a>
-      </div>
-      <div class="plan">
-        <span class="pop-space" aria-hidden="true"></span>
-        <p class="tier">Business</p>
-        <p class="price"><span class="n">$59</span><span class="per">per user · per year</span></p>
-        <p class="desc">For teams that want support and scale.</p>
-        <ul>
-          <li>Everything in Pro, per seat</li>
-          <li>Priority support &amp; volume licensing</li>
-          <li>Team workspace<span class="chip-soon">coming soon</span></li>
+      </article>
+      <article class="card">
+        <span class="badge">Human-approved</span>
+        <h3>Drafts until you approve.</h3>
+        <p class="desc">Every AI-generated line is a labeled draft linked to its source in the transcript. Nothing is final until you sign it off.</p>
+        <div class="divider"></div>
+        <ul class="checks">
+          <li><span class="ck">✓</span><span>“AI-generated” label on every draft</span></li>
+          <li><span class="ck">✓</span><span>Source links to exact timestamps</span></li>
+          <li><span class="ck">✓</span><span>BYOK: Ollama, OpenAI, Anthropic, Groq, OpenRouter</span></li>
         </ul>
-        <a class="pill pill-ink" href="#" data-todo="checkout">Get Business</a>
-      </div>
+      </article>
     </div>
-    <p class="plans-note reveal" style="--d:.14s">14-day money-back guarantee.</p>
-  </div>
-</section>
+  </section>
 
-<!-- ============ 07 · faq ============ -->
-<section id="faq" class="faq-sec" aria-labelledby="faq-h">
-  <div class="wrap">
-    <div class="faq">
-      <div class="sec-head reveal">
-        <p class="kicker">FAQ</p>
-        <h2 id="faq-h">Fair questions.</h2>
+  <!-- ================= pricing ================= -->
+  <section class="pricing container" id="pricing">
+    <div class="pricing-head">
+      <div class="confetti" aria-hidden="true">
+        <i style="left:5%;top:12%;width:5px;height:5px;background:#1E56FF;opacity:.5"></i>
+        <i style="left:11%;top:64%;width:4px;height:4px;background:#EA4335;opacity:.45"></i>
+        <i style="left:17%;top:30%;width:3px;height:3px;background:#FBBC05;opacity:.55"></i>
+        <i style="left:23%;top:82%;width:4px;height:4px;background:#34A853;opacity:.5"></i>
+        <i style="left:29%;top:6%;width:3px;height:3px;background:#EA4335;opacity:.4"></i>
+        <i style="left:40%;top:2%;width:4px;height:4px;background:#1E56FF;opacity:.45"></i>
+        <i style="left:55%;top:0;width:3px;height:3px;background:#34A853;opacity:.5"></i>
+        <i style="left:66%;top:8%;width:4px;height:4px;background:#FBBC05;opacity:.45"></i>
+        <i style="left:73%;top:28%;width:5px;height:5px;background:#FBBC05;opacity:.5"></i>
+        <i style="left:79%;top:74%;width:4px;height:4px;background:#1E56FF;opacity:.55"></i>
+        <i style="left:85%;top:16%;width:3px;height:3px;background:#EA4335;opacity:.45"></i>
+        <i style="left:90%;top:58%;width:6px;height:6px;background:#34A853;opacity:.4"></i>
+        <i style="left:94%;top:32%;width:4px;height:4px;background:#FBBC05;opacity:.5"></i>
+        <i style="left:97%;top:76%;width:3px;height:3px;background:#1E56FF;opacity:.5"></i>
       </div>
-      <div class="reveal" style="--d:.08s">
-        <details>
-          <summary>Is my audio uploaded anywhere?<svg class="plus" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
-          <p>No. Recording, transcription, and storage happen on your device, and the app works with the network unplugged. Data leaves your machine only if you explicitly configure a cloud model with your own API key — and even then it is transcript text, never audio. Analytics are off unless you opt in and never include meeting content; opt-in redaction can scrub names, numbers, and emails.</p>
-        </details>
-        <details>
-          <summary>Does Mityu join my calls as a bot?<svg class="plus" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
-          <p>No. It captures the audio already playing on your computer plus your microphone. Nothing joins the meeting and nothing appears in the participant list. A visible indicator is always on while recording — following local consent rules when you record others is on you.</p>
-        </details>
-        <details>
-          <summary>Which platforms are supported?<svg class="plus" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
-          <p>Windows 10/11 and macOS 13+ with full system-audio capture (macOS asks once for the screen-recording permission — that is how the OS gates system audio). Linux is experimental and microphone-only for now.</p>
-        </details>
-        <details>
-          <summary>Does it really work offline?<svg class="plus" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
-          <p>Yes — fully. Record, transcribe, summarize with local models, search, and export with no connection at all. You only need internet for optional cloud models and update checks.</p>
-        </details>
-        <details>
-          <summary>Which AI models does it use — do I need an API key?<svg class="plus" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
-          <p>No key required. Transcription runs locally with Whisper large-v3 or NVIDIA Parakeet; summaries run locally via Ollama or the built-in pipeline. Prefer a cloud model? Bring your own key for OpenAI, Anthropic, Groq, or OpenRouter — keys are stored in your OS keychain, never in plaintext.</p>
-        </details>
-        <details>
-          <summary>What is the refund policy?<svg class="plus" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
-          <p>Every purchase includes a 14-day money-back guarantee. If Mityu is not for you, email support within 14 days for a full refund — no questions asked.</p>
-        </details>
-      </div>
+      <h2 class="big-h">Choose the plan.<span class="caret caret-h" aria-hidden="true"></span></h2>
     </div>
-  </div>
-</section>
+    <div class="grid3">
+      <article class="card">
+        <span class="badge">Get a taste</span>
+        <h3>Trial</h3>
+        <p class="price"><span class="amount">$0</span> <span class="per">— 14 days</span></p>
+        <p class="desc">Everything, free for 14 days.</p>
+        <div class="cta-stack">
+          <a class="btn btn-black" href="#" data-todo="checkout">Download</a>
+        </div>
+        <div class="divider"></div>
+        <p class="includes-label">Plan includes:</p>
+        <ul class="checks">
+          <li><span class="ck">✓</span><span>Every feature</span></li>
+          <li><span class="ck">✓</span><span>Works fully offline</span></li>
+          <li><span class="ck">✓</span><span>No account required</span></li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="badge">Most popular</span>
+        <h3>Pro</h3>
+        <p class="price"><span class="amount">$79</span> <span class="per">one-time</span></p>
+        <p class="desc">One license, yours to keep.</p>
+        <div class="cta-stack">
+          <a class="btn btn-black" href="#" data-todo="checkout">Buy Pro</a>
+          <a class="btn btn-gray2" href="#" data-todo="checkout">Download trial</a>
+        </div>
+        <div class="divider"></div>
+        <p class="includes-label">Plan includes:</p>
+        <ul class="checks">
+          <li><span class="ck">✓</span><span>2 devices</span></li>
+          <li><span class="ck">✓</span><span>1 year of updates</span></li>
+          <li><span class="ck">✓</span><span>Email support</span></li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="badge">For teams</span>
+        <h3>Business</h3>
+        <p class="price"><span class="amount">$59</span> <span class="per">/user /year</span></p>
+        <p class="desc">Roll Mityu out across your team.</p>
+        <div class="cta-stack">
+          <a class="btn btn-black" href="#" data-todo="checkout">Contact us</a>
+        </div>
+        <div class="divider"></div>
+        <p class="includes-label">Plan includes:</p>
+        <ul class="checks">
+          <li><span class="ck">✓</span><span>Priority support</span></li>
+          <li><span class="ck">✓</span><span>Volume licensing</span></li>
+          <li><span class="ck">✓</span><span>Team workspace coming soon<sup class="ast">*</sup></span></li>
+        </ul>
+      </article>
+    </div>
+    <p class="footnote">14-day money-back guarantee.</p>
+  </section>
 
-<!-- ============ 08 · final cta ============ -->
-<section class="cta-band" aria-labelledby="cta-h">
-  <svg class="doodle o-28 d-star4" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M12 2c.8 5.4 4.6 9.2 10 10-5.4.8-9.2 4.6-10 10-.8-5.4-4.6-9.2-10-10 5.4-.8 9.2-4.6 10-10Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
-  </svg>
-  <svg class="doodle o-22 d-star5" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M12 2c.8 5.4 4.6 9.2 10 10-5.4.8-9.2 4.6-10 10-.8-5.4-4.6-9.2-10-10 5.4-.8 9.2-4.6 10-10Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-  </svg>
-  <div class="wrap reveal">
-    <h2 id="cta-h">Escape the cloud.</h2>
-    <p>Your conversations belong on your machine.</p>
-    <a class="pill pill-ink pill-lg" href="#pricing">Get Mityu</a>
-  </div>
-</section>
+  <!-- ================= faq ================= -->
+  <section class="faq" id="faq">
+    <div class="faq-inner">
+      <h2 class="faq-h">Frequently asked questions</h2>
+      <details>
+        <summary>Is my audio uploaded anywhere?</summary>
+        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize is sent to that provider — your audio never leaves the machine.</p>
+      </details>
+      <details>
+        <summary>Does a bot join my meetings?</summary>
+        <p class="a">No. Mityu listens to your microphone and system audio locally. Nothing joins the call, and participants see no extra attendee.</p>
+      </details>
+      <details>
+        <summary>Which platforms are supported?</summary>
+        <p class="a">Windows 10/11 and macOS 13 or later. Linux support is experimental and currently captures microphone audio only.</p>
+      </details>
+      <details>
+        <summary>Does it work offline?</summary>
+        <p class="a">Yes. Capture, transcription, and local summaries work with no network at all. An internet connection is only used if you bring your own cloud model key.</p>
+      </details>
+      <details>
+        <summary>Which models and API keys can I use?</summary>
+        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use a local model through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter.</p>
+      </details>
+      <details>
+        <summary>What’s the refund policy?</summary>
+        <p class="a">Every purchase comes with a 14-day money-back guarantee. If Mityu isn’t for you, write to us within 14 days and we’ll refund it in full.</p>
+      </details>
+    </div>
+  </section>
 
 </main>
 
-<!-- ============ 09 · footer ============ -->
-<footer>
-  <div class="wrap">
-    <div class="foot-row">
-      <a class="brand" href="#top" aria-label="Mityu — back to top">
-        <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <rect x="10.5" y="10.5" width="17" height="17" rx="5" fill="#4B78FF" opacity=".45"/>
-          <rect x="4.5" y="4.5" width="17" height="17" rx="5" fill="#1E56FF"/>
-          <rect x="10.5" y="10.5" width="11" height="11" rx="3.5" fill="#0A2ECB"/>
-        </svg>
-        <span>mityu</span>
-      </a>
-      <div class="foot-links">
-        <a href="#">Privacy</a>
-        <a href="#">Terms</a>
-        <a href="#">GitHub</a>
-      </div>
-      <p class="foot-copy">© 2026 bluedev</p>
+<!-- ================= footer ================= -->
+<footer class="footer">
+  <div class="container foot-top">
+    <p class="foot-line">Never uploaded.</p>
+    <nav class="foot-cols" aria-label="Footer">
+      <ul>
+        <li><a href="#" data-todo="checkout">Download</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+      <ul>
+        <li><a href="#">Privacy</a></li>
+        <li><a href="#">Terms</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="foot-word-wrap">
+    <div class="foot-word" aria-hidden="true">mityu</div>
+  </div>
+  <div class="container foot-bottom">
+    <span class="foot-brand">bluedev</span>
+    <div class="foot-links">
+      <a href="#">Privacy</a>
+      <span aria-hidden="true">·</span>
+      <a href="#">Terms</a>
     </div>
   </div>
 </footer>
 
 <script>
-(function(){
-  var nav=document.getElementById("top-nav");
-  function onScroll(){nav.classList.toggle("scrolled",window.scrollY>8)}
-  onScroll();
-  addEventListener("scroll",onScroll,{passive:true});
+(function () {
+  var doc = document;
+  doc.documentElement.classList.add('js');
 
-  var els=document.querySelectorAll(".reveal");
-  if(!("IntersectionObserver" in window)||matchMedia("(prefers-reduced-motion: reduce)").matches){
-    els.forEach(function(el){el.classList.add("in")});
-  }else{
-    var io=new IntersectionObserver(function(entries){
-      entries.forEach(function(en){
-        if(en.isIntersecting){en.target.classList.add("in");io.unobserve(en.target)}
-      });
-    },{rootMargin:"0px 0px -8% 0px",threshold:.06});
-    els.forEach(function(el){io.observe(el)});
+  var typed = doc.getElementById('typed');
+  var sub = doc.getElementById('heroSub');
+  var nav = doc.getElementById('nav');
+
+  var reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
+
+  function onScroll() { if (nav) { nav.classList.toggle('scrolled', (window.scrollY || 0) > 8); } }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  function reveal() { if (sub) { sub.classList.add('show'); } }
+
+  var phrases = [
+    'Every meeting, understood.',
+    'Transcribed on your device.',
+    'AI you approve, line by line.'
+  ];
+
+  if (!typed || reduce) { reveal(); return; }
+
+  var pi = 0, ci = 0, deleting = false, revealed = false;
+  typed.textContent = '';
+
+  function tick() {
+    var p = phrases[pi];
+    if (!deleting) {
+      ci += 1;
+      typed.textContent = p.slice(0, ci);
+      if (ci === p.length) {
+        if (!revealed) { revealed = true; reveal(); }
+        deleting = true;
+        window.setTimeout(tick, 2300);
+      } else {
+        window.setTimeout(tick, 52 + Math.random() * 46);
+      }
+    } else {
+      ci -= 1;
+      typed.textContent = p.slice(0, ci);
+      if (ci === 0) {
+        deleting = false;
+        pi = (pi + 1) % phrases.length;
+        window.setTimeout(tick, 480);
+      } else {
+        window.setTimeout(tick, 26);
+      }
+    }
   }
+  window.setTimeout(tick, 380);
 })();
 </script>
 </body>
