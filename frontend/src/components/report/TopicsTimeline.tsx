@@ -99,8 +99,13 @@ export function TopicsTimeline({
           <Hash className="h-3.5 w-3.5" aria-hidden />
           Chapters
         </span>
-        {/* Segmented timeline: width ∝ duration; click → jump to the chapter start. */}
-        <div className="flex h-6 flex-1 items-stretch gap-1" role="list" aria-label="Meeting chapters">
+        {/* Chapter chips: content-hugging (proportional widths made short chapters
+            unreadable), horizontally scrollable when they overflow; click → jump. */}
+        <div
+          className="flex flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:thin]"
+          role="list"
+          aria-label="Meeting chapters"
+        >
           {chapters.map((c, i) => (
             <button
               key={`${c.firstSegmentId}-${i}`}
@@ -108,11 +113,10 @@ export function TopicsTimeline({
               type="button"
               onClick={() => onJumpToSegment?.(c.firstSegmentId, c.startSec)}
               title={`${fmt(c.startSec)} — ${c.label}`}
-              style={{ flexGrow: Math.max(1, Math.round(((c.endSec - c.startSec) / total) * 100)) }}
-              className="group min-w-[28px] basis-0 overflow-hidden rounded-md bg-muted px-2 text-left transition-colors hover:bg-accent"
+              className="group inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-border bg-card pl-2 pr-2.5 transition-colors hover:border-primary/40 hover:bg-accent"
             >
-              <span className="block truncate text-[11px] leading-6 text-muted-foreground group-hover:text-accent-foreground">
-                <span className="mr-1 tabular-nums text-muted-foreground/70">{fmt(c.startSec)}</span>
+              <span className="text-[11px] tabular-nums text-primary">{fmt(c.startSec)}</span>
+              <span className="max-w-[180px] truncate text-[11px] text-muted-foreground group-hover:text-foreground">
                 {c.label}
               </span>
             </button>

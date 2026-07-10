@@ -287,7 +287,7 @@ export function SummaryPanel({
     // border, and responsive show/hide (mobile tab + desktop collapse).
     // Subtle brand tint marks this whole panel as the AI zone (the identity label
     // was dropped from the toolbar to de-crowd it); cards render on top in bg-card.
-    <div className="flex w-full h-full min-w-0 flex-col bg-accent/25 dark:bg-accent/10 overflow-hidden">
+    <div spellCheck={false} className="flex w-full h-full min-w-0 flex-col bg-accent/25 dark:bg-accent/10 overflow-hidden">
       {/* Panel toolbar — single row, same height/axis as the transcript panel's
           toolbar (py-2.5, border-b). Collapse sits on the leading edge (the panel
           folds away to the right); actions keep the right side. The generator
