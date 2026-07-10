@@ -11,7 +11,7 @@ import { SummaryUpdaterButtonGroup } from './SummaryUpdaterButtonGroup';
 import Analytics from '@/lib/analytics';
 import { useEffect, useRef, useState, RefObject } from 'react';
 import { toast } from 'sonner';
-import { Languages, ChevronDown, PanelRightClose } from 'lucide-react';
+import { Languages, ChevronDown, PanelRightClose, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { LanguagePickerPopover } from '@/components/LanguagePickerPopover';
@@ -265,7 +265,7 @@ export function SummaryPanel({
         >
           <Languages size={18} />
           <span className="hidden lg:inline">{effectiveLangLabel}</span>
-          <ChevronDown size={14} className="text-gray-400" />
+          <ChevronDown size={14} className="text-muted-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -285,75 +285,70 @@ export function SummaryPanel({
   return (
     // Layout-neutral root: the wrapper in page-content.tsx owns width, the left
     // border, and responsive show/hide (mobile tab + desktop collapse).
-    <div className="flex w-full h-full min-w-0 flex-col bg-white overflow-hidden">
-      {/* Title area */}
-      <div className="p-4 border-b border-gray-200">
-        {/* <EditableTitle
-          title={meetingTitle}
-          isEditing={isEditingTitle}
-          onStartEditing={onStartEditTitle}
-          onFinishEditing={onFinishEditTitle}
-          onChange={onTitleChange}
-        /> */}
+    <div className="flex w-full h-full min-w-0 flex-col bg-background overflow-hidden">
+      {/* Panel toolbar — single row, same height/axis as the transcript panel's
+          toolbar (px-4 py-2.5, border-b) so the two panel headers align. Identity
+          on the left; the generator/updater actions + collapse on the right. The
+          generator group renders in EVERY state (it adapts via its props), which
+          keeps the toolbar from jumping between states. */}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground">
+            <Sparkles className="h-3.5 w-3.5" aria-hidden />
+          </span>
+          <h2 className="truncate text-sm font-semibold text-foreground">Summary</h2>
+        </div>
 
-        {/* Collapse chevron (desktop only): lets a user who just wants the
-            transcript reclaim the full width. Rendered even in the empty state
-            so the panel is always collapsible. State lives in page-content. */}
-        {showCollapseButton && onCollapse && (
-          <div className="hidden md:flex items-center justify-end w-full mb-2">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <SummaryGeneratorButtonGroup
+            modelConfig={modelConfig}
+            setModelConfig={setModelConfig}
+            onSaveModelConfig={onSaveModelConfig}
+            onGenerateSummary={onGenerateSummary}
+            onStopGeneration={onStopGeneration}
+            customPrompt={customPrompt}
+            summaryStatus={summaryStatus}
+            availableTemplates={availableTemplates}
+            selectedTemplate={selectedTemplate}
+            onTemplateSelect={onTemplateSelect}
+            hasTranscripts={transcripts.length > 0}
+            hasSummary={!!aiSummary}
+            isModelConfigLoading={isModelConfigLoading}
+            onOpenModelSettings={onOpenModelSettings}
+            languageSlot={transcripts.length > 0 ? languageSlot : undefined}
+          />
+
+          {aiSummary && !isSummaryLoading && (
+            <SummaryUpdaterButtonGroup
+              isSaving={isSaving}
+              isDirty={isTitleDirty || (summaryRef.current?.isDirty || false)}
+              onSave={onSaveAll}
+              onCopy={onCopySummary}
+              onFind={() => {
+                // TODO: Implement find in summary functionality
+                console.log('Find in summary clicked');
+              }}
+              onOpenFolder={onOpenFolder}
+              hasSummary={!!aiSummary}
+            />
+          )}
+
+          {/* Collapse chevron (desktop only): lets a user who just wants the
+              transcript reclaim the full width. Always rendered so the panel is
+              collapsible in every state. State lives in page-content. */}
+          {showCollapseButton && onCollapse && (
             <Button
               variant="ghost"
               size="sm"
+              className="hidden md:inline-flex text-muted-foreground hover:text-foreground"
               onClick={onCollapse}
               title="Collapse summary panel"
               aria-label="Collapse summary panel"
             >
               <PanelRightClose size={18} />
             </Button>
-          </div>
-        )}
-
-        {/* Button groups - only show when summary exists */}
-        {aiSummary && !isSummaryLoading && (
-          <div className="flex items-center justify-center w-full pt-0 gap-2">
-            {/* Left-aligned: Summary Generator Button Group */}
-            <div className="flex-shrink-0">
-              <SummaryGeneratorButtonGroup
-                modelConfig={modelConfig}
-                setModelConfig={setModelConfig}
-                onSaveModelConfig={onSaveModelConfig}
-                onGenerateSummary={onGenerateSummary}
-                onStopGeneration={onStopGeneration}
-                customPrompt={customPrompt}
-                summaryStatus={summaryStatus}
-                availableTemplates={availableTemplates}
-                selectedTemplate={selectedTemplate}
-                onTemplateSelect={onTemplateSelect}
-                hasTranscripts={transcripts.length > 0}
-                hasSummary={!!aiSummary}
-                isModelConfigLoading={isModelConfigLoading}
-                onOpenModelSettings={onOpenModelSettings}
-                languageSlot={languageSlot}
-              />
-            </div>
-
-            {/* Right-aligned: Summary Updater Button Group */}
-            <div className="flex-shrink-0">
-              <SummaryUpdaterButtonGroup
-                isSaving={isSaving}
-                isDirty={isTitleDirty || (summaryRef.current?.isDirty || false)}
-                onSave={onSaveAll}
-                onCopy={onCopySummary}
-                onFind={() => {
-                  // TODO: Implement find in summary functionality
-                  console.log('Find in summary clicked');
-                }}
-                onOpenFolder={onOpenFolder}
-                hasSummary={!!aiSummary}
-              />
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {structuredEnabled ? (
@@ -392,69 +387,28 @@ export function SummaryPanel({
           </div>
         </div>
       ) : isSummaryLoading ? (
-        <div className="flex flex-col h-full">
-          {/* Show button group during generation */}
-          <div className="flex items-center justify-center pt-8 pb-4">
-            <SummaryGeneratorButtonGroup
-              modelConfig={modelConfig}
-              setModelConfig={setModelConfig}
-              onSaveModelConfig={onSaveModelConfig}
-              onGenerateSummary={onGenerateSummary}
-              onStopGeneration={onStopGeneration}
-              customPrompt={customPrompt}
-              summaryStatus={summaryStatus}
-              availableTemplates={availableTemplates}
-              selectedTemplate={selectedTemplate}
-              onTemplateSelect={onTemplateSelect}
-              hasTranscripts={transcripts.length > 0}
-              isModelConfigLoading={isModelConfigLoading}
-              onOpenModelSettings={onOpenModelSettings}
-            />
-          </div>
-          {/* Loading spinner */}
-          <div className="flex items-center justify-center flex-1">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-              <p className="text-gray-600">Generating AI Summary...</p>
-            </div>
+        // Generator/Stop controls live in the panel toolbar above — the body only
+        // shows generation progress.
+        <div className="flex items-center justify-center flex-1">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+            <p className="text-muted-foreground">Generating AI Summary...</p>
           </div>
         </div>
       ) : !aiSummary ? (
-        <div className="flex flex-col h-full">
-          {/* Centered Summary Generator Button Group when no summary */}
-          <div className="flex items-center justify-center gap-2 pt-8 pb-4">
-            <SummaryGeneratorButtonGroup
-              modelConfig={modelConfig}
-              setModelConfig={setModelConfig}
-              onSaveModelConfig={onSaveModelConfig}
-              onGenerateSummary={onGenerateSummary}
-              onStopGeneration={onStopGeneration}
-              customPrompt={customPrompt}
-              summaryStatus={summaryStatus}
-              availableTemplates={availableTemplates}
-              selectedTemplate={selectedTemplate}
-              onTemplateSelect={onTemplateSelect}
-              hasTranscripts={transcripts.length > 0}
-              hasSummary={false}
-              isModelConfigLoading={isModelConfigLoading}
-              onOpenModelSettings={onOpenModelSettings}
-              languageSlot={transcripts.length > 0 ? languageSlot : undefined}
-            />
-          </div>
-          {/* Empty state message */}
-          <EmptyStateSummary
-            onGenerate={() => onGenerateSummary(customPrompt)}
-            hasModel={modelConfig.provider !== null && modelConfig.model !== null}
-            isGenerating={isSummaryLoading}
-          />
-        </div>
+        // Empty state carries its own primary CTA; the toolbar above has the rest.
+        <EmptyStateSummary
+          onGenerate={() => onGenerateSummary(customPrompt)}
+          hasModel={modelConfig.provider !== null && modelConfig.model !== null}
+          isGenerating={isSummaryLoading}
+        />
       ) : transcripts?.length > 0 && (
         <div className="flex-1 overflow-y-auto min-h-0">
           {summaryResponse && (
-            <div className="fixed bottom-0 left-0 right-0 bg-white shadow-lg p-4 max-h-1/3 overflow-y-auto">
+            <div className="fixed bottom-0 left-0 right-0 bg-card shadow-lg p-4 max-h-1/3 overflow-y-auto">
               <h3 className="text-lg font-semibold mb-2">Meeting Summary</h3>
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-lg shadow-sm">
+                <div className="bg-card p-4 rounded-lg shadow-sm">
                   <h4 className="font-medium mb-1">Key Points</h4>
                   <ul className="list-disc pl-4">
                     {summaryResponse.summary.key_points.blocks.map((block, i) => (
@@ -462,7 +416,7 @@ export function SummaryPanel({
                     ))}
                   </ul>
                 </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
+                <div className="bg-card p-4 rounded-lg shadow-sm mt-4">
                   <h4 className="font-medium mb-1">Action Items</h4>
                   <ul className="list-disc pl-4">
                     {summaryResponse.summary.action_items.blocks.map((block, i) => (
@@ -470,7 +424,7 @@ export function SummaryPanel({
                     ))}
                   </ul>
                 </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
+                <div className="bg-card p-4 rounded-lg shadow-sm mt-4">
                   <h4 className="font-medium mb-1">Decisions</h4>
                   <ul className="list-disc pl-4">
                     {summaryResponse.summary.decisions.blocks.map((block, i) => (
@@ -478,7 +432,7 @@ export function SummaryPanel({
                     ))}
                   </ul>
                 </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
+                <div className="bg-card p-4 rounded-lg shadow-sm mt-4">
                   <h4 className="font-medium mb-1">Main Topics</h4>
                   <ul className="list-disc pl-4">
                     {summaryResponse.summary.main_topics.blocks.map((block, i) => (
@@ -516,9 +470,9 @@ export function SummaryPanel({
             />
           </div>
           {summaryStatus !== 'idle' && (
-            <div className={`mt-4 p-4 rounded-lg ${summaryStatus === 'error' ? 'bg-red-100 text-red-700' :
-              summaryStatus === 'completed' ? 'bg-green-100 text-green-700' :
-                'bg-blue-100 text-blue-700'
+            <div className={`mt-4 p-4 rounded-lg ${summaryStatus === 'error' ? 'bg-red-100 text-red-700 dark:text-red-300' :
+              summaryStatus === 'completed' ? 'bg-green-100 text-green-700 dark:text-green-400' :
+                'bg-accent text-primary'
               }`}>
               <p className="text-sm font-medium">{getSummaryStatusMessage(summaryStatus)}</p>
             </div>
