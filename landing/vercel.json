@@ -14,13 +14,13 @@
       "source": "/(.*)",
       "has": [{ "type": "host", "value": "mityu.vercel.app" }],
       "destination": "https://mityu.bluedev.dev/$1",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/(.*)",
       "has": [{ "type": "host", "value": "mityu-adagidir.vercel.app" }],
       "destination": "https://mityu.bluedev.dev/$1",
-      "permanent": false
+      "permanent": true
     }
   ]
 }
