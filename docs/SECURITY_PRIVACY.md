@@ -28,6 +28,14 @@ Security and privacy are the product's differentiator (local-first vs cloud reco
 - **Deletion & portability:** working account+data deletion and export.
 - **Audit:** append-only audit trail on sensitive actions (server).
 
+## Network egress (desktop client) — the complete outbound list
+The core capture→transcript→summary→store path runs with **zero network**. Every outbound connection the shipped app can make, its trigger, and its payload class:
+- **Cloud LLM providers (BYOK, optional):** only when the user configures a cloud summary provider — transcript content goes to *that* provider under the user's own key/ToS. Default (local Ollama/builtin) sends nothing.
+- **Model downloads** (huggingface.co): user-triggered during onboarding/settings (Parakeet ONNX, whisper ggml, local LLM weights). Payload: HTTP GETs only; no user data.
+- **Updater** (`github.com/aydogandagidir/mityu` releases): startup check + manual "Check for Updates". Payload: version metadata fetch; downloads are Ed25519-signature-verified against the baked pubkey (ADR in RELEASE_CHECKLIST §1).
+- **Analytics** (PostHog): **opt-in only**, content-free events, and the API key is compile-time injected (`MITYU_POSTHOG_API_KEY`, ADR-0016) — unset ⇒ telemetry is a local no-op.
+- **Licensing** (`api.polar.sh`, ADR-0023): user-triggered activate/deactivate plus a background re-validate at most once per 7 days. Payload: license key, organization id, activation id, hostname label — **never content, never telemetry**. Transport failure ⇒ the app stays licensed (fail-open offline); only an explicit revoked/expired answer changes state; trial and license expiry gate **new capture only**, never access to existing data.
+
 ## Compliance mapping (technical/operational, not legal advice)
 - **KVKK / GDPR:** lawful basis + consent, data minimization, EU data residency option, DPA/subprocessor transparency, deletion/portability, DPIA for systematic recording.
 - **EU AI Act:** Article 50 transparency obligations are **live from 2 Aug 2026** → disclose AI interaction and **label AI-generated content**; keep the "AI-generated, review required" affordance. Position as a **limited-risk, human-approved documentation assistant**: do **NOT** implement workplace emotion recognition (prohibited) or automated employment/performance decisions (high-risk, Annex III, deadline 2 Dec 2027). Speaker identity from voice can implicate biometric categorization — keep speaker naming manual, avoid automated biometric identity claims.
