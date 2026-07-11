@@ -33,6 +33,7 @@ import {
   licensingErrorText,
   type LicensingStatus,
 } from '@/types/licensing';
+import { openCheckout } from '@/lib/checkout';
 
 export interface ActivateLicenseDialogProps {
   open: boolean;
@@ -197,7 +198,7 @@ export function ActivateLicenseDialog({
               <Button
                 type="button"
                 variant="outline"
-                data-todo="checkout"
+                onClick={() => openCheckout()}
                 className="sm:mr-auto"
               >
                 Buy Mityu Pro

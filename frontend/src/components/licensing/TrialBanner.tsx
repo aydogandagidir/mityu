@@ -20,6 +20,7 @@ import React from 'react';
 import { KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLicensing } from '@/contexts/LicensingContext';
+import { openCheckout } from '@/lib/checkout';
 import { getTrialBannerVariant, trialChipLabel } from './trialBannerLogic';
 
 export function TrialBanner() {
@@ -72,7 +73,7 @@ export function TrialBanner() {
           </Button>
           <button
             type="button"
-            data-todo="checkout"
+            onClick={() => openCheckout()}
             className="text-sm font-medium text-primary hover:underline"
           >
             Buy Mityu Pro

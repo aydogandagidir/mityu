@@ -8,7 +8,7 @@
  * - Activate license  -> opens the shared ActivateLicenseDialog.
  * - Deactivate        -> only when licensed, behind an inline confirm step
  *                        (frees the seat under the 2-device activation limit).
- * - Buy Mityu Pro     -> checkout placeholder (data-todo="checkout", no href yet).
+ * - Buy Mityu Pro     -> opens the checkout URL in the user's browser (openCheckout).
  *
  * Visual parity with sibling sections (BetaSettings card layout), but with
  * semantic theme tokens only.
@@ -19,6 +19,7 @@ import { KeyRound, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useLicensing } from '@/contexts/LicensingContext';
+import { openCheckout } from '@/lib/checkout';
 import { licensingErrorText, type LicensingState, type LicensingStatus } from '@/types/licensing';
 
 const STATE_PILLS: Record<LicensingState, { label: string; className: string }> = {
@@ -120,7 +121,7 @@ export function LicenseSettings() {
           {!isLicensed && (
             <>
               <Button onClick={() => openActivateDialog()}>Activate license</Button>
-              <Button variant="outline" data-todo="checkout">
+              <Button variant="outline" onClick={() => openCheckout()}>
                 Buy Mityu Pro
               </Button>
             </>

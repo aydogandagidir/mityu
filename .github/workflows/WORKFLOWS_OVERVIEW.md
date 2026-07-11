@@ -321,6 +321,7 @@ All workflows require these secrets to be configured:
 ### Application Configuration
 - `MITYU_POSTHOG_API_KEY` - Mityu-owned PostHog project key (embedded at build time; unset = telemetry no-op)
 - `MITYU_POLAR_ORG_ID` - Polar.sh organization id for license activation (embedded at build time; unset = licensing UI reports not-configured, trial still works — ADR-0023)
+- `NEXT_PUBLIC_MITYU_CHECKOUT_URL` - **repo variable** (not secret): Buy-button destination, inlined into the frontend at build time; unset = falls back to the live pricing page (ADR-0023)
 
 ---
 
