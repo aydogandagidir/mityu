@@ -981,6 +981,11 @@ pub async fn start_import_audio_command<R: Runtime>(
     model: Option<String>,
     provider: Option<String>,
 ) -> Result<ImportStarted, String> {
+    // Licensing gate (ADR-0023 §5): TrialExpired/Revoked block importing NEW
+    // audio; Trial/Licensed pass. Command layer only — capture internals are
+    // untouched. Existing meetings/data are never gated.
+    crate::licensing::commands::ensure_capture_allowed(&app).await?;
+
     // Check if import is already in progress (guard will be acquired in start_import)
     if IMPORT_IN_PROGRESS.load(Ordering::SeqCst) {
         return Err("Import already in progress".to_string());
