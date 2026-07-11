@@ -208,6 +208,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Mityu PostHog project key (embedded at build time; unset => telemetry no-op)
           MITYU_POSTHOG_API_KEY: ${{ secrets.MITYU_POSTHOG_API_KEY }}
+          MITYU_POLAR_ORG_ID: ${{ secrets.MITYU_POLAR_ORG_ID }}
+          NEXT_PUBLIC_MITYU_CHECKOUT_URL: ${{ vars.NEXT_PUBLIC_MITYU_CHECKOUT_URL }}
         with:
           projectPath: frontend
           args: --target x86_64-unknown-linux-gnu --features openblas ${{ steps.build-profile.outputs.args }}

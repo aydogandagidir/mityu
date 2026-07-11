@@ -5,6 +5,8 @@ import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { useConfig } from '@/contexts/ConfigContext';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
 import { useRecordingConsent } from '@/contexts/RecordingConsentContext';
+import { useLicensing } from '@/contexts/LicensingContext';
+import { isLicenseRequiredError } from '@/types/licensing';
 import { recordingService } from '@/services/recordingService';
 import Analytics from '@/lib/analytics';
 import { showRecordingNotification } from '@/lib/recordingNotification';
@@ -41,6 +43,11 @@ export function useRecordingStart(
   // start path; resolves false when the user cancels/dismisses, which aborts
   // the start before any capture is triggered.
   const { ensureRecordingConsent } = useRecordingConsent();
+  // ADR-0023: license gate. Gated backend commands reject with a
+  // LICENSE_REQUIRED error once the trial expires / license is revoked; the
+  // catch blocks below route that to the paywall dialog instead of the
+  // generic error surfaces.
+  const { openActivateDialog } = useLicensing();
 
   // Generate meeting title with timestamp
   const generateMeetingTitle = useCallback(() => {
@@ -151,6 +158,17 @@ export function useRecordingStart(
       // Show recording notification if enabled
       await showRecordingNotification();
     } catch (error) {
+      // ADR-0023: blocked by the license gate — show the paywall dialog and
+      // swallow (no rethrow) so RecordingControls doesn't raise a device-error
+      // dialog for a licensing condition.
+      if (isLicenseRequiredError(error)) {
+        console.log('Recording start blocked by license gate - showing paywall');
+        openActivateDialog({ paywall: true });
+        setStatus(RecordingStatus.IDLE);
+        setIsRecording(false);
+        Analytics.trackButtonClick('start_recording_blocked_license', 'home_page');
+        return;
+      }
       console.error('Failed to start recording:', error);
       setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to start recording');
       setIsRecording(false); // Reset state on error
@@ -158,7 +176,7 @@ export function useRecordingStart(
       // Re-throw so RecordingControls can handle device-specific errors
       throw error;
     }
-  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkParakeetReady, checkIfModelDownloading, selectedDevices, showModal, setStatus, ensureRecordingConsent]);
+  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkParakeetReady, checkIfModelDownloading, selectedDevices, showModal, setStatus, ensureRecordingConsent, openActivateDialog]);
 
   // Check for autoStartRecording flag and start recording automatically
   useEffect(() => {
@@ -229,10 +247,18 @@ export function useRecordingStart(
             // Show recording notification if enabled
             await showRecordingNotification();
           } catch (error) {
-            console.error('Failed to auto-start recording:', error);
-            setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to auto-start recording');
-            alert('Failed to start recording. Check console for details.');
-            Analytics.trackButtonClick('start_recording_error', 'sidebar_auto');
+            // ADR-0023: blocked by the license gate — paywall instead of alert.
+            if (isLicenseRequiredError(error)) {
+              console.log('Auto-start blocked by license gate - showing paywall');
+              openActivateDialog({ paywall: true });
+              setStatus(RecordingStatus.IDLE);
+              Analytics.trackButtonClick('start_recording_blocked_license', 'sidebar_auto');
+            } else {
+              console.error('Failed to auto-start recording:', error);
+              setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to auto-start recording');
+              alert('Failed to start recording. Check console for details.');
+              Analytics.trackButtonClick('start_recording_error', 'sidebar_auto');
+            }
           } finally {
             setIsAutoStarting(false);
           }
@@ -255,6 +281,7 @@ export function useRecordingStart(
     showModal,
     setStatus,
     ensureRecordingConsent,
+    openActivateDialog,
   ]);
 
   // Listen for direct recording trigger from sidebar when already on home page
@@ -328,10 +355,18 @@ export function useRecordingStart(
         // Show recording notification if enabled
         await showRecordingNotification();
       } catch (error) {
-        console.error('Failed to start recording from sidebar:', error);
-        setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to start recording from sidebar');
-        alert('Failed to start recording. Check console for details.');
-        Analytics.trackButtonClick('start_recording_error', 'sidebar_direct');
+        // ADR-0023: blocked by the license gate — paywall instead of alert.
+        if (isLicenseRequiredError(error)) {
+          console.log('Direct start blocked by license gate - showing paywall');
+          openActivateDialog({ paywall: true });
+          setStatus(RecordingStatus.IDLE);
+          Analytics.trackButtonClick('start_recording_blocked_license', 'sidebar_direct');
+        } else {
+          console.error('Failed to start recording from sidebar:', error);
+          setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to start recording from sidebar');
+          alert('Failed to start recording. Check console for details.');
+          Analytics.trackButtonClick('start_recording_error', 'sidebar_direct');
+        }
       } finally {
         setIsAutoStarting(false);
       }
@@ -356,6 +391,7 @@ export function useRecordingStart(
     showModal,
     setStatus,
     ensureRecordingConsent,
+    openActivateDialog,
   ]);
 
   return {

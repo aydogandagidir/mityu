@@ -49,6 +49,11 @@ pub mod console_utils;
 pub mod context;
 pub mod database;
 pub mod groq;
+/// Licensing & trial (ADR-0023): Polar.sh license keys + client-side 14-day
+/// trial. Local-first: status reads never touch the network, validation is
+/// lazy/fail-open, and expiry gates ONLY new capture (recording/import) — never
+/// existing data.
+pub mod licensing;
 pub mod notifications;
 pub mod ollama;
 pub mod onboarding;
@@ -110,6 +115,10 @@ async fn start_recording<R: Runtime>(
         system_device_name,
         meeting_name
     );
+
+    // Licensing gate (ADR-0023 §5): TrialExpired/Revoked block starting a NEW
+    // recording; Trial/Licensed pass. Existing data is never gated.
+    licensing::commands::ensure_capture_allowed(&app).await?;
 
     if is_recording().await {
         return Err("Recording already in progress".to_string());
@@ -322,6 +331,11 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
 ) -> Result<(), String> {
     log_info!("🚀 CALLED start_recording_with_devices_and_meeting - Mic: {:?}, System: {:?}, Meeting: {:?}",
              mic_device_name, system_device_name, meeting_name);
+
+    // Licensing gate (ADR-0023 §5): blocks starting a NEW recording when the
+    // trial expired or the license was revoked. Also covers the
+    // `start_recording_with_devices` command, which delegates here.
+    licensing::commands::ensure_capture_allowed(&app).await?;
 
     // Clone meeting_name for notification use later
     let meeting_name_for_notification = meeting_name.clone();
@@ -680,6 +694,10 @@ pub fn run() {
             // Redaction config commands (BACKLOG C6)
             api::api_get_redaction_config,
             api::api_set_redaction_config,
+            // Licensing & trial commands (ADR-0023)
+            licensing::commands::get_licensing_status,
+            licensing::commands::activate_license,
+            licensing::commands::deactivate_license,
             // Summary commands
             summary::commands::api_process_transcript,
             summary::commands::api_get_summary,

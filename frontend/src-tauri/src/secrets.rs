@@ -347,6 +347,93 @@ pub mod db {
     }
 }
 
+/// Licensing entries (ADR-0023): the trial anchor, the Polar license key and its
+/// activation id.
+///
+/// Like [`db`], these are **device-scoped, not workspace-scoped**: a license seat
+/// is consumed per machine (Polar's activation limit counts devices), and the
+/// trial clock is a property of the install, so all three are filed under fixed
+/// entry names in the same OS store ([`KEYCHAIN_SERVICE`]).
+///
+/// Storage rules (CLAUDE.md §0.7, constitution §7): the license key and
+/// activation id are **keychain-only** — never SQLite, never source, never logs.
+/// The trial anchor is not a secret, but it lives here too (second copy of the
+/// anchor; the first is the `licensingState` JSON blob) so wiping the app's data
+/// directory alone does not reset the trial. Same discipline as the rest of this
+/// module: **values are never logged**, and every operation runs fully offline.
+pub mod licensing {
+    use anyhow::{Context, Result};
+    use keyring::Entry;
+
+    /// First-launch trial anchor (RFC 3339 timestamp). Frozen — renaming would
+    /// restart every in-flight trial.
+    pub const TRIAL_ANCHOR_ENTRY: &str = "licensing:trial-anchor";
+
+    /// The Polar license key exactly as the user entered it. SECRET.
+    pub const KEY_ENTRY: &str = "licensing:key";
+
+    /// The Polar activation id returned by a successful activate call. Needed to
+    /// validate/deactivate this device's seat.
+    pub const ACTIVATION_ID_ENTRY: &str = "licensing:activation-id";
+
+    /// Open the [`Entry`] for one of the fixed licensing entry names. Failure
+    /// means the OS store itself is unreachable.
+    fn open_entry(name: &str) -> Result<Entry> {
+        Entry::new(super::KEYCHAIN_SERVICE, name).with_context(|| {
+            format!(
+                "secrets: could not open the OS credential store for licensing \
+                 entry '{name}'. Your system keychain may be locked or unavailable."
+            )
+        })
+    }
+
+    /// Read a licensing entry. `Ok(None)` when it was never set (or was deleted);
+    /// any other store failure is surfaced. The value is never logged.
+    pub fn get(name: &str) -> Result<Option<String>> {
+        let entry = open_entry(name)?;
+        match entry.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(e).with_context(|| {
+                format!(
+                    "secrets: failed to read licensing entry '{name}' from the OS credential store"
+                )
+            }),
+        }
+    }
+
+    /// Store a licensing entry, overwriting any existing value. The value is
+    /// never logged.
+    pub fn set(name: &str, value: &str) -> Result<()> {
+        let entry = open_entry(name)?;
+        entry.set_password(value).with_context(|| {
+            format!("secrets: failed to write licensing entry '{name}' to the OS credential store")
+        })?;
+        tracing::debug!(
+            entry = name,
+            "stored licensing entry in OS credential store"
+        );
+        Ok(())
+    }
+
+    /// Remove a licensing entry. Deleting a non-existent entry is a no-op.
+    pub fn delete(name: &str) -> Result<()> {
+        let entry = open_entry(name)?;
+        match entry.delete_credential() {
+            Ok(()) => {
+                tracing::debug!(entry = name, "deleted licensing entry from OS credential store");
+                Ok(())
+            }
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e).with_context(|| {
+                format!(
+                    "secrets: failed to delete licensing entry '{name}' from the OS credential store"
+                )
+            }),
+        }
+    }
+}
+
 /// Process-global, persistent, in-memory credential store for tests.
 ///
 /// keyring's built-in `mock` backend is `EntryOnly` (each `Entry::new` gets a
