@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Privacy Policy — Mityu</title>
+<meta name="description" content="How Mityu handles your data: on-device processing, encrypted local storage, no uploads, and strictly opt-in analytics.">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://mityu.bluedev.dev/privacy">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect x='1' y='1' width='16' height='16' rx='5.5' fill='%231E56FF'/%3E%3Crect x='9' y='9' width='16' height='16' rx='5.5' fill='%234B78FF' fill-opacity='0.45'/%3E%3Crect x='9' y='9' width='8' height='8' rx='2.5' fill='%230A2ECB'/%3E%3C/svg%3E">
+<style>
+:root{--ink:#0B0B0F;--gray:#5F6368;--hair:#E5E7EB;--soft:#F4F5F7;--blue:#1E56FF}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--ink);font-family:system-ui,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
+.nav{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--hair)}
+.nav-inner{max-width:840px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between}
+.brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none}
+.wordmark{font-size:17px;font-weight:600;letter-spacing:-.01em}
+.back{color:var(--gray);font-size:14px;text-decoration:none}
+.back:hover{color:var(--ink)}
+main{max-width:840px;margin:0 auto;padding:56px 24px 80px}
+h1{font-size:clamp(2rem,4vw,2.8rem);font-weight:600;letter-spacing:-.02em;line-height:1.15;margin:0}
+.updated{color:var(--gray);font-size:14px;margin:12px 0 0}
+h2{font-size:1.25rem;font-weight:600;letter-spacing:-.01em;margin:44px 0 10px}
+p{margin:10px 0;color:#2A2A31;font-size:15.5px;max-width:70ch}
+ul{margin:10px 0;padding-left:22px;color:#2A2A31;font-size:15.5px}
+li{margin:6px 0;max-width:68ch}
+.note{background:var(--soft);border-radius:16px;padding:18px 20px;margin:22px 0}
+.note p{margin:0;color:var(--ink)}
+.footer{border-top:1px solid var(--hair)}
+.foot-inner{max-width:840px;margin:0 auto;padding:22px 24px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;color:var(--gray);font-size:13.5px}
+.foot-inner a{color:var(--gray)}
+.foot-inner a:hover{color:var(--ink)}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="Mityu home">
+      <svg width="24" height="24" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+        <rect x="1" y="1" width="16" height="16" rx="5.5" fill="#1E56FF"/>
+        <rect x="9" y="9" width="16" height="16" rx="5.5" fill="#4B78FF" fill-opacity="0.45"/>
+        <rect x="9" y="9" width="8" height="8" rx="2.5" fill="#0A2ECB"/>
+      </svg>
+      <span class="wordmark">mityu</span>
+    </a>
+    <a class="back" href="/">← Back to home</a>
+  </div>
+</header>
+
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: July 11, 2026</p>
+
+  <div class="note">
+    <p><strong>The short version:</strong> your meetings are processed and stored on your own device. Audio is never uploaded. This website sets no cookies and runs no trackers. Analytics in the app is off by default and only ever covers anonymized usage — never content.</p>
+  </div>
+
+  <h2>1. This website</h2>
+  <p>This site serves static pages only. It sets no cookies, runs no analytics or tracking scripts, and loads no third-party resources — everything it needs is served from this same site. Our hosting provider (Vercel) may keep standard, short-lived server access logs (such as IP address and browser type) for security and operations. If you email us, we see the email you send — nothing more.</p>
+
+  <h2>2. The app: local-first by design</h2>
+  <ul>
+    <li><strong>Recording &amp; transcription</strong> run entirely on your device, using local Whisper or Parakeet models. Your audio never leaves your machine.</li>
+    <li><strong>Storage</strong> is a local database on your device, encrypted at rest (SQLCipher). The encryption key lives in your operating system's secure credential store — never in plaintext files.</li>
+    <li><strong>Summaries</strong> are generated locally by default (built-in local model, or your own model via Ollama). If you choose to connect a cloud provider with your own API key, only the transcript text you ask to summarize is sent to that provider — never audio, never your library.</li>
+    <li><strong>API keys</strong> you add are stored in the operating system's secure credential store and are only ever sent to the provider they belong to.</li>
+    <li><strong>Optional redaction</strong> can strip emails, phone numbers, card/ID numbers, and your own custom terms from transcripts before they are stored or sent to a summarization model.</li>
+  </ul>
+
+  <h2>3. Usage analytics — optional and off by default</h2>
+  <p>Mityu ships with analytics <strong>disabled</strong>. If you choose to enable it in settings, we collect a minimal, anonymized picture of how the app is used (feature usage, session duration, performance metrics, and anonymized error reports) through PostHog, linked to a generated ID rather than to you, and retained for no longer than 12 months.</p>
+  <p>We never collect: meeting content, transcripts or recordings; file names, meeting titles or metadata; audio or voice patterns; participant names or contact details; or anything you exchange with an AI model. You can turn analytics off again at any time.</p>
+
+  <h2>4. Purchases &amp; licensing</h2>
+  <p>When purchasing is available, payments are processed by a merchant-of-record payment provider — Mityu never sees or stores your card details. Activating a license sends only the license key and an anonymous activation identifier; an occasional background validation (at most every 7 days) sends the same identifiers and nothing else. Your meetings and transcripts are never part of any licensing request. The free trial requires no account and sends nothing at all.</p>
+
+  <h2>5. Recording other people</h2>
+  <p>Mityu shows a consent prompt before recording, but obtaining any consent required by the laws that apply to you (for example KVKK in Türkiye, or GDPR and local recording laws elsewhere) remains your responsibility.</p>
+
+  <h2>6. Your rights and control</h2>
+  <ul>
+    <li>All meeting data stays on your device: you can view, export, and delete it directly in the app, without asking anyone.</li>
+    <li>Because we do not hold your content, most statutory data rights (access, erasure, portability) are things you can exercise yourself, instantly and locally.</li>
+    <li>For anything related to the optional analytics or a purchase, contact us and we will help.</li>
+  </ul>
+
+  <h2>7. Changes to this policy</h2>
+  <p>If this policy changes in a way that matters, we will say so in the application's release notes and update this page. The "last updated" date above always reflects the current version.</p>
+
+  <h2>8. Contact</h2>
+  <p>Questions about privacy? Write to <a href="mailto:info@bluedev.dev?subject=Mityu%20privacy">info@bluedev.dev</a>.</p>
+</main>
+
+<footer class="footer">
+  <div class="foot-inner">
+    <span>© 2026 bluedev</span>
+    <span><a href="/">Home</a> · <a href="mailto:info@bluedev.dev?subject=Mityu%20contact">Contact</a></span>
+  </div>
+</footer>
+</body>
+</html>
