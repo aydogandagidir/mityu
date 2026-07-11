@@ -320,6 +320,7 @@ All workflows require these secrets to be configured:
 
 ### Application Configuration
 - `MITYU_POSTHOG_API_KEY` - Mityu-owned PostHog project key (embedded at build time; unset = telemetry no-op)
+- `MITYU_POLAR_ORG_ID` - Polar.sh organization id for license activation (embedded at build time; unset = licensing UI reports not-configured, trial still works — ADR-0023)
 
 ---
 
