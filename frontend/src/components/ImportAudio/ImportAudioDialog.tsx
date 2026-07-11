@@ -32,6 +32,8 @@ import {
 } from '../ui/select';
 import { toast } from 'sonner';
 import { useConfig } from '@/contexts/ConfigContext';
+import { useLicensing } from '@/contexts/LicensingContext';
+import { isLicenseRequiredError } from '@/types/licensing';
 import { useImportAudio, ImportResult } from '@/hooks/useImportAudio';
 import { useRouter } from 'next/navigation';
 import { useSidebar } from '../Sidebar/SidebarProvider';
@@ -73,6 +75,7 @@ export function ImportAudioDialog({
   const router = useRouter();
   const { refetchMeetings } = useSidebar();
   const { selectedLanguage, transcriptModelConfig } = useConfig();
+  const { openActivateDialog } = useLicensing();
 
   const [title, setTitle] = useState('');
   const [selectedLang, setSelectedLang] = useState(selectedLanguage || 'auto');
@@ -105,8 +108,16 @@ export function ImportAudioDialog({
   }, [router, refetchMeetings, onComplete, onOpenChange]);
 
   const handleImportError = useCallback((error: string) => {
+    // ADR-0023: import blocked by the license gate — show the paywall dialog
+    // instead of a raw error toast. Close this dialog; its state resets on the
+    // next open (closed -> open transition effect above).
+    if (isLicenseRequiredError(error)) {
+      onOpenChange(false);
+      openActivateDialog({ paywall: true });
+      return;
+    }
     toast.error('Import failed', { description: error });
-  }, []);
+  }, [onOpenChange, openActivateDialog]);
 
   const {
     status,
