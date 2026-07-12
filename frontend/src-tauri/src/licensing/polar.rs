@@ -28,20 +28,25 @@ pub const PRODUCTION_BASE_URL: &str = "https://api.polar.sh";
 /// unit tests use a fake [`LicenseApi`] and never hit the network.
 pub const SANDBOX_BASE_URL: &str = "https://sandbox-api.polar.sh";
 
-/// The compile-time-injected Polar organization id. `None` (or blank — an
-/// unset GitHub secret renders as an empty string) ⇒ licensing is not
-/// configured in this build.
+/// The baked-in Polar organization id that owns the "Mityu Pro" product. Public
+/// by design — it is in every checkout URL and returned by Polar's public
+/// checkout API — so it ships in the binary rather than as a secret. Verified
+/// 2026-07-12 against the live Mityu Pro checkout session's `organization_id`.
+const DEFAULT_ORG_ID: &str = "2afb00f6-61f3-47f9-be97-be37d83bfd64";
+
+/// The Polar organization id licensing calls use. Defaults to [`DEFAULT_ORG_ID`];
+/// a non-blank `MITYU_POLAR_ORG_ID` at build time overrides it (e.g. to point at
+/// a sandbox org for testing). Only `None` if both are blank, which disables
+/// licensing config while trial mechanics keep working.
 pub fn org_id() -> Option<&'static str> {
-    match option_env!("MITYU_POLAR_ORG_ID") {
-        Some(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        }
-        None => None,
+    let candidate = match option_env!("MITYU_POLAR_ORG_ID") {
+        Some(raw) if !raw.trim().is_empty() => raw.trim(),
+        _ => DEFAULT_ORG_ID,
+    };
+    if candidate.is_empty() {
+        None
+    } else {
+        Some(candidate)
     }
 }
 
