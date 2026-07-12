@@ -117,6 +117,13 @@ export function LicenseSettings() {
           </div>
         )}
 
+        {!isLicensed && (
+          <p className="mt-3 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Mityu Pro</span> — $79 one-time · 2 devices · 1 year of
+            updates · 14-day money-back guarantee.
+          </p>
+        )}
+
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {!isLicensed && (
             <>

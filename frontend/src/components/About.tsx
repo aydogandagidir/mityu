@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 
 
 export function About() {
-    const [currentVersion, setCurrentVersion] = useState<string>('0.4.0');
+    const [currentVersion, setCurrentVersion] = useState<string>('1.0.0');
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
     const [isChecking, setIsChecking] = useState(false);
     const [showUpdateDialog, setShowUpdateDialog] = useState(false);
@@ -70,7 +70,7 @@ export function About() {
                 </div>
                 <span className="text-sm text-muted-foreground"> v{currentVersion}</span>
                 <p className="text-medium text-muted-foreground mt-1">
-                    Real-time notes and summaries that never leave your machine.
+                    Every meeting, understood — entirely on your machine. No bots, no uploads, no account.
                 </p>
                 <div className="mt-3">
                     <Button
@@ -100,25 +100,21 @@ export function About() {
                 </div>
             </div>
 
-            {/* Features Grid - Compact */}
+            {/* Why Mityu - three pillars, aligned with the landing page copy */}
             <div className="space-y-3">
-                <h2 className="text-base font-semibold text-foreground">What makes Mityu different</h2>
-                <div className="grid grid-cols-2 gap-2">
+                <h2 className="text-base font-semibold text-foreground">Why Mityu</h2>
+                <div className="space-y-2">
                     <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
-                        <h3 className="font-bold text-sm text-foreground mb-1">Privacy-first</h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">Your data & AI processing workflow can now stay within your premise. No cloud, no leaks.</p>
-                    </div>
-                    <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
-                        <h3 className="font-bold text-sm text-foreground mb-1">Use Any Model</h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">Prefer local open-source model? Great. Want to plug in an external API? Also fine. No lock-in.</p>
-                    </div>
-                    <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
-                        <h3 className="font-bold text-sm text-foreground mb-1">Cost-Smart</h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">Avoid pay-per-minute bills by running models locally (or pay only for the calls you choose).</p>
+                        <h3 className="font-bold text-sm text-foreground mb-1">On-device</h3>
+                        <p className="text-xs text-muted-foreground leading-relaxed">Recording and transcription run locally with Whisper large-v3 or Parakeet — no network needed, encrypted at rest (SQLCipher), with opt-in PII redaction.</p>
                     </div>
                     <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
                         <h3 className="font-bold text-sm text-foreground mb-1">Any meeting app</h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">Google Meet, Zoom, Teams — or a face-to-face conversation. Mityu captures system audio, so it never joins your call. macOS &amp; Windows (Linux experimental).</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Google Meet, or Microsoft Teams — no bot joins your call. Windows 10/11 (64-bit); macOS in development.</p>
+                    </div>
+                    <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
+                        <h3 className="font-bold text-sm text-foreground mb-1">Human-approved</h3>
+                        <p className="text-xs text-muted-foreground leading-relaxed">Every AI-generated line is a labeled draft linked to its source in the transcript — nothing is final until you approve it. Bring your own key: Ollama, OpenAI, Anthropic, Groq, OpenRouter.</p>
                     </div>
                 </div>
             </div>
