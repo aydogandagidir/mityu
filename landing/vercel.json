@@ -1,6 +1,9 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/download", "destination": "https://github.com/aydogandagidir/mityu/releases/latest/download/Mityu-Setup.exe" }
+  ],
   "headers": [
     {
       "source": "/fonts/(.*)",
