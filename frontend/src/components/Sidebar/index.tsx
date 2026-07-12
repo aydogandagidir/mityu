@@ -71,7 +71,7 @@ const Sidebar: React.FC = () => {
   // App version for the footer — read from the Tauri app (tauri.conf.json), so it
   // never goes stale on a release bump. Falls back to the current version string
   // in a plain-browser render where the Tauri API is absent.
-  const [appVersion, setAppVersion] = useState('1.0.0');
+  const [appVersion, setAppVersion] = useState('1.0.1');
   useEffect(() => {
     if (isTauri()) getVersion().then(setAppVersion).catch(() => {});
   }, []);
