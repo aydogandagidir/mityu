@@ -26,6 +26,8 @@ import { RecordingPostProcessingProvider } from '@/contexts/RecordingPostProcess
 import { ImportAudioDialog, ImportDropOverlay } from '@/components/ImportAudio'
 import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
 import { EncryptionStatusBanner } from '@/components/consent/EncryptionStatusBanner'
+import { TrialBanner } from '@/components/licensing/TrialBanner'
+import { LicensingProvider } from '@/contexts/LicensingContext'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 import { isTauri } from '@/lib/isTauri'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -262,6 +264,12 @@ export default function RootLayout({
                         <TooltipProvider>
                           <RecordingPostProcessingProvider>
                             <ImportDialogProvider onOpen={handleOpenImportDialog}>
+                            {/* ADR-0023 licensing: status provider + the shared activate/paywall
+                                dialog. Innermost position that still wraps every consumer:
+                                TrialBanner (below), the Settings License section and
+                                useRecordingStart (both under {children}), and
+                                ImportAudioDialog's paywall interception. */}
+                            <LicensingProvider>
                               {/* Download progress toast provider - listens for background downloads */}
                               <DownloadProgressToastProvider />
 
@@ -277,6 +285,10 @@ export default function RootLayout({
                                         every main-app view and the recording indicator; not shown
                                         during onboarding (DB may not be initialized yet). */}
                                     <EncryptionStatusBanner />
+                                    {/* ADR-0023: trial/license chrome — quiet chip in the last
+                                        trial week, persistent slim banner once expired/revoked,
+                                        nothing while licensed or early in the trial. */}
+                                    <TrialBanner />
                                     {children}
                                   </MainContent>
                                 </div>
@@ -288,6 +300,7 @@ export default function RootLayout({
                                 handleImportDialogClose={handleImportDialogClose}
                                 importFilePath={importFilePath}
                               />
+                            </LicensingProvider>
                             </ImportDialogProvider>
                           </RecordingPostProcessingProvider>
                         </TooltipProvider>
