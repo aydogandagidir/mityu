@@ -13,10 +13,15 @@
 import { isTauri } from '@/lib/isTauri';
 import { openExternalUrl } from '@/services/systemService';
 
-/** Live public pricing page — the destination until a Polar checkout URL is injected. */
-const FALLBACK_CHECKOUT_URL = 'https://mityu.vercel.app/#pricing';
+/**
+ * The live Polar hosted checkout for "Mityu Pro". Public by design — it's the buy
+ * link that goes on every purchase surface. `NEXT_PUBLIC_MITYU_CHECKOUT_URL` still
+ * overrides it at build time (e.g. to point at a sandbox checkout in dev/test).
+ */
+const FALLBACK_CHECKOUT_URL =
+  'https://buy.polar.sh/polar_cl_2avDB6eI0svMFbwtJ9hGpkMMpYC1qRopdT34a1jtPQ7';
 
-/** Resolved at build time, trimmed; falls back to the live pricing page when unset. */
+/** Resolved at build time, trimmed; defaults to the live Polar checkout. */
 export const CHECKOUT_URL =
   process.env.NEXT_PUBLIC_MITYU_CHECKOUT_URL?.trim() || FALLBACK_CHECKOUT_URL;
 

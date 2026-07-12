@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 const ENV_KEY = 'NEXT_PUBLIC_MITYU_CHECKOUT_URL';
-const FALLBACK = 'https://mityu.vercel.app/#pricing';
+const FALLBACK = 'https://buy.polar.sh/polar_cl_2avDB6eI0svMFbwtJ9hGpkMMpYC1qRopdT34a1jtPQ7';
 
 describe('CHECKOUT_URL resolution', () => {
   const original = process.env[ENV_KEY];
