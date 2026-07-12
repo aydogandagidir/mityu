@@ -11,6 +11,8 @@ import { SettingTabs } from '../SettingTabs';
 import { TranscriptModelProps } from '@/components/TranscriptSettings';
 import Analytics from '@/lib/analytics';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
+import { isTauri } from '@/lib/isTauri';
 import { getApiKey } from '@/services/providerModelsService';
 import { configService } from '@/services/configService';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -66,6 +68,13 @@ const Sidebar: React.FC = () => {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['meetings']));
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showModelSettings, setShowModelSettings] = useState(false);
+  // App version for the footer — read from the Tauri app (tauri.conf.json), so it
+  // never goes stale on a release bump. Falls back to the current version string
+  // in a plain-browser render where the Tauri API is absent.
+  const [appVersion, setAppVersion] = useState('1.0.0');
+  useEffect(() => {
+    if (isTauri()) getVersion().then(setAppVersion).catch(() => {});
+  }, []);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
     provider: 'ollama',
     model: '',
@@ -837,7 +846,7 @@ const Sidebar: React.FC = () => {
               <div className="flex-1 grid place-items-center [&_button]:mb-0">
                 <Info isCollapsed />
               </div>
-              <span className="ml-auto pl-1 text-[11px] tabular-nums text-muted-foreground/70">v0.4.0</span>
+              <span className="ml-auto pl-1 text-[11px] tabular-nums text-muted-foreground/70">v{appVersion}</span>
             </div>
           </div>
         )}
