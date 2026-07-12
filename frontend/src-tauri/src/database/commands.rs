@@ -252,6 +252,14 @@ pub async fn initialize_fresh_database(app: AppHandle) -> Result<(), String> {
         error!("Failed to set default transcription model config: {}", e);
     }
 
+    // Seed ONE source-linked sample meeting so a brand-new user's first launch
+    // shows a high-quality example instead of an empty app. Idempotent (gated on
+    // the sample id) and non-fatal: a seeding failure must never block first run
+    // (local-first — the app stays usable regardless).
+    if let Err(e) = crate::database::sample_meeting::seed_sample_meeting(pool, &ctx).await {
+        error!("Failed to seed sample meeting (non-fatal): {:#}", e);
+    }
+
     info!("Fresh database initialized successfully with default models");
 
     // Emit event to notify frontend that database is ready
