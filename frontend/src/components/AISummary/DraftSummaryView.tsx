@@ -70,6 +70,7 @@ import {
   type SummaryDraftResponse,
 } from '@/services/summaryDraftService';
 import { useExportOperations } from '@/hooks/meeting-details/useExportOperations';
+import { TOUR_ANCHORS } from '@/lib/tour';
 
 interface DraftSummaryViewProps {
   /** The meeting whose draft is under review. */
@@ -242,6 +243,8 @@ interface BlockRowProps {
   onRestore: () => void;
   onEdit: (content: string) => Promise<boolean>;
   onJumpToSource?: (sourceChunkId: string) => void;
+  /** First rendered block: carries the product-tour anchor (step 2). */
+  isTourAnchor?: boolean;
 }
 
 function blockTextClass(type: DraftBlock['type']): string {
@@ -263,6 +266,7 @@ function BlockRow({
   onRestore,
   onEdit,
   onJumpToSource,
+  isTourAnchor = false,
 }: BlockRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftContent, setDraftContent] = useState(block.content);
@@ -293,7 +297,10 @@ function BlockRow({
   };
 
   return (
-    <div className="group -mx-2 rounded-lg px-2 py-3 transition-colors first:pt-0 last:pb-0 hover:bg-muted/40">
+    <div
+      {...(isTourAnchor ? { 'data-tour': TOUR_ANCHORS.summaryApproveBlock } : {})}
+      className="group -mx-2 rounded-lg px-2 py-3 transition-colors first:pt-0 last:pb-0 hover:bg-muted/40"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           {isEditing ? (
@@ -688,6 +695,10 @@ export function DraftSummaryView({
     [draft],
   );
 
+  // The first rendered block gets the product-tour anchor (step 2 points at a
+  // real source-linked block + its Approve control).
+  const firstBlockId = allBlocks[0]?.id;
+
   // The §4 approval gate, evaluated client-side to drive the button's enabled
   // state + tooltip. The backend re-enforces it authoritatively at approve time
   // (including live source re-resolution), so `false` from the command is still
@@ -1062,6 +1073,7 @@ export function DraftSummaryView({
                   onRestore={() => restoreBlock(block)}
                   onEdit={(content) => editBlock(block, content)}
                   onJumpToSource={onJumpToSource}
+                  isTourAnchor={block.id === firstBlockId}
                 />
               ))}
             </div>

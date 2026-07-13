@@ -220,3 +220,21 @@
     overflow: visible !important;
   }
 }
+
+/* First-run product tour: brief brand-blue ring pulse used to hand the user off
+   to the sidebar record button when they finish or skip the welcome/tour. */
+@keyframes mityu-tour-pulse {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px hsl(var(--primary) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
+  }
+}
+
+.mityu-tour-pulse {
+  animation: mityu-tour-pulse 1.2s ease-out 2;
+}

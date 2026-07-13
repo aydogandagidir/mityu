@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useImportDialog } from '@/contexts/ImportDialogContext';
 import { useConfig } from '@/contexts/ConfigContext';
+import { TOUR_ANCHORS } from '@/lib/tour';
 
 import {
   Dialog,
@@ -481,6 +482,7 @@ const Sidebar: React.FC = () => {
           <Tooltip>
             <TooltipTrigger asChild>
               <button
+                data-tour={TOUR_ANCHORS.recordButton}
                 onClick={handleRecordingToggle}
                 disabled={isRecording}
                 className={`grid h-10 w-10 place-items-center rounded-xl text-white shadow-sm transition-colors duration-150 ${isRecording ? 'bg-red-500 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}
@@ -806,6 +808,7 @@ const Sidebar: React.FC = () => {
           <div className="flex-shrink-0 p-3 border-t border-border space-y-2">
             {/* Primary CTA */}
             <button
+              data-tour={TOUR_ANCHORS.recordButton}
               onClick={handleRecordingToggle}
               disabled={isRecording}
               className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-semibold text-white rounded-xl transition-colors shadow-sm ${isRecording ? 'bg-red-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}

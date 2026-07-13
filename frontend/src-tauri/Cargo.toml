@@ -1,6 +1,6 @@
 [package]
 name = "mityu"
-version = "1.0.1"
+version = "1.0.2"
 description = "Mityu — privacy-first, local-first meeting intelligence"
 authors = ["Sujith S"]
 license = "MIT"

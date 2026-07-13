@@ -7,6 +7,7 @@ import { useRecordingState } from './RecordingStateContext';
 import { transcriptService } from '@/services/transcriptService';
 import { recordingService } from '@/services/recordingService';
 import { indexedDBService } from '@/services/indexedDBService';
+import { isTauri } from '@/lib/isTauri';
 
 interface TranscriptContextType {
   transcripts: Transcript[];
@@ -283,6 +284,10 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
     finalFlushRef.current = () => processBufferedTranscripts(true);
 
     const setupListener = async () => {
+      // In a plain browser (dev preview / SSR, no Tauri) there is no backend
+      // event source to listen to — skip setup instead of surfacing a failure
+      // alert. In the real Tauri app this is always true and behaviour is unchanged.
+      if (!isTauri()) return;
       try {
         console.log('🔥 Setting up MAIN transcript listener during component initialization...');
         unlistenFn = await transcriptService.onTranscriptUpdate((update) => {

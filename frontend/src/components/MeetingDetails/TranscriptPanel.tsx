@@ -6,6 +6,7 @@ import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptVie
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
 import { FileText } from 'lucide-react';
 import { useMemo } from 'react';
+import { TOUR_ANCHORS } from '@/lib/tour';
 
 interface TranscriptPanelProps {
   transcripts: Transcript[];
@@ -81,7 +82,8 @@ export function TranscriptPanel({
     // Layout-neutral root: width, borders, and responsive show/hide are owned by
     // the wrapper in page-content.tsx so the split can be rebalanced and made
     // responsive/collapsible without threading layout state through every prop.
-    <div className="flex w-full h-full min-w-0 bg-background flex-col relative">
+    // data-tour: anchor for the first-run product tour (step 1).
+    <div data-tour={TOUR_ANCHORS.transcriptPanel} className="flex w-full h-full min-w-0 bg-background flex-col relative">
       {/* Panel toolbar: identity (icon + title + segment count) on the left,
           transcript actions on the right — replaces the floating centered row. */}
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">

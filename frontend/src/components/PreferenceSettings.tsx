@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useRef } from "react"
 import { Switch } from "./ui/switch"
-import { FolderOpen } from "lucide-react"
+import { FolderOpen, Compass } from "lucide-react"
 import { openDatabaseFolder, openModelsFolder, openRecordingsFolder } from "@/services/systemService"
 import Analytics from "@/lib/analytics"
+import { useTour } from "@/components/tour"
 import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch"
 import RecordingConsentSettings from "./RecordingConsentSettings"
 import RedactionSettings from "./RedactionSettings"
@@ -19,6 +20,8 @@ export function PreferenceSettings() {
     loadPreferences,
     updateNotificationSettings
   } = useConfig();
+
+  const { replayTour } = useTour();
 
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -170,6 +173,28 @@ export function PreferenceSettings() {
             <p className="text-sm text-muted-foreground">Enable or disable notifications of start and end of meeting</p>
           </div>
           <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
+        </div>
+      </div>
+
+      {/* Product Tour Section */}
+      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground mb-2">Product tour</h3>
+            <p className="text-sm text-muted-foreground">
+              Replay the guided walkthrough on the sample meeting — transcript, source-linked summary, and your first recording.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              void Analytics.trackButtonClick('replay_product_tour', 'settings');
+              replayTour();
+            }}
+            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            <Compass className="w-4 h-4" />
+            Replay product tour
+          </button>
         </div>
       </div>
 

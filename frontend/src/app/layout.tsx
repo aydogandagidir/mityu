@@ -31,6 +31,7 @@ import { LicensingProvider } from '@/contexts/LicensingContext'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 import { isTauri } from '@/lib/isTauri'
 import { ThemeProvider } from '@/components/theme-provider'
+import { TourProvider } from '@/components/tour'
 
 
 // Same face as the landing page (closest open-license match to the reference
@@ -277,21 +278,27 @@ export default function RootLayout({
                               {showOnboarding ? (
                                 <OnboardingFlow onComplete={handleOnboardingComplete} />
                               ) : (
-                                <div className="flex">
-                                  <Sidebar />
-                                  <MainContent>
-                                    {/* ADR-0014: warns when the local DB opened UNENCRYPTED at rest.
-                                        Renders nothing in the normal (encrypted) case. Sits above
-                                        every main-app view and the recording indicator; not shown
-                                        during onboarding (DB may not be initialized yet). */}
-                                    <EncryptionStatusBanner />
-                                    {/* ADR-0023: trial/license chrome — quiet chip in the last
-                                        trial week, persistent slim banner once expired/revoked,
-                                        nothing while licensed or early in the trial. */}
-                                    <TrialBanner />
-                                    {children}
-                                  </MainContent>
-                                </div>
+                                // First-run product tour lives ONLY in the main-app shell
+                                // (never during setup onboarding). It renders the welcome
+                                // overlay + coach-marks and, post-onboarding, routes to the
+                                // pre-seeded sample meeting. isTauri()-gated internally.
+                                <TourProvider>
+                                  <div className="flex">
+                                    <Sidebar />
+                                    <MainContent>
+                                      {/* ADR-0014: warns when the local DB opened UNENCRYPTED at rest.
+                                          Renders nothing in the normal (encrypted) case. Sits above
+                                          every main-app view and the recording indicator; not shown
+                                          during onboarding (DB may not be initialized yet). */}
+                                      <EncryptionStatusBanner />
+                                      {/* ADR-0023: trial/license chrome — quiet chip in the last
+                                          trial week, persistent slim banner once expired/revoked,
+                                          nothing while licensed or early in the trial. */}
+                                      <TrialBanner />
+                                      {children}
+                                    </MainContent>
+                                  </div>
+                                </TourProvider>
                               )}
                               {/* Import audio overlay and dialog */}
                               <ImportDropOverlay visible={showDropOverlay} />
