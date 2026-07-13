@@ -18,6 +18,9 @@
  *     /design/tour?tour=1         → step 1 (transcript)
  *     /design/tour?tour=2         → step 2 (summary + approve)
  *     /design/tour?tour=3         → step 3 (record button)
+ *     &hideTarget=1               → drop step 2's anchor to exercise the
+ *                                   "target missing → centered, never skipped"
+ *                                   fallback and verify Back/Next still work.
  */
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -46,7 +49,7 @@ const SAMPLE_TRANSCRIPT: { t: string; text: string }[] = [
   { t: '02:25', text: 'Support is fine as long as the docs land two days before the public date.' },
 ];
 
-function PreviewChrome() {
+function PreviewChrome({ hideSummaryAnchor }: { hideSummaryAnchor: boolean }) {
   return (
     <>
       {/* Report header mock */}
@@ -102,9 +105,13 @@ function PreviewChrome() {
               <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
                 <h3 className="mb-2 text-sm font-semibold text-foreground">Overview</h3>
 
-                {/* First summary block (step 2 anchor): text + source chip + approve */}
+                {/* First summary block (step 2 anchor): text + source chip + approve.
+                    hideSummaryAnchor drops the data-tour so the preview can verify
+                    the "target missing → centered step, Back still works" path. */}
                 <div
-                  data-tour={TOUR_ANCHORS.summaryApproveBlock}
+                  {...(hideSummaryAnchor
+                    ? {}
+                    : { 'data-tour': TOUR_ANCHORS.summaryApproveBlock })}
                   className="-mx-2 rounded-lg px-2 py-3"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -165,9 +172,11 @@ function PreviewChrome() {
 function TourPreview() {
   const search = useSearchParams();
   const tourParam = search.get('tour');
+  const hideTargetParam = search.get('hideTarget') === '1';
   const containerRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [stepIndex, setStepIndex] = useState(0);
+  const [hideSummaryAnchor, setHideSummaryAnchor] = useState(false);
 
   // Derive the initial state from the URL so a direct link screenshots cleanly.
   useEffect(() => {
@@ -182,13 +191,12 @@ function TourPreview() {
     }
   }, [tourParam]);
 
+  useEffect(() => {
+    setHideSummaryAnchor(hideTargetParam);
+  }, [hideTargetParam]);
+
   // Scope coach-mark lookups to this page's mocks (never the real sidebar).
   const getRoot = useMemo(() => () => containerRef.current ?? document, []);
-
-  const advanceOrIdle = () => {
-    if (stepIndex < TOUR_STEPS.length - 1) setStepIndex(stepIndex + 1);
-    else setPhase('idle');
-  };
 
   return (
     <div ref={containerRef} className="flex h-screen flex-col bg-muted">
@@ -201,12 +209,17 @@ function TourPreview() {
         <PreviewButton label="Step 2" active={phase === 'tour' && stepIndex === 1} onClick={() => { setPhase('tour'); setStepIndex(1); }} />
         <PreviewButton label="Step 3" active={phase === 'tour' && stepIndex === 2} onClick={() => { setPhase('tour'); setStepIndex(2); }} />
         <PreviewButton label="Reset" active={phase === 'idle'} onClick={() => setPhase('idle')} />
+        <PreviewButton
+          label={hideSummaryAnchor ? 'Step-2 target: hidden' : 'Step-2 target: shown'}
+          active={hideSummaryAnchor}
+          onClick={() => setHideSummaryAnchor((v) => !v)}
+        />
         <span className="ml-auto text-xs text-muted-foreground">
-          ?tour=welcome · ?tour=1 · ?tour=2 · ?tour=3
+          ?tour=welcome · 1 · 2 · 3 · &amp;hideTarget=1
         </span>
       </div>
 
-      <PreviewChrome />
+      <PreviewChrome hideSummaryAnchor={hideSummaryAnchor} />
 
       <WelcomeOverlay
         open={phase === 'welcome'}
@@ -226,7 +239,6 @@ function TourPreview() {
           onNext={() => setStepIndex((i) => Math.min(TOUR_STEPS.length - 1, i + 1))}
           onSkip={() => setPhase('idle')}
           onFinish={() => setPhase('idle')}
-          onResolveFailed={advanceOrIdle}
           getRoot={getRoot}
         />
       )}

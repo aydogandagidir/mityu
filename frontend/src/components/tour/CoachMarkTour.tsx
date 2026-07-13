@@ -19,8 +19,6 @@ interface CoachMarkTourProps {
   onSkip: () => void;
   /** Last-step primary ("Start recording"). */
   onFinish: () => void;
-  /** Fired when the current step's target can't be resolved — caller skips it. */
-  onResolveFailed: () => void;
   /** Scope the target lookup (dev-preview scopes to its own mock container). */
   getRoot?: () => ParentNode;
 }
@@ -29,6 +27,7 @@ const POPOVER_WIDTH = 320; // matches w-80
 const GAP = 14; // target ↔ popover
 const MARGIN = 12; // popover ↔ viewport edge
 const SPOTLIGHT_PAD = 8; // halo around the target
+const DIM = 'rgba(2, 6, 23, 0.60)';
 
 interface Position {
   top: number;
@@ -88,11 +87,13 @@ function computePosition(
 }
 
 /**
- * A single coach-mark: dims the screen, cuts a spotlight around the current
- * step's target, and floats a popover next to it. The dim is a huge box-shadow
- * on a transparent, pointer-events-none element so the real target shows through
- * at full brightness; a separate transparent layer swallows page clicks so the
- * only controls are the popover's.
+ * A single coach-mark. When the current step's target is on screen it dims the
+ * page, cuts a spotlight around the target, and floats the popover next to it.
+ * When the target is hidden or not yet mounted (a collapsed summary, a tab that
+ * isn't active, a draft still loading) the step is NOT skipped: the popover is
+ * shown centered over a plain dim instead, so every step stays reachable and
+ * Back/Next always work. `useTourTarget` keeps polling, so the spotlight snaps
+ * in the moment the target becomes visible.
  */
 export function CoachMarkTour({
   steps,
@@ -101,7 +102,6 @@ export function CoachMarkTour({
   onNext,
   onSkip,
   onFinish,
-  onResolveFailed,
   getRoot,
 }: CoachMarkTourProps) {
   const step = steps[stepIndex];
@@ -116,7 +116,6 @@ export function CoachMarkTour({
     step ? tourAnchorSelector(step.anchor) : '',
     active,
     rootFn,
-    onResolveFailed,
   );
 
   const popRef = useRef<HTMLDivElement>(null);
@@ -146,10 +145,18 @@ export function CoachMarkTour({
     );
   }, [rect, step]);
 
-  if (!active || !rect) return null;
+  if (!active) return null;
 
   const isLast = stepIndex === steps.length - 1;
   const total = steps.length;
+
+  // Positioned next to the target when we have its rect + a computed position;
+  // hidden for the one frame we're measuring; centered when there's no target.
+  const popStyle: React.CSSProperties = rect
+    ? pos
+      ? { top: pos.top, left: pos.left, opacity: 1 }
+      : { top: -9999, left: -9999, opacity: 0 }
+    : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 1 };
 
   return (
     <div
@@ -162,28 +169,33 @@ export function CoachMarkTour({
           tour (the popover has the only controls). */}
       <div className="absolute inset-0" aria-hidden="true" />
 
-      {/* Spotlight: transparent box whose huge box-shadow dims everything else. */}
-      <div
-        className="absolute rounded-xl ring-2 ring-primary pointer-events-none"
-        style={{
-          top: rect.top - SPOTLIGHT_PAD,
-          left: rect.left - SPOTLIGHT_PAD,
-          width: rect.width + SPOTLIGHT_PAD * 2,
-          height: rect.height + SPOTLIGHT_PAD * 2,
-          boxShadow: '0 0 0 9999px rgba(2, 6, 23, 0.60)',
-        }}
-        aria-hidden="true"
-      />
+      {rect ? (
+        /* Spotlight: transparent box whose huge box-shadow dims everything else. */
+        <div
+          className="absolute rounded-xl ring-2 ring-primary pointer-events-none"
+          style={{
+            top: rect.top - SPOTLIGHT_PAD,
+            left: rect.left - SPOTLIGHT_PAD,
+            width: rect.width + SPOTLIGHT_PAD * 2,
+            height: rect.height + SPOTLIGHT_PAD * 2,
+            boxShadow: `0 0 0 9999px ${DIM}`,
+          }}
+          aria-hidden="true"
+        />
+      ) : (
+        /* No target to spotlight — dim the whole screen so the centered step reads. */
+        <div
+          className="absolute inset-0"
+          style={{ background: DIM }}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Popover */}
       <div
         ref={popRef}
         className="absolute w-80 max-w-[calc(100vw-24px)] rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl p-4 pointer-events-auto animate-in fade-in-0 zoom-in-95 duration-150"
-        style={{
-          top: pos?.top ?? -9999,
-          left: pos?.left ?? -9999,
-          opacity: pos ? 1 : 0,
-        }}
+        style={popStyle}
       >
         <div className="flex items-start justify-between gap-2">
           <span className="text-xs font-medium tabular-nums text-muted-foreground">

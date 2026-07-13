@@ -35,12 +35,17 @@ function sameRect(a: TargetRect | null, b: TargetRect | null): boolean {
 /**
  * Resolves a `data-tour` target and tracks its rectangle while `active`.
  *
- * Robustness contract (never blocks or crashes the tour):
- *  - polls for the element for ~2s (async content may not be mounted yet); if it
- *    never appears (or stays hidden), calls `onNotFound` so the caller can skip;
+ * Robustness contract (never blocks, skips, or crashes the tour):
+ *  - polls indefinitely (every 150ms) while the step is active — async content
+ *    (a summary draft still loading) or a target being revealed (a collapsed
+ *    panel expanding, a tab switching) will resolve as soon as it appears;
+ *  - returns `null` while the target is missing/hidden. The caller shows the
+ *    step centered instead of skipping it, so a hidden target NEVER makes a step
+ *    disappear or breaks Back/Next;
  *  - follows the element through scroll / resize / layout shifts via a rAF loop
- *    (state only updates when the rect actually changes);
- *  - re-resolves / reports missing if the element leaves the DOM mid-step.
+ *    (state only updates when the rect actually changes); if the element leaves
+ *    the DOM or goes hidden mid-step, it drops the rect (→ centered) and resumes
+ *    polling until it returns.
  *
  * `getRoot` lets a caller scope the query (the browser dev-preview scopes to its
  * own mock container so it never grabs the real sidebar button). It is read from
@@ -50,15 +55,12 @@ export function useTourTarget(
   selector: string,
   active: boolean,
   getRoot: () => ParentNode = () => document,
-  onNotFound?: () => void,
 ): TargetRect | null {
   const [rect, setRect] = useState<TargetRect | null>(null);
   const rectRef = useRef<TargetRect | null>(null);
 
   const getRootRef = useRef(getRoot);
   getRootRef.current = getRoot;
-  const onNotFoundRef = useRef(onNotFound);
-  onNotFoundRef.current = onNotFound;
 
   useEffect(() => {
     rectRef.current = null;
@@ -68,21 +70,25 @@ export function useTourTarget(
 
     let cancelled = false;
     let rafId = 0;
+    let pollId = 0;
     let el: Element | null = null;
-    let attempts = 0;
-    const MAX_ATTEMPTS = 20; // ~2s at 100ms
+
+    const clearRect = () => {
+      if (rectRef.current !== null) {
+        rectRef.current = null;
+        setRect(null);
+      }
+    };
 
     const track = () => {
       if (cancelled) return;
       if (!el || !el.isConnected || !isVisible(el)) {
-        // element vanished or went hidden — try to re-resolve once more
-        const found = getRootRef.current().querySelector(selector);
-        if (found && isVisible(found)) {
-          el = found;
-        } else {
-          onNotFoundRef.current?.();
-          return;
-        }
+        // Target left the DOM or went hidden (collapsed panel, tab switch, a
+        // re-render): drop the spotlight and resume polling until it comes back.
+        el = null;
+        clearRect();
+        poll();
+        return;
       }
       const next = readRect(el);
       if (!sameRect(rectRef.current, next)) {
@@ -92,7 +98,7 @@ export function useTourTarget(
       rafId = requestAnimationFrame(track);
     };
 
-    const resolve = () => {
+    const poll = () => {
       if (cancelled) return;
       const found = getRootRef.current().querySelector(selector);
       if (found && isVisible(found)) {
@@ -105,19 +111,17 @@ export function useTourTarget(
         rafId = requestAnimationFrame(track);
         return;
       }
-      attempts += 1;
-      if (attempts >= MAX_ATTEMPTS) {
-        onNotFoundRef.current?.();
-        return;
-      }
-      window.setTimeout(resolve, 100);
+      // Not resolved yet — keep polling. Never gives up while active, so a
+      // late-appearing or just-revealed target still gets spotlighted.
+      pollId = window.setTimeout(poll, 150);
     };
 
-    resolve();
+    poll();
 
     return () => {
       cancelled = true;
       if (rafId) cancelAnimationFrame(rafId);
+      if (pollId) clearTimeout(pollId);
     };
   }, [selector, active]);
 

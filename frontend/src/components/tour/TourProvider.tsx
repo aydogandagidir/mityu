@@ -27,6 +27,13 @@ import { CoachMarkTour } from './CoachMarkTour';
 interface TourContextValue {
   /** Settings → "Replay product tour": clears the flag, opens the sample, shows welcome. */
   replayTour: () => void;
+  /**
+   * `data-tour` anchor of the step currently on screen (null when the tour isn't
+   * running). Pages read this to REVEAL a target before the coach-mark looks for
+   * it — e.g. meeting-details expands / tabs to the summary for step 2 so the
+   * spotlight lands on a real, visible block instead of the step being skipped.
+   */
+  activeAnchor: string | null;
 }
 
 const noop = () => {
@@ -35,7 +42,10 @@ const noop = () => {
   }
 };
 
-const TourContext = createContext<TourContextValue>({ replayTour: noop });
+const TourContext = createContext<TourContextValue>({
+  replayTour: noop,
+  activeAnchor: null,
+});
 
 export function useTour(): TourContextValue {
   return useContext(TourContext);
@@ -83,8 +93,6 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [stepIndex, setStepIndex] = useState(0);
 
   const autoRanRef = useRef(false);
-  const stepIndexRef = useRef(0);
-  stepIndexRef.current = stepIndex;
 
   const navigateToSample = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -205,19 +213,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     focusRecordButton();
   }, []);
 
-  const handleResolveFailed = useCallback(() => {
-    const i = stepIndexRef.current;
-    if (i < TOUR_STEPS.length - 1) {
-      setStepIndex(i + 1);
-    } else {
-      // Last step's target is absent — end without a phantom record focus.
-      markTourCompleted();
-      setPhase('idle');
-    }
-  }, []);
-
   return (
-    <TourContext.Provider value={{ replayTour }}>
+    <TourContext.Provider
+      value={{
+        replayTour,
+        activeAnchor:
+          phase === 'tour' ? TOUR_STEPS[stepIndex]?.anchor ?? null : null,
+      }}
+    >
       {children}
 
       <WelcomeOverlay
@@ -235,7 +238,6 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
           onNext={handleNext}
           onSkip={handleSkipTour}
           onFinish={handleFinishTour}
-          onResolveFailed={handleResolveFailed}
         />
       )}
     </TourContext.Provider>

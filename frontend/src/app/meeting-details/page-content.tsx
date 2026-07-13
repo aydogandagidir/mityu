@@ -21,6 +21,8 @@ import { useTemplates } from '@/hooks/meeting-details/useTemplates';
 import { useCopyOperations } from '@/hooks/meeting-details/useCopyOperations';
 import { useMeetingOperations } from '@/hooks/meeting-details/useMeetingOperations';
 import { useConfig } from '@/contexts/ConfigContext';
+import { useTour } from '@/components/tour';
+import { TOUR_ANCHORS } from '@/lib/tour';
 
 export default function PageContent({
   meeting,
@@ -79,6 +81,22 @@ export default function PageContent({
   // survive collapsing and tab switches.
   const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false);
   const [mobileTab, setMobileTab] = useState<'transcript' | 'summary'>('transcript');
+
+  // Product-tour step 2 points at a source-linked summary block. Reveal the
+  // summary before the coach-mark looks for it: expand it if collapsed and, on
+  // narrow windows, switch to the summary tab. Without this the block can be
+  // display:hidden, and the step would land centered instead of on it.
+  const { activeAnchor } = useTour();
+  useEffect(() => {
+    if (activeAnchor === TOUR_ANCHORS.summaryApproveBlock) {
+      setIsSummaryCollapsed(false);
+      setMobileTab('summary');
+    } else if (activeAnchor === TOUR_ANCHORS.transcriptPanel) {
+      // On narrow windows the two panes are tabbed; make sure the transcript is
+      // the visible one for step 1 so Back from step 2 lands on it, not centered.
+      setMobileTab('transcript');
+    }
+  }, [activeAnchor]);
 
   // Ref to store the modal open function from SummaryGeneratorButtonGroup
   const openModelSettingsRef = useRef<(() => void) | null>(null);
