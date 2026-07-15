@@ -24,7 +24,7 @@ Must be resolved before any commercial launch — product-accuracy, legal exposu
 Getting an actually signed, distributable, verified build out the door.
 
 7. **v1.0.4 protected PR/exact-SHA CI is active.** `origin/main` is the published, rebranded Mityu v1.0.3 commit (`0a503be`), not vanilla upstream. Release PR #4 contains the v1.0.4 work and requires `rust`, `frontend` and `server-isolation` checks on every head, plus resolved review conversations. The baseline implementation passed; GitHub's current-head checks are authoritative and must be green before merge.
-8. **Windows signing inputs are known missing.** `Production` has zero secrets; repository scope holds the existing updater private key/password only. Five DigiCert KeyLocker inputs remain absent and must be provisioned by the authorised certificate owner. Updater secrets must move to `Production` only after password recovery and a successful continuity-preserving environment build.
+8. **Windows signing scope decided: updater-signed only (ADR-0029).** v1.0.4 ships with the Ed25519 Tauri updater signature and **no** Windows Authenticode, matching v1.0.0–v1.0.3. The updater key/password already exist as repository secrets that the `Production` jobs read, so no signing provisioning is needed to ship. The five DigiCert KeyLocker inputs and the updater-secret migration into `Production` are deferred to a later release; the SmartScreen unknown-publisher prompt is expected on install.
 9. **macOS has never been physically tested.** Signing infrastructure (`build-macos.yml`) is real and mature, but `docs/BACKLOG.md`'s A2 task ("state which platforms were verified") is still an unfilled placeholder, and only `aarch64-apple-darwin` is targeted (no Intel).
 10. **Linux is excluded from the release pipeline.** `build-linux.yml` exists (deb/appimage/rpm) but `release.yml` ships macOS+Windows only. README correctly says "build from source" for Linux today — this just needs an explicit go/no-go decision rather than silent default.
 11. Dormant upstream "Meetily PRO" licensing secrets (`MEETILY_RSA_PUBLIC_KEY`, `SUPABASE_URL`/`SUPABASE_ANON_KEY`) cleaned out of CI workflows (2026-07-07 pass) — confirmed zero code references before removal.
@@ -61,7 +61,7 @@ Non-code work the word "sale" actually requires.
 
 1. `cargo fmt` fix — **done** (2026-07-07).
 2. For v1.0.4, enforce ADR-0027's claim limits and disclose current raw-audio retention; do not represent A5 or C8 as passed.
-3. Close the independent technical release gates: immutable SHA, protected same-SHA CI, Windows Authenticode/updater signing, legal and legacy-lead decisions, signed installer smoke, then updater canary.
+3. Close the independent technical release gates: immutable SHA, protected same-SHA CI, updater signing (Windows Authenticode deferred, ADR-0029), legal and legacy-lead decisions, updater-signed installer smoke, then updater canary.
 4. Resume the evidence gates: collect Phase-0 recordings → run the harness → record a human GO/CONDITIONAL/NO-GO; then run and sign C8 on an immutable candidate.
 5. Implement C6's configurable/default retention target as a separately tested audio-pipeline change, with the required Windows and macOS smoke coverage.
 6. Only after A5/C8 close, unlock their dependent roadmap phases and target-environment claims.

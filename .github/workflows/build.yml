@@ -68,8 +68,11 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ inputs.production-release }}" == "true" ]]; then
-            if [[ -z "${{ inputs.release-id }}" || "${{ inputs.sign-binaries }}" != "true" ]]; then
-              echo "ERROR: Production mode requires a release id and platform signing."
+            # Production mandates a release id and the fail-closed updater key
+            # (enforced in release.yml). Platform Authenticode/Apple signing is
+            # optional: v1.0.4 ships updater-signed only (ADR-0029).
+            if [[ -z "${{ inputs.release-id }}" ]]; then
+              echo "ERROR: Production mode requires a release id."
               exit 1
             fi
           else

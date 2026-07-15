@@ -8,7 +8,7 @@
 
 - Phase 0 has a human-recorded GO or CONDITIONAL verdict in `docs/DECISIONS.md`.
 - Candidate version and commit SHA are fixed and all required CI checks are green.
-- Windows x64 candidate is signed with the production Authenticode identity and Tauri updater key.
+- Windows x64 candidate is signed with the Tauri updater key. Windows Authenticode is deferred for v1.0.4 (ADR-0029), so Windows shows an unknown-publisher SmartScreen prompt on install — this is expected, not a pilot failure.
 - Whisper `large-v3` and the selected local summary model are downloaded and integrity-verified.
 - The pilot user and every recorded participant have given the required consent.
 - No transcript, participant identity, audio, API key or unredacted screenshot is committed to the repository.
@@ -24,7 +24,7 @@
 | Mityu version | 1.0.4 |
 | Commit SHA | |
 | Installer SHA-256 | |
-| Authenticode signer / timestamp | |
+| Authenticode signer / timestamp | N/A for v1.0.4 — updater-signed only (ADR-0029) |
 | STT model and verified hash | |
 | Summary model and verified hash | |
 | Offline method and evidence | |
