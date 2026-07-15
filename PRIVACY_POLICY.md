@@ -6,6 +6,8 @@
 
 Mityu is built on the principle that your meeting data should remain private and under your control. This privacy policy explains how we handle data in our local-first meeting assistant.
 
+**Data controller (veri sorumlusu):** **Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** (trading as "bluedev"), İçerenköy Mah. Topçu İbrahim Sk. Quick Tower Sitesi No: 8-10d, Ataşehir/İstanbul, Türkiye — MERSİS 0178185796600001, VKN 1781857966. Contact: info@bluedev.dev. Because Mityu is local-first, the controller has **no access to your meeting content**; this identity governs the limited account/support and optional off-by-default telemetry data described below.
+
 ## Data Processing Philosophy
 
 ### Local-First Processing
@@ -132,9 +134,14 @@ We will notify users of any material changes to this privacy policy through:
 
 ## Contact Us
 
-For privacy-related questions or concerns:
+**Data controller:** **Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** (trading as "bluedev")
+- **Registered address**: İçerenköy Mah. Topçu İbrahim Sk. Quick Tower Sitesi No: 8-10d, Ataşehir/İstanbul, Türkiye
+- **MERSİS No**: 0178185796600001 · **VKN**: 1781857966 (Kozyatağı Vergi Dairesi) · **Ticaret Sicil No**: İstanbul-1125891
+- **Phone**: +90 530 721 0036
+
+For privacy-related questions or concerns (including KVKK data-subject requests):
 - **GitHub Issues**: [Create an issue](https://github.com/aydogandagidir/mityu/issues)
-- **Email**: info@bluedev.dev
+- **Email**: info@bluedev.dev · **Support**: support@bluedev.dev
 - **Website**: [bluedev.dev](https://bluedev.dev)
 
 ## Open Source Commitment

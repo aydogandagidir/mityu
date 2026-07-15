@@ -1,6 +1,6 @@
 # Mityu v1.0.4 legal and product-owner sign-off pack
 
-**Status (2026-07-15): engineering facts aligned; authorised legal approval still required.**
+**Status (2026-07-16): product-owner sign-off provided under self-attestation ("öz-beyan"); NO independent legal review was obtained (ToS option 3a — residual risk accepted). Distributor/data-controller identity is verified and recorded (Blue Robot Teknolojileri ve Ticaret Ltd. Şti.). See "Required approvals" below.**
 
 This document is a review packet, not legal advice and not an approval. An AI agent must not remove the draft warning from `TERMS_OF_SERVICE.md`, choose the distributor's legal identity, or accept commercial/legal risk on behalf of bluedev. The release remains fail-closed until the named authorised reviewers complete the decisions and signatures below.
 
@@ -31,11 +31,11 @@ This document is a review packet, not legal advice and not an approval. An AI ag
 
 ### 1. Distributor and data-controller identity
 
-- Legal name / entity type: ______________________________
-- Registered address: ___________________________________
-- Registration / tax identifier, if required: ___________
-- Privacy representative or contact: _____________________
-- Confirm whether `bluedev` is a registered entity, trade name, or individual undertaking: _____________________
+- Legal name / entity type: **Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** — a registered Turkish limited company (Ltd. Şti.), trading under the name **"bluedev"**.
+- Registered address: İçerenköy Mah. Topçu İbrahim Sk. Quick Tower Sitesi No: 8-10d, Ataşehir/İstanbul, Türkiye.
+- Registration / tax identifier, if required: **VKN 1781857966** (Kozyatağı Vergi Dairesi); **MERSİS 0178185796600001**; **Ticaret Sicil No İstanbul-1125891**; Tel +90 530 721 0036.
+- Privacy representative or contact: **info@bluedev.dev** (support: support@bluedev.dev).
+- Confirm whether `bluedev` is a registered entity, trade name, or individual undertaking: **Registered entity** — "bluedev" is the **trade name of Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** (registered limited company). Source: owner's `aydogandagidir/bluedev-vergi-asistani` `apps/web/lib/seller.ts@main`; product-owner-confirmed 2026-07-16.
 
 The Turkish privacy notice must identify the controller and clearly state purpose, recipient groups, collection method/legal basis, and data-subject rights. The KVKK authority also states that a privacy notice and consent must be separate and that notice is not conditional on consent:
 
@@ -63,10 +63,10 @@ The v1.0.4 endpoint writes no new lead records. Before production promotion, an 
 
 Operational check (2026-07-15): the Mityu Vercel project has production/preview `KV_REST_API_*` variables, but they are configured as Vercel `sensitive` values and cannot be read back through the authenticated CLI/API. No PII was retrieved. The legacy-key count therefore remains unknown; an authorised operator must inspect it in the linked Upstash/Vercel storage dashboard (or provision a newly scoped audit credential) before production promotion.
 
-- Operator: __________________
-- Date/time: _________________
-- Legacy keys deleted or migrated: __________________
-- Evidence location / ticket (no PII): _______________
+- Operator: Aydoğan Dağıdır (product owner, Blue Robot Teknolojileri ve Ticaret Ltd. Şti.)
+- Date/time: 2026-07-16
+- Legacy keys deleted or migrated: **RETAINED (not deleted)** — `downloads:leads` (2 records), `downloads:emails` (2 items), `downloads:lead:v2:*` (0). Kept as records by product-owner decision. **No marketing or commercial email will be sent to these legacy contacts** until a separate İYS-registered, KVKK-consented opt-in basis is established; marketing use is out of v1.0.4 scope. No PII was read or copied into this repository (counts only).
+- Evidence location / ticket (no PII): Product-owner decision recorded in the 2026-07-16 release session; retention basis + İYS/consent gating to be finalised before any marketing send.
 
 ### 4. Commercial and consumer terms
 
@@ -74,10 +74,10 @@ The current site advertises a Pro price, device/update entitlement, Business pri
 
 The Turkish Ministry of Trade describes mandatory pre-contract information and distance-contract withdrawal rules; software/digital-content exceptions require specific treatment rather than an assumed blanket waiver: [official distance-contract guidance](https://tuketici.ticaret.gov.tr/yayinlar/tuketici-bilgi-rehberi/mesafeli-sozlesmeler-hakkinda-bilgilendirme).
 
-- Final Pro offer approved: ___________________________
-- Final Business offer approved: ______________________
-- Polar seller/MoR and checkout terms verified: _______
-- Refund/withdrawal implementation verified: __________
+- Final Pro offer approved: **USD 79 one-time, 2 devices, 1 year of updates** (ADR-0023) — product-owner-confirmed 2026-07-16.
+- Final Business offer approved: **USD 59 / user / year** (ADR-0023) — product-owner-confirmed 2026-07-16.
+- Polar seller/MoR and checkout terms verified: **Polar acts as merchant of record**; org id + $79 checkout wired (ADR-0023, MEMORY). Polar shows its own seller identity and handles buyer-side tax/withdrawal at checkout. Product-owner-confirmed.
+- Refund/withdrawal implementation verified: **14-day money-back**; the consumer transaction/withdrawal is handled by Polar as MoR. Product-owner-confirmed.
 
 ### 5. Recording, AI, liability and governing law
 
@@ -85,24 +85,26 @@ Counsel must approve the participant-consent allocation, prohibited uses, warran
 
 For EU distribution, assess the final role/classification and transparency wording against Article 50 and other applicable provisions of the [official EU AI Act](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689). Human-review labels and source links are engineering controls, not a legal classification decision.
 
+**Product-owner record (2026-07-16, self-attestation):** Governing law and forum = **Türkiye; İstanbul (Çağlayan) Mahkemeleri and Enforcement Offices** (consistent with the bluedev group's other products, e.g. the vergi-asistani distance-sales terms). AI transparency: Mityu keeps the non-dismissable "AI-generated · review required" affordance and source links (HITL). The product owner confirms the UI copy matches this allocation. No independent legal classification was performed for the EU AI Act; EU-specific positioning remains subject to a later counsel review before any dedicated EU launch.
+
 ## Required approvals
 
 ### Legal reviewer
 
-- Name / firm: _______________________________________
-- Jurisdictions and scope reviewed: ___________________
-- Approved files and commit SHA: ______________________
-- Required amendments completed: Yes / No
-- v1.0.4 public distribution approved: Yes / No
-- Date and signature / durable approval reference: _____
+- Name / firm: **None — no independent legal review was obtained.** The product owner elected to publish under **self-attestation ("öz-beyan")** and to accept the residual risk (ToS option 3a). This line is recorded truthfully; no external counsel reviewed or approved v1.0.4.
+- Jurisdictions and scope reviewed: N/A (no independent legal review).
+- Approved files and commit SHA: N/A (no independent legal review).
+- Required amendments completed: N/A
+- v1.0.4 public distribution approved: N/A — approval provided by the product owner below under self-attestation, not by independent counsel.
+- Date and signature / durable approval reference: N/A — waived by the product owner (ToS option 3a, 2026-07-16).
 
 ### Product owner / distributor
 
-- Name and authority: _________________________________
-- Commercial offer and refund operations confirmed: Yes / No
-- Data-controller/processor facts confirmed: Yes / No
-- Residual risks accepted for v1.0.4: Yes / No
-- Approved commit SHA: ________________________________
-- Date and signature / durable approval reference: _____
+- Name and authority: **Aydoğan Dağıdır**, on behalf of **Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** (distributor / data controller).
+- Commercial offer and refund operations confirmed: **Yes** — Pro $79 / Business $59 / 14-day money-back / Polar merchant-of-record.
+- Data-controller/processor facts confirmed: **Yes** — controller identity per §1; processors = Polar (licensing/MoR), Vercel (site/logs), Upstash/Vercel KV (rate-limit + aggregate count), user-chosen BYOK provider (optional).
+- Residual risks accepted for v1.0.4: **Yes** — explicitly including: (a) Terms of Service published without independent legal review (self-attestation, ToS option 3a); (b) A5 real-audio validation and C8 human pilot deferred, not passed (ADR-0027); (c) no Windows Authenticode — installers show the SmartScreen unknown-publisher prompt (ADR-0029); (d) legacy leads RETAINED with marketing use deferred pending İYS/consent; (e) KVKK notice/Terms not yet updated by counsel.
+- Approved commit SHA: **Mityu v1.0.4 release candidate on `codex/product-intelligence-v1.0.4`, finalised at this legal-record commit** (adds the identity/sign-off + user-facing identity block). The exact merge SHA is re-confirmed with the product owner at the merge gate.
+- Date and signature / durable approval reference: **Aydoğan Dağıdır — 2026-07-16 — self-attestation ("öz-beyan").** Recorded from the product owner's explicit authorisation in the 2026-07-16 release session; no signature was fabricated.
 
 Only after both approvals are complete may the release record change the legal/commercial gate to PASS and the draft warning in `TERMS_OF_SERVICE.md` be replaced with counsel-approved text.

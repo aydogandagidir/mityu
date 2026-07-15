@@ -2,7 +2,7 @@
 
 *Last updated: 2026-07-14*
 
-> **⚠ DRAFT — NOT LEGAL ADVICE, NOT YET REVIEWED BY COUNSEL.** This document was authored by an AI coding assistant to close a gap identified in a commercial-launch-readiness audit (`docs/GA_READINESS.md`, Tier 0, item 4): Mityu had no Terms of Service at all. It follows common structure for BYOK desktop software and tries to reflect this codebase's actual behavior (local-first processing, recording consent flow, HITL review, redaction), but it has **not been reviewed by a lawyer** and must not be published or relied on as-is — especially given KVKK (Turkey) and potential GDPR (EU) exposure from recording third parties' voices. Replace this notice only after real legal review.
+> **⚠ NOT LEGAL ADVICE · NOT REVIEWED BY COUNSEL · PUBLISHED UNDER SELF-ATTESTATION.** These Terms were drafted to reflect this codebase's actual behavior (local-first processing, recording-consent flow, HITL review, redaction) and follow common structure for BYOK desktop software. They have **not been reviewed by a lawyer**; the product owner has elected to publish them under self-attestation ("öz-beyan", 2026-07-16) and has accepted the residual risk — particularly the KVKK (Turkey) and potential GDPR (EU) considerations around recording third parties' voices. These Terms may be revised after a future legal review.
 
 ## 1. Acceptance of terms
 
@@ -12,7 +12,7 @@ By downloading, installing, or using Mityu ("the App", "the Service"), you agree
 
 Mityu is a local-first desktop application that records audio, transcribes it on-device (Whisper / NVIDIA Parakeet), and produces AI-assisted, human-reviewed summaries and action items. Capture and transcription run entirely on your device by default. Summarization may run locally or, at your choice, through a third-party LLM provider you configure with your own API key ("BYOK").
 
-Mityu is an independent product of **bluedev** (`bluedev.dev`). It is built on the open-source **Meetily** project by Zackriya Solutions (MIT license) but is **not affiliated with, endorsed by, or supported by Meetily or Zackriya Solutions**.
+Mityu is an independent product of **bluedev** — the trade name of **Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** (`bluedev.dev`). It is built on the open-source **Meetily** project by Zackriya Solutions (MIT license) but is **not affiliated with, endorsed by, or supported by Meetily or Zackriya Solutions**.
 
 ## 3. Your responsibility when recording others
 
@@ -56,8 +56,15 @@ We may update these Terms as the product evolves. Material changes will be noted
 
 These Terms are governed by the laws of the Republic of Türkiye, without regard to conflict-of-law principles, unless otherwise required by mandatory local consumer-protection law in your jurisdiction. *(To be confirmed by counsel — this may need to change depending on target markets and entity structure.)*
 
-## 13. Contact
+## 13. Provider / seller identity and contact
 
-- **Email**: info@bluedev.dev
+**Provider / seller (data controller):** **Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** (trading as "bluedev")
+
+- **Registered address**: İçerenköy Mah. Topçu İbrahim Sk. Quick Tower Sitesi No: 8-10d, Ataşehir/İstanbul, Türkiye
+- **MERSİS No**: 0178185796600001 · **VKN**: 1781857966 (Kozyatağı Vergi Dairesi) · **Ticaret Sicil No**: İstanbul-1125891
+- **Phone**: +90 530 721 0036
+- **Email**: info@bluedev.dev · **Support**: support@bluedev.dev
 - **Website**: [bluedev.dev](https://bluedev.dev)
 - **GitHub Issues**: [Create an issue](https://github.com/aydogandagidir/mityu/issues)
+
+Paid distributions are sold through **Polar** as merchant of record; Polar's own seller identity and terms also apply to the payment transaction shown at checkout.
