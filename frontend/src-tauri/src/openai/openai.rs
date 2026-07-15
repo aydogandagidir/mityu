@@ -101,14 +101,25 @@ fn is_chat_model(model_id: &str) -> bool {
 /// # Returns
 /// Vector of available models, or fallback models on error
 #[command]
-pub async fn get_openai_models(api_key: Option<String>) -> Result<Vec<OpenAIModel>, String> {
-    // Return fallback if no API key provided
+pub async fn get_openai_models(
+    state: tauri::State<'_, crate::state::AppState>,
+    api_key: Option<String>,
+) -> Result<Vec<OpenAIModel>, String> {
+    // A newly entered key may be used once; persisted credentials remain on
+    // the Rust side and are never returned to the WebView.
     let api_key = match api_key {
         Some(key) if !key.trim().is_empty() => key.trim().to_string(),
-        _ => {
-            log::info!("No OpenAI API key provided, returning fallback models");
-            return Ok(get_fallback_models());
-        }
+        _ => match crate::database::repositories::setting::SettingsRepository::get_api_key(
+            state.db_manager.pool(),
+            &crate::context::current(),
+            "openai",
+        )
+        .await
+        .map_err(|_| "Could not access the stored OpenAI credential".to_string())?
+        {
+            Some(key) => key,
+            None => return Ok(get_fallback_models()),
+        },
     };
 
     // Check cache first
@@ -127,7 +138,10 @@ pub async fn get_openai_models(api_key: Option<String>) -> Result<Vec<OpenAIMode
 
     // Fetch from API
     log::info!("Fetching OpenAI models from API...");
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "Could not create the OpenAI client".to_string())?;
 
     let response = match client
         .get("https://api.openai.com/v1/models")
@@ -137,8 +151,8 @@ pub async fn get_openai_models(api_key: Option<String>) -> Result<Vec<OpenAIMode
         .await
     {
         Ok(resp) => resp,
-        Err(e) => {
-            log::warn!("Failed to fetch OpenAI models: {}. Using fallback.", e);
+        Err(_) => {
+            log::warn!("Failed to fetch OpenAI models; using fallback");
             return Ok(get_fallback_models());
         }
     };
@@ -154,8 +168,8 @@ pub async fn get_openai_models(api_key: Option<String>) -> Result<Vec<OpenAIMode
 
     let api_response: OpenAIApiResponse = match response.json().await {
         Ok(data) => data,
-        Err(e) => {
-            log::warn!("Failed to parse OpenAI response: {}. Using fallback.", e);
+        Err(_) => {
+            log::warn!("Failed to parse OpenAI response; using fallback");
             return Ok(get_fallback_models());
         }
     };

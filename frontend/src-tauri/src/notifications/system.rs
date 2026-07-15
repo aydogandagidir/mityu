@@ -17,19 +17,28 @@ impl<R: Runtime> SystemNotificationHandler<R> {
 
     /// Show a notification using Tauri's notification plugin
     pub async fn show_notification(&self, notification: Notification) -> Result<()> {
-        log_info!("Attempting to show notification: {}", notification.title);
+        log_info!(
+            "Attempting to show notification (title_chars={}, body_chars={})",
+            notification.title.chars().count(),
+            notification.body.chars().count()
+        );
 
         // Check if DND is active and respect user settings
         if self.is_dnd_active().await && self.should_respect_dnd(&notification) {
             log_info!(
-                "DND is active, skipping notification: {}",
-                notification.title
+                "DND is active, skipping notification (title_chars={}, body_chars={})",
+                notification.title.chars().count(),
+                notification.body.chars().count()
             );
             return Ok(());
         }
 
         // Use Tauri notification for all platforms
-        log_info!("Showing Tauri notification: {}", notification.title);
+        log_info!(
+            "Showing Tauri notification (title_chars={}, body_chars={})",
+            notification.title.chars().count(),
+            notification.body.chars().count()
+        );
 
         let builder = self
             .app_handle
@@ -40,10 +49,7 @@ impl<R: Runtime> SystemNotificationHandler<R> {
 
         match builder.show() {
             Ok(_) => {
-                log_info!(
-                    "Successfully showed Tauri notification: {}",
-                    notification.title
-                );
+                log_info!("Successfully showed Tauri notification");
                 Ok(())
             }
             Err(e) => {

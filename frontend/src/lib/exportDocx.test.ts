@@ -10,8 +10,8 @@
  * therefore assert the renderer CONTRACT that the export pipeline relies on:
  *   - returns a real, NON-EMPTY `Blob` (bytes present) for a representative doc;
  *   - the `Blob.type` is the expected MIME type;
- *   - does NOT throw on the empty doc or the legacy `draft: null`-shaped doc
- *     (zero sections / zero action items) — the pipeline guards emptiness before
+ *   - does NOT throw on an approved empty doc (zero sections / zero action
+ *     items) — the pipeline guards emptiness before
  *     calling these, but the renderers must still be total.
  * (The structural correctness of the mapping is covered indirectly by the shared
  * `ExportDoc` model + the Markdown renderer's exhaustive C4.1 assertions.)
@@ -20,7 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderExportDocx } from './exportDocx';
 import { renderExportPdf } from './exportPdf';
-import type { ExportDoc } from './exportModel';
+import { ExportSourceLinkError, type ExportDoc } from './exportModel';
 
 /** A representative, fully-populated doc exercising every item kind + footer. */
 const FULL_DOC: ExportDoc = {
@@ -33,32 +33,34 @@ const FULL_DOC: ExportDoc = {
     approvedBy: 'ada@bluedev.dev',
     model: 'claude-3-5',
   },
+  summaryStatus: 'approved',
   sections: [
     {
       title: 'Decisions',
       items: [
-        { kind: 'heading1', text: 'Budget', sourceTs: '[00:10]' },
-        { kind: 'heading2', text: 'Q3 allocation', sourceTs: '[00:11]' },
-        { kind: 'text', text: 'We approved the Q3 budget.', sourceTs: '[00:12]' },
-        { kind: 'bullet', text: 'Hire two engineers', sourceTs: '[01:05]' },
-        { kind: 'bullet', text: 'Ship export feature' },
+        { id: 'b1', kind: 'heading1', text: 'Budget', sourceChunkId: 't10', sourceTs: '[00:10]' },
+        { id: 'b2', kind: 'heading2', text: 'Q3 allocation', sourceChunkId: 't11', sourceTs: '[00:11]' },
+        { id: 'b3', kind: 'text', text: 'We approved the Q3 budget.', sourceChunkId: 't12', sourceTs: '[00:12]' },
+        { id: 'b4', kind: 'bullet', text: 'Hire two engineers', sourceChunkId: 't65', sourceTs: '[01:05]' },
+        { id: 'b5', kind: 'bullet', text: 'Ship export feature', sourceChunkId: 't90', sourceTs: '[01:30]' },
       ],
     },
   ],
   actionItems: [
-    { text: 'Draft the JD', assignee: 'Ada', due: 'Fri', sourceTs: '[02:00]' },
-    { text: 'No-timestamp task' },
+    { id: 'a1', text: 'Draft the JD', assignee: 'Ada', due: 'Fri', sourceChunkId: 't120', sourceTs: '[02:00]' },
+    { id: 'a2', text: 'Second task', sourceChunkId: 't130', sourceTs: '[02:10]' },
   ],
   excludedActionItemCount: 2,
 };
 
-/** The degraded doc a legacy `draft: null` / nothing-approved response yields. */
+/** An approved but content-empty document (normally stopped by the hook guard). */
 const EMPTY_DOC: ExportDoc = {
   meta: {
     meetingId: 'm2',
     title: '',
     exportedAt: '2026-07-05 10:00',
   },
+  summaryStatus: 'approved',
   sections: [],
   actionItems: [],
   excludedActionItemCount: 0,
@@ -115,8 +117,10 @@ describe('renderExportPdf', () => {
         {
           title: 'Long section',
           items: Array.from({ length: 120 }, (_, i) => ({
+            id: `line-${i}`,
             kind: 'bullet' as const,
             text: `Line ${i} — a reasonably long bullet that exercises wrapping and page overflow so pagination runs`,
+            sourceChunkId: 't30',
             sourceTs: '[00:30]',
           })),
         },
@@ -133,5 +137,38 @@ describe('renderExportPdf', () => {
     it('still yields a valid non-empty single-page PDF', async () => {
       expect((await renderExportPdf(EMPTY_DOC)).size).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('binary renderer source-link boundary', () => {
+  const malformed: ExportDoc = {
+    ...FULL_DOC,
+    sections: [
+      {
+        title: 'Invalid',
+        items: [
+          {
+            id: 'broken',
+            kind: 'text',
+            text: 'Must not export',
+            sourceChunkId: 'missing',
+            sourceTs: '',
+          },
+        ],
+      },
+    ],
+    actionItems: [],
+  };
+
+  it('blocks DOCX before producing a blob', async () => {
+    await expect(renderExportDocx(malformed)).rejects.toBeInstanceOf(
+      ExportSourceLinkError,
+    );
+  });
+
+  it('blocks PDF before producing a blob', async () => {
+    await expect(renderExportPdf(malformed)).rejects.toBeInstanceOf(
+      ExportSourceLinkError,
+    );
   });
 });

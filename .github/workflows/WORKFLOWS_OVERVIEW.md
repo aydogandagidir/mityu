@@ -11,7 +11,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 **Key Features:**
 - `rust` job: `cargo fmt --all --check`, `cargo clippy --all-targets`, `cargo test --all`
-- `frontend` job: `pnpm install --frozen-lockfile`, `pnpm run lint`, `pnpm tsc --noEmit`
+- `frontend` job: exact Node 20.19.4 + pnpm 10.33.0, `pnpm install --frozen-lockfile`, `pnpm run lint`, `pnpm tsc --noEmit`, `pnpm test`
 - `server-isolation` job: fails the build if `server/` exists without a `*cross_tenant*` isolation test (no-op guard until `server/` ships, see CLAUDE.md §5)
 - No build artifacts, no signing, no releases
 
@@ -29,10 +29,9 @@ This document provides a quick overview of all available CI/CD workflows in this
 **Purpose:** Fast builds for development and testing
 
 **Key Features:**
-- Signing OFF by default (faster builds)
-- Optional signing via workflow dispatch input
+- Signing always OFF; production credentials and updater artifacts are unavailable
 - All platforms in parallel
-- 14-day artifact retention
+- Verified artifacts uploaded on request
 
 **Triggers:**
 - Manual dispatch only
@@ -48,9 +47,8 @@ This document provides a quick overview of all available CI/CD workflows in this
 **Purpose:** Build and test specifically for Apple Silicon (M1/M2/M3)
 
 **Key Features:**
-- Apple Developer Certificate signing (optional)
-- Notarization with Apple ID
-- Signature verification
+- Unsigned development package only
+- Production credentials and updater artifacts are unavailable
 - macOS-focused optimizations
 
 **Triggers:**
@@ -71,9 +69,9 @@ This document provides a quick overview of all available CI/CD workflows in this
 **Purpose:** Build and test specifically for Windows x64
 
 **Key Features:**
-- DigiCert KeyLocker signing (cloud HSM)
-- Signs both MSI and NSIS installers
-- Signature verification with PowerShell
+- Thin wrapper around the same pinned reusable build used by production
+- Unsigned development package only
+- DigiCert and updater credentials are unavailable
 - MSI installer validation
 
 **Triggers:**
@@ -96,7 +94,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 **Key Features:**
 - Support for Ubuntu 22.04 and 24.04
 - Multiple bundle formats (DEB, AppImage, RPM)
-- Tauri updater signing
+- No updater signing or production credentials
 - AppImage compatibility fixes
 - Package verification
 
@@ -116,10 +114,10 @@ This document provides a quick overview of all available CI/CD workflows in this
 ---
 
 ### 6. **build-test.yml** - Multi-Platform Test Builds
-**Purpose:** Test builds across all platforms with signing
+**Purpose:** Test builds across all platforms without production signing keys
 
 **Key Features:**
-- Signing ON by default
+- Signing OFF; production updater keys are unavailable to this workflow
 - All platforms in parallel
 - Uses reusable `build.yml` workflow
 - 30-day artifact retention
@@ -130,7 +128,6 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 **Use When:**
 - Pre-release testing
-- Verifying signing infrastructure
 - Testing across all platforms simultaneously
 
 ---
@@ -155,9 +152,14 @@ This document provides a quick overview of all available CI/CD workflows in this
 - Creates GitHub Release (draft)
 - Version tags from `tauri.conf.json`
 - Uploads release assets
-- **macOS and Windows only** (Linux excluded from production releases)
+- **Windows x64 only for v1.0.4**, matching the published v1.0.3 platform scope; macOS remains gated on FFmpeg provenance, signing/notarization and physical smoke tests
 - Auto-generates `latest.json` for Tauri updater
-- **Auto-increment versioning**: If tag exists, auto-increments (e.g., `0.1.1` -> `0.1.1.1` -> `0.1.1.2`, up to `.100`)
+- Runs the reusable Rust/frontend CI suite before creating a draft or tag
+- Validates package, Tauri, Cargo and Cargo.lock versions are identical
+- Runs only from `main` and pins the build to the dispatched commit SHA
+- Fails before creating a draft/tag when a required production signing secret is absent
+- Rejects an existing tag; release versions are always chosen explicitly as SemVer
+- Verifies exact Windows installers, manifest version/repository URLs and the remotely uploaded NSIS updater signature cryptographically against the public key baked into the release commit
 
 **Triggers:**
 - Manual dispatch only
@@ -168,18 +170,16 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 **Outputs:**
 - GitHub Release (draft)
-- macOS: DMG installer, app.tar.gz (updater), .sig
 - Windows: MSI installer (signed), NSIS installer (signed), .sig files
 - Updater manifest: latest.json
 - Release notes auto-generated
 
 **Version Behavior:**
-- If `v0.1.1` tag doesn't exist: creates `v0.1.1`
-- If `v0.1.1` exists: creates `v0.1.1.1`
-- If `v0.1.1.1` exists: creates `v0.1.1.2`
-- Maximum: `v0.1.1.100` (then update `tauri.conf.json`)
+- If all canonical sources say `1.0.4` and `v1.0.4` does not exist, creates draft `v1.0.4`.
+- If `v1.0.4` already exists, stops and requires an explicit new SemVer; it never invents a four-part version.
+- If a failed build left an unpublished draft/tag, follow `docs/RELEASE_CHECKLIST.md` to remove that failed draft safely before retrying.
 
-**Note:** Linux builds are not included in releases. Use `build-linux.yml` for Linux testing.
+**Note:** Linux and macOS are not included in the v1.0.4 production release. Use their platform workflows for development/testing; do not add macOS back to production until its documented release gates pass.
 
 ---
 
@@ -207,7 +207,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 2. **Select workflow** from left sidebar
 3. **Click "Run workflow"** button
 4. **Select branch** to run against
-5. **Configure options** (build type, signing, etc.)
+5. **Configure the exposed non-secret options** (build type, bundle type, artifact upload)
 6. **Click "Run workflow"** to start
 7. **Monitor progress** in the Actions tab
 
@@ -217,34 +217,31 @@ This document provides a quick overview of all available CI/CD workflows in this
 
 ### "I'm developing a new feature..."
 - **Use `build-devtest.yml`** (manual dispatch)
-- Fast builds, no signing by default
-- Enable signing checkbox if needed
+- Cross-platform unsigned test packages
 
 ### "I need to test macOS-specific code..."
 - **Use `build-macos.yml`** (manual dispatch)
 - Focus on macOS
-- Optional signing
+- Unsigned development package
 
 ### "I need to test Windows-specific code..."
 - **Use `build-windows.yml`** (manual dispatch)
 - Focus on Windows
-- Optional signing
+- Unsigned development package
 
 ### "I need to test Linux packages..."
 - **Use `build-linux.yml`** (manual dispatch)
 - Choose Ubuntu version
 - Choose bundle types
 
-### "I need signed builds for all platforms..."
-- **Use `build-test.yml`** (manual dispatch)
-- All platforms
-- Signing enabled
-- Full verification
+### "I need a signed build..."
+- Use `release.yml` only after all release gates pass. Signing is intentionally unavailable to manual development wrappers.
+- Production signing remains exclusive to the protected `Production` environment.
 
 ### "I'm ready to release..."
 - **Use `release.yml`** (manual dispatch)
 - Creates GitHub Release
-- All platforms, fully signed
+- Windows x64, fully signed
 - Production-ready artifacts
 
 ---
@@ -259,7 +256,7 @@ build.yml (reusable)
     |-- build-test.yml (calls build.yml)
     |-- release.yml (calls build.yml)
 
-Standalone (don't use build.yml):
+Other callers of `build.yml`:
     |-- build-macos.yml
     |-- build-windows.yml
     |-- build-linux.yml
@@ -273,31 +270,29 @@ Standalone (don't use build.yml):
 
 | Workflow | Platforms | Default Signing | Speed | Retention | Use Case |
 |----------|-----------|----------------|-------|-----------|----------|
-| `build-devtest.yml` | All | OFF | Fast | 14 days | Development |
-| `build-macos.yml` | macOS | Optional | Medium | 30 days | macOS dev |
-| `build-windows.yml` | Windows | Optional | Medium | 30 days | Windows dev |
-| `build-linux.yml` | Linux | Optional | Medium | 30 days | Linux dev |
-| `build-test.yml` | All | ON | Slow | 30 days | Pre-release |
-| `release.yml` | macOS + Windows | REQUIRED | Slow | Permanent | Release |
+| `build-devtest.yml` | All | OFF | Fast | 30 days | Development |
+| `build-macos.yml` | macOS | OFF | Medium | 30 days | macOS dev |
+| `build-windows.yml` | Windows | OFF | Medium | 30 days | Windows dev |
+| `build-linux.yml` | Linux | OFF | Medium | 30 days | Linux dev |
+| `build-test.yml` | All | OFF | Slow | 30 days | Cross-platform test |
+| `release.yml` | Windows x64 | REQUIRED | Slow | Permanent | v1.0.4 release |
 
 ---
 
 ## Artifact Naming Convention
 
-```
-mityu-{workflow}-{platform}-{target}-{version}
-```
+Artifact containers use `{asset-prefix}-{target}` on Windows/macOS and `{asset-prefix}-{runner}-{target}` on Linux. Versioned installer filenames inside those containers are generated by Tauri.
 
 **Examples:**
-- `mityu-devtest-macOS-aarch64-apple-darwin-0.1.3`
-- `mityu-test-windows-x86_64-pc-windows-msvc-0.1.3`
-- `mityu-macos-aarch64-release-0.1.3`
+- `mityu-devtest-aarch64-apple-darwin`
+- `mityu-test-x86_64-pc-windows-msvc`
+- `mityu-devtest-ubuntu-22.04-x86_64-unknown-linux-gnu`
 
 ---
 
 ## Required Secrets
 
-All workflows require these secrets to be configured:
+Configure only the secrets required by the workflow/platform being run. The v1.0.4 production release requires the Windows and Tauri Updater groups below. macOS secrets are reserved for a future signed macOS workflow after that platform returns to the production matrix; current macOS workflows are unsigned and cannot consume them.
 
 ### macOS Signing
 - `APPLE_CERTIFICATE` - Developer ID certificate (base64)
@@ -319,8 +314,8 @@ All workflows require these secrets to be configured:
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` - Key password
 
 ### Application Configuration
-- `MITYU_POSTHOG_API_KEY` - Mityu-owned PostHog project key (embedded at build time; unset = telemetry no-op)
-- `MITYU_POLAR_ORG_ID` - Polar.sh organization id for license activation (embedded at build time; unset = licensing UI reports not-configured, trial still works — ADR-0023)
+- `MITYU_POSTHOG_API_KEY` - deliberately unavailable to v1.0.4 workflows; production telemetry remains a local no-op until processor/DPA, region, retention and erasure governance are approved
+- `MITYU_POLAR_ORG_ID` - Optional Polar.sh organization-id override; unset builds use the public production Mityu organization id embedded per ADR-0023
 - `NEXT_PUBLIC_MITYU_CHECKOUT_URL` - **repo variable** (not secret): Buy-button destination, inlined into the frontend at build time; unset = falls back to the live pricing page (ADR-0023)
 
 ---
@@ -328,7 +323,7 @@ All workflows require these secrets to be configured:
 ## Performance Tips
 
 1. **Use devtest workflow** for routine development (fastest)
-2. **Enable signing** only when necessary (adds 10-15 minutes)
+2. **Use `release.yml` for signing** only after release approval; development workflows cannot access signing credentials
 3. **Test specific platforms** when working on platform-specific code
 4. **Run full builds** (`build-test.yml`) before releases
 5. **Cache is enabled** - subsequent builds are faster

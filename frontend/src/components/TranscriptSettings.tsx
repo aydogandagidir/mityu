@@ -13,6 +13,7 @@ export interface TranscriptModelProps {
     provider: 'localWhisper' | 'parakeet' | 'deepgram' | 'elevenLabs' | 'groq' | 'openai';
     model: string;
     apiKey?: string | null;
+    hasApiKey?: boolean;
 }
 
 export interface TranscriptSettingsProps {
@@ -23,6 +24,7 @@ export interface TranscriptSettingsProps {
 
 export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelConfig, onModelSelect }: TranscriptSettingsProps) {
     const [apiKey, setApiKey] = useState<string | null>(transcriptModelConfig.apiKey || null);
+    const [hasStoredApiKey, setHasStoredApiKey] = useState<boolean>(Boolean(transcriptModelConfig.hasApiKey));
     const [showApiKey, setShowApiKey] = useState<boolean>(false);
     const [isApiKeyLocked, setIsApiKeyLocked] = useState<boolean>(true);
     const [isLockButtonVibrating, setIsLockButtonVibrating] = useState<boolean>(false);
@@ -39,15 +41,15 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
         }
     }, [transcriptModelConfig.provider]);
 
-    const fetchApiKey = async (provider: string) => {
+    const fetchApiKeyPresence = async (provider: string) => {
         try {
-
-            const data = await invoke('api_get_transcript_api_key', { provider }) as string;
-
-            setApiKey(data || '');
+            const exists = await invoke<boolean>('api_has_transcript_api_key', { provider });
+            setApiKey('');
+            setHasStoredApiKey(exists);
         } catch (err) {
-            console.error('Error fetching API key:', err);
+            console.error('Error checking API key presence:', err);
             setApiKey(null);
+            setHasStoredApiKey(false);
         }
     };
     const modelOptions = {
@@ -113,7 +115,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     const provider = value as TranscriptModelProps['provider'];
                                     setUiProvider(provider);
                                     if (provider !== 'localWhisper' && provider !== 'parakeet') {
-                                        fetchApiKey(provider);
+                                        void fetchApiKeyPresence(provider);
                                     }
                                 }}
                             >
@@ -121,8 +123,8 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     <SelectValue placeholder="Select provider" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="parakeet">⚡ Parakeet (Recommended - Real-time / Accurate)</SelectItem>
-                                    <SelectItem value="localWhisper">🏠 Local Whisper (High Accuracy)</SelectItem>
+                                    <SelectItem value="parakeet">⚡ Parakeet (Fast local transcription)</SelectItem>
+                                    <SelectItem value="localWhisper">🏠 Local Whisper (Multiple model sizes)</SelectItem>
                                     {/* <SelectItem value="deepgram">☁️ Deepgram (Backup)</SelectItem>
                                     <SelectItem value="elevenLabs">☁️ ElevenLabs</SelectItem>
                                     <SelectItem value="groq">☁️ Groq</SelectItem>
@@ -150,6 +152,11 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                             )}
 
                         </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                            Accuracy varies with language, speaker, microphone, overlap, and noise.
+                            v1.0.4 target-environment validation is deferred; verify important text
+                            against the source audio.
+                        </p>
                     </div>
 
                     {uiProvider === 'localWhisper' && (
@@ -184,10 +191,19 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     className={`pr-24 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isApiKeyLocked ? 'bg-muted cursor-not-allowed' : ''
                                         }`}
                                     value={apiKey || ''}
-                                    onChange={(e) => setApiKey(e.target.value)}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setApiKey(value);
+                                        setTranscriptModelConfig({
+                                            ...transcriptModelConfig,
+                                            provider: uiProvider,
+                                            apiKey: value || null,
+                                            hasApiKey: hasStoredApiKey || Boolean(value.trim()),
+                                        });
+                                    }}
                                     disabled={isApiKeyLocked}
                                     onClick={handleInputClick}
-                                    placeholder="Enter your API key"
+                                    placeholder={hasStoredApiKey ? 'Stored securely — enter to replace' : 'Enter your API key'}
                                 />
                                 {isApiKeyLocked && (
                                     <div

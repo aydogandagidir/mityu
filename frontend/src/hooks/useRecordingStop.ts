@@ -6,6 +6,10 @@ import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
 import { storageService } from '@/services/storageService';
+import {
+  recordingCompletionMailbox,
+  RecordingStoppedMetadata,
+} from '@/services/recordingCompletionMailbox';
 import { transcriptService } from '@/services/transcriptService';
 import Analytics from '@/lib/analytics';
 import {
@@ -24,6 +28,24 @@ interface UseRecordingStopReturn {
   setIsStopping: (value: boolean) => void;
 }
 
+async function retryLocalOperation<T>(
+  operation: () => Promise<T>,
+  attempts = 3,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await new Promise(resolve => setTimeout(resolve, attempt * 250));
+      }
+    }
+  }
+  throw lastError;
+}
+
 /**
  * Custom hook for managing recording stop lifecycle.
  * Handles the complex stop sequence: transcription wait → buffer flush → SQLite save → navigation.
@@ -31,7 +53,7 @@ interface UseRecordingStopReturn {
  * Features:
  * - Transcription completion polling (60s max, 500ms interval)
  * - Transcript buffer flush coordination
- * - SQLite meeting save with folder_path from sessionStorage
+ * - SQLite meeting save with a native one-time completion token
  * - Comprehensive analytics tracking (duration, word count, activation)
  * - Auto-navigation to meeting details
  * - Toast notifications for success/error
@@ -72,9 +94,8 @@ export function useRecordingStop(
   // Guard to prevent duplicate/concurrent stop calls (e.g., from UI and tray simultaneously)
   const stopInProgressRef = useRef(false);
 
-  // Promise to track recording-stopped event data (fixes race condition with recording-stop-complete)
-  const recordingStoppedDataRef = useRef<Promise<void> | null>(null);
-
+  // Native completion authority stays in memory only. It must never be persisted
+  // in sessionStorage/IndexedDB because it is a one-time bearer capability.
   // Set up recording-stopped listener for meeting navigation
   useEffect(() => {
     let unlistenFn: (() => void) | undefined;
@@ -82,24 +103,11 @@ export function useRecordingStop(
     const setupRecordingStoppedListener = async () => {
       try {
         console.log('Setting up recording-stopped listener for navigation...');
-        unlistenFn = await listen<{
-          message: string;
-          folder_path?: string;
-          meeting_name?: string;
-        }>('recording-stopped', async (event) => {
-          // Create promise that resolves when sessionStorage is set (prevents race condition)
-          recordingStoppedDataRef.current = (async () => {
-            const { folder_path, meeting_name } = event.payload;
-
-            // Store folder_path and meeting_name for later use in handleRecordingStop
-            if (folder_path) {
-              sessionStorage.setItem('last_recording_folder_path', folder_path);
-            }
-            if (meeting_name) {
-              sessionStorage.setItem('last_recording_meeting_name', meeting_name);
-            }
-          })();
-
+        unlistenFn = await listen<RecordingStoppedMetadata>('recording-stopped', (event) => {
+          const publishResult = recordingCompletionMailbox.publish(event.payload);
+          if (publishResult === 'invalid') {
+            console.warn('Ignored recording-stopped metadata without a completion token');
+          }
         });
         console.log('Recording stopped listener setup complete');
       } catch (error) {
@@ -119,8 +127,14 @@ export function useRecordingStop(
 
   // Main recording stop handler
   const handleRecordingStop = useCallback(async (isCallApi: boolean) => {
-    if (recordingStoppedDataRef.current) {
-      await recordingStoppedDataRef.current;
+    // Native stop did not complete, so there is no completion token to process.
+    // Return immediately; a concurrently arriving authoritative `true` request
+    // must never be held behind a long, tokenless transcript wait.
+    if (!isCallApi) {
+      setIsRecording(false);
+      setIsRecordingDisabled(false);
+      setStatus(RecordingStatus.ERROR, 'Recording stop did not complete. Recovery data was kept.');
+      return;
     }
 
     // Guard: prevent duplicate/concurrent stop calls
@@ -134,6 +148,7 @@ export function useRecordingStop(
     setIsRecording(false);
     setIsRecordingDisabled(true);
     const stopStartTime = Date.now();
+    let stoppedMetadata: RecordingStoppedMetadata | null = null;
 
     try {
       console.log('Post-stop processing (new implementation)...', {
@@ -144,6 +159,59 @@ export function useRecordingStop(
       // Note: stop_recording is already called by RecordingControls.stopRecordingAction
       // This function only handles post-stop processing (transcription wait, API call, navigation)
       console.log('Recording already stopped by RecordingControls, processing transcription...');
+
+      // Claim the native completion metadata before any long transcript wait.
+      // The immutable snapshot prevents a later event from rebinding this save
+      // to a different recording, even within the same workspace/user context.
+      if (isCallApi) {
+        for (
+          let attempt = 0;
+          attempt < 50 && !recordingCompletionMailbox.hasPending();
+          attempt += 1
+        ) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        stoppedMetadata = recordingCompletionMailbox.claim();
+        const nativePending = await retryLocalOperation(
+          () => storageService.getPendingRecordingPostProcessing(),
+        );
+
+        // The native event can be emitted before either of the two hook
+        // listeners has mounted. Recover the opaque token from the trusted
+        // native state and let Rust remain the sole folder-path authority.
+        // Re-check the mailbox after IPC to cover an event arriving in between.
+        if (!stoppedMetadata) {
+          stoppedMetadata = recordingCompletionMailbox.claim();
+        }
+        if (!stoppedMetadata?.completion_token && nativePending) {
+          if (recordingCompletionMailbox.hasToken(nativePending.completionToken)) {
+            // A second hook observed the same stop while the first hook owns
+            // its lease. It must not overwrite the authoritative UI flow.
+            return;
+          }
+          recordingCompletionMailbox.publish({
+            message: 'Recovered native recording completion',
+            completion_token: nativePending.completionToken,
+          });
+          stoppedMetadata = recordingCompletionMailbox.claim();
+        }
+        if (!stoppedMetadata?.completion_token) {
+          throw new Error('Native recording completion authorization was not received; meeting save was not attempted.');
+        }
+
+        if (!nativePending) {
+          // The acknowledgement may have succeeded even if its prior IPC
+          // response was lost. With no context-scoped native gate remaining,
+          // this mailbox lease is safely complete and must not be replayed.
+          recordingCompletionMailbox.complete(stoppedMetadata.completion_token);
+          setStatus(RecordingStatus.IDLE);
+          setIsRecordingDisabled(false);
+          return;
+        }
+        if (nativePending.completionToken !== stoppedMetadata.completion_token) {
+          throw new Error('Native recording completion state did not match the queued save.');
+        }
+      }
 
       // Wait for transcription to complete
       setStatus(RecordingStatus.PROCESSING_TRANSCRIPTS, 'Waiting for transcription...');
@@ -240,23 +308,27 @@ export function useRecordingStop(
         // Get fresh transcript state (ALL transcripts including late ones)
         const freshTranscripts = [...transcriptsRef.current];
 
-        // Get folder_path and meeting_name from recording-stopped event
-        const folderPath = sessionStorage.getItem('last_recording_folder_path');
-        const savedMeetingName = sessionStorage.getItem('last_recording_meeting_name');
+        const claimedMetadata = stoppedMetadata;
+        if (!claimedMetadata?.completion_token) {
+          throw new Error('Recording completion authorization was lost before persistence.');
+        }
+        const folderPath = claimedMetadata.folder_path ?? null;
+        const savedMeetingName = claimedMetadata.meeting_name ?? null;
+        const completionToken = claimedMetadata.completion_token;
 
-        console.log('💾 Saving COMPLETE transcripts to database...', {
+        console.log('Saving complete transcript set to the local database', {
           transcript_count: freshTranscripts.length,
-          meeting_name: savedMeetingName || meetingTitle,
-          folder_path: folderPath,
-          sample_text: freshTranscripts.length > 0 ? freshTranscripts[0].text.substring(0, 50) + '...' : 'none',
-          last_transcript: freshTranscripts.length > 0 ? freshTranscripts[freshTranscripts.length - 1].text.substring(0, 30) + '...' : 'none',
+          recording_folder_present: Boolean(folderPath),
         });
 
         try {
-          const responseData = await storageService.saveMeeting(
-            savedMeetingName || meetingTitle || 'New Meeting',  // PREFER savedMeetingName (backend source)
-            freshTranscripts,
-            folderPath
+          const responseData = await retryLocalOperation(
+            () => storageService.saveMeeting(
+              savedMeetingName || meetingTitle || 'New Meeting',  // PREFER savedMeetingName (backend source)
+              freshTranscripts,
+              folderPath,
+              completionToken,
+            ),
           );
 
           const meetingId = responseData.meeting_id;
@@ -289,21 +361,21 @@ export function useRecordingStop(
             }
           }
 
-          console.log('✅ Successfully saved COMPLETE meeting with ID:', meetingId);
+          console.log('Successfully saved the complete meeting');
           console.log('   Transcripts:', freshTranscripts.length);
-          console.log('   folder_path:', folderPath);
 
           // Mark meeting as saved in IndexedDB (for recovery system)
           await markMeetingAsSaved();
 
-          // Clean up session storage
-          sessionStorage.removeItem('last_recording_folder_path');
-          sessionStorage.removeItem('last_recording_meeting_name');
           // Clean up IndexedDB meeting ID (redundant with markMeetingAsSaved cleanup, but ensures cleanup)
           sessionStorage.removeItem('indexeddb_current_meeting_id');
 
           // Refetch meetings and set current meeting
-          await refetchMeetings();
+          try {
+            await refetchMeetings();
+          } catch (error) {
+            console.warn('Could not refresh the meeting list after save:', error);
+          }
 
           try {
             const meetingData = await storageService.getMeeting(meetingId);
@@ -312,7 +384,7 @@ export function useRecordingStop(
                 id: meetingId,
                 title: meetingData.title
               });
-              console.log('✅ Current meeting set:', meetingData.title);
+              console.log('Current meeting state updated');
             }
           } catch (error) {
             console.warn('Could not fetch meeting details, using ID only:', error);
@@ -335,15 +407,13 @@ export function useRecordingStop(
             duration: 10000,
           });
 
-          // Auto-navigate after a short delay with source parameter
-          setTimeout(() => {
-            router.push(`/meeting-details?id=${meetingId}&source=recording`);
-            clearTranscripts()
-            Analytics.trackPageView('meeting_details');
-
-            // Reset to IDLE after navigation
-            setStatus(RecordingStatus.IDLE);
-          }, 2000);
+          // Keep native new-recording start gated through the existing UX delay
+          // so this completed flow cannot clear or navigate over a newer meeting.
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          router.push(`/meeting-details?id=${meetingId}&source=recording`);
+          clearTranscripts();
+          Analytics.trackPageView('meeting_details');
+          setStatus(RecordingStatus.IDLE);
           // Track meeting completion analytics
           try {
             // Calculate meeting duration from transcript timestamps
@@ -366,7 +436,7 @@ export function useRecordingStop(
             const meetingsToday = await Analytics.getMeetingsCountToday();
 
             // Track meeting completed
-            await Analytics.trackMeetingCompleted(meetingId, {
+            await Analytics.trackMeetingCompleted({
               duration_seconds: durationSeconds,
               transcript_segments: freshTranscripts.length,
               transcript_word_count: transcriptWordCount,
@@ -398,11 +468,10 @@ export function useRecordingStop(
         } catch (saveError) {
           console.error('Failed to save meeting to database:', saveError);
           setStatus(RecordingStatus.ERROR, saveError instanceof Error ? saveError.message : 'Unknown error');
-          toast.error('Failed to save meeting', {
-            description: saveError instanceof Error ? saveError.message : 'Unknown error'
-          });
           throw saveError;
         }
+      } else if (isCallApi) {
+        throw new Error('Transcription did not complete; the meeting remains in recovery and a new recording was not started.');
       } else {
         // No save needed, go back to IDLE
         setStatus(RecordingStatus.IDLE);
@@ -411,9 +480,38 @@ export function useRecordingStop(
       setIsMeetingActive(false);
       // isRecording already set to false at function start
       setIsRecordingDisabled(false);
+
+      if (stoppedMetadata?.completion_token) {
+        const completionToken = stoppedMetadata.completion_token;
+        // Release the JS guard before the native acknowledgement. Native start
+        // remains blocked until the context-bound token is acknowledged, so a
+        // subsequent stop cannot be lost between these two state transitions.
+        stopInProgressRef.current = false;
+        await retryLocalOperation(
+          () => storageService.acknowledgeRecordingPostProcessing(
+            completionToken,
+          ),
+        );
+        recordingCompletionMailbox.complete(completionToken);
+      }
     } catch (error) {
+      if (stoppedMetadata?.completion_token) {
+        recordingCompletionMailbox.release(stoppedMetadata.completion_token);
+      }
       console.error('Error in handleRecordingStop:', error);
       setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Unknown error');
+      if (stoppedMetadata?.completion_token) {
+        toast.error('Recording save needs attention', {
+          description: error instanceof Error ? error.message : 'The local save did not finish.',
+          action: {
+            label: 'Retry save',
+            onClick: () => {
+              recordingCompletionMailbox.requestRetry();
+            },
+          },
+          duration: 15000,
+        });
+      }
       // isRecording already set to false at function start
       setIsRecordingDisabled(false);
     } finally {
@@ -442,6 +540,92 @@ export function useRecordingStop(
   useEffect(() => {
     handleRecordingStopRef.current = handleRecordingStop;
   });
+
+  useEffect(() => recordingCompletionMailbox.registerRetryHandler(
+    () => {
+      void handleRecordingStopRef.current(true);
+    },
+  ), []);
+
+  useEffect(() => {
+    if (!recordingCompletionMailbox.beginRecoveryReconciliation()) {
+      return;
+    }
+
+    const reconcileInterruptedRecording = async () => {
+      try {
+        const pending = await retryLocalOperation(
+          () => storageService.getPendingRecordingPostProcessing(),
+        );
+        if (!pending) {
+          return;
+        }
+
+        if (pending.persisted) {
+          // SQLite already owns the meeting. Remove (or mark for startup
+          // purge) the renderer recovery copy before releasing the native
+          // gate, including after a reload between commit and cleanup.
+          await markMeetingAsSaved();
+          await retryLocalOperation(
+            () => storageService.acknowledgeRecordingPostProcessing(
+              pending.completionToken,
+            ),
+          );
+          recordingCompletionMailbox.complete(pending.completionToken);
+          setStatus(RecordingStatus.IDLE);
+          setIsRecordingDisabled(false);
+          toast.success('Interrupted save was already complete', {
+            description: 'Mityu restored the recording state and unlocked new recordings.',
+          });
+          return;
+        }
+
+        setStatus(RecordingStatus.ERROR, 'A previous recording save was interrupted.');
+        toast.error('Previous recording needs recovery', {
+          description: 'Restart Mityu to use transcript recovery, or explicitly unlock recording now. Existing recovery data is not deleted.',
+          action: {
+            label: 'Review & unlock',
+            onClick: () => {
+              void (async () => {
+                try {
+                  await storageService.abandonRecordingPostProcessing(
+                    pending.completionToken,
+                  );
+                  recordingCompletionMailbox.complete(pending.completionToken);
+                  setStatus(RecordingStatus.IDLE);
+                  setIsRecordingDisabled(false);
+                  toast.success('Recording unlocked', {
+                    description: 'Review transcript recovery and the recordings folder before cleanup.',
+                  });
+                } catch (error) {
+                  toast.error('Recording remains locked', {
+                    description: error instanceof Error ? error.message : String(error),
+                  });
+                }
+              })();
+            },
+          },
+          duration: 30000,
+        });
+      } catch (error) {
+        recordingCompletionMailbox.resetRecoveryReconciliation();
+        console.error('Failed to reconcile interrupted recording post-processing:', error);
+        toast.error('Could not inspect interrupted recording state', {
+          description: 'Restart Mityu before starting another recording.',
+          action: {
+            label: 'Retry check',
+            onClick: () => {
+              if (recordingCompletionMailbox.beginRecoveryReconciliation()) {
+                void reconcileInterruptedRecording();
+              }
+            },
+          },
+        });
+      }
+    };
+
+    void reconcileInterruptedRecording();
+  }, [markMeetingAsSaved, setIsRecordingDisabled, setStatus]);
 
   useEffect(() => {
     (window as any).handleRecordingStop = (callApi: boolean = true) => {

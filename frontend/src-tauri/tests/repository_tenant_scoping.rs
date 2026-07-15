@@ -108,10 +108,22 @@ mod mem_keychain {
             keyring::set_default_credential_builder(Box::new(MemBuilder));
         });
     }
+
+    pub fn clear() {
+        store().lock().unwrap().clear();
+    }
 }
 
-fn install_mock_keychain() {
+async fn install_mock_keychain() -> tokio::sync::MutexGuard<'static, ()> {
+    static KEYCHAIN_TEST_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> =
+        std::sync::OnceLock::new();
+    let guard = KEYCHAIN_TEST_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
     mem_keychain::install();
+    mem_keychain::clear();
+    guard
 }
 
 /// The app's real, compile-time-embedded migration set (same source as
@@ -508,15 +520,22 @@ async fn updates_are_workspace_scoped_and_bump_rev() {
         "foreign workspace must not complete a local summary process"
     );
 
-    // create_or_reset_process from the foreign context conflicts on the primary
-    // key but the workspace guard turns it into a no-op (rev/owner unchanged).
-    SummaryProcessesRepository::create_or_reset_process(&pool, &other, &meeting_id)
+    // create_or_reset_process from the foreign context fails closed and leaves
+    // the existing child unchanged.
+    let error = SummaryProcessesRepository::create_or_reset_process(&pool, &other, &meeting_id)
         .await
-        .expect("cross-ws create_or_reset_process runs");
+        .expect_err("cross-ws create_or_reset_process must fail");
+    assert_eq!(
+        error.to_string(),
+        "encountered unexpected or invalid data: Parent meeting is unavailable in this workspace"
+    );
     let (ws, rev, _, _, _) =
         sync_columns(&pool, "summary_processes", "meeting_id", &meeting_id).await;
     assert_eq!(ws, LOCAL_WORKSPACE_ID, "row must stay owned by local");
-    assert_eq!(rev, 1, "guarded upsert must not bump rev across workspaces");
+    assert_eq!(
+        rev, 1,
+        "rejected upsert must not bump rev across workspaces"
+    );
 
     // replace_meeting_transcripts: foreign context cannot touch the meeting...
     let result = TranscriptsRepository::replace_meeting_transcripts(
@@ -559,6 +578,95 @@ async fn updates_are_workspace_scoped_and_bump_rev() {
     assert_eq!(rev, 1);
     assert_rfc3339(&created_at, "replaced transcripts.created_at");
     assert_rfc3339(&updated_at, "replaced transcripts.updated_at");
+
+    pool.close().await;
+}
+
+/// A child repository must not trust a caller-supplied meeting id. In
+/// particular, the first insert used to bypass the upsert's conflict guard when
+/// no child row existed yet. Both child writes now condition the insert on a
+/// live parent meeting owned by the caller's workspace in the same SQL
+/// statement, while preserving normal same-workspace insert and reset paths.
+#[tokio::test]
+async fn child_first_inserts_require_parent_ownership_atomically() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("child-parent-scope.sqlite")).await;
+    let local = AuthContext::local();
+    let other = other_ws_ctx();
+
+    let meeting_id = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "Local parent",
+        &[segment("transcript-parent-scope", "content", 0.0, 1.0)],
+        None,
+    )
+    .await
+    .expect("create local parent meeting");
+
+    let summary_error =
+        SummaryProcessesRepository::create_or_reset_process(&pool, &other, &meeting_id)
+            .await
+            .expect_err("foreign workspace must not first-insert a summary child");
+    assert_eq!(
+        summary_error.to_string(),
+        "encountered unexpected or invalid data: Parent meeting is unavailable in this workspace"
+    );
+
+    let chunk_error = TranscriptChunksRepository::save_transcript_data(
+        &pool,
+        &other,
+        &meeting_id,
+        chunk_data("foreign content"),
+    )
+    .await
+    .expect_err("foreign workspace must not first-insert a transcript chunk child");
+    assert_eq!(
+        chunk_error.to_string(),
+        "encountered unexpected or invalid data: Parent meeting is unavailable in this workspace"
+    );
+
+    let filter = format!("meeting_id = '{meeting_id}'");
+    assert_eq!(count_where(&pool, "summary_processes", &filter).await, 0);
+    assert_eq!(count_where(&pool, "transcript_chunks", &filter).await, 0);
+
+    SummaryProcessesRepository::create_or_reset_process(&pool, &local, &meeting_id)
+        .await
+        .expect("owner workspace may first-insert summary child");
+    TranscriptChunksRepository::save_transcript_data(
+        &pool,
+        &local,
+        &meeting_id,
+        chunk_data("local content"),
+    )
+    .await
+    .expect("owner workspace may first-insert transcript chunk child");
+
+    SummaryProcessesRepository::create_or_reset_process(&pool, &local, &meeting_id)
+        .await
+        .expect("owner workspace may reset summary child");
+    TranscriptChunksRepository::save_transcript_data(
+        &pool,
+        &local,
+        &meeting_id,
+        chunk_data("local replacement"),
+    )
+    .await
+    .expect("owner workspace may update transcript chunk child");
+
+    let (summary_ws, summary_rev, _, _, _) =
+        sync_columns(&pool, "summary_processes", "meeting_id", &meeting_id).await;
+    assert_eq!(summary_ws, LOCAL_WORKSPACE_ID);
+    assert_eq!(summary_rev, 2, "legitimate summary reset must bump rev");
+
+    let (chunk_ws, chunk_rev, _, _, _) =
+        sync_columns(&pool, "transcript_chunks", "meeting_id", &meeting_id).await;
+    assert_eq!(chunk_ws, LOCAL_WORKSPACE_ID);
+    assert_eq!(chunk_rev, 2, "legitimate chunk update must bump rev");
+    assert_eq!(
+        read_chunk_text(&pool, &meeting_id).await,
+        "local replacement"
+    );
 
     pool.close().await;
 }
@@ -625,7 +733,7 @@ async fn deletes_are_workspace_scoped() {
 async fn settings_are_workspace_scoped_and_upsert_guarded() {
     // BYOK keys now live in the OS credential store; install keyring's in-memory
     // mock so this test never touches the real machine credential manager.
-    install_mock_keychain();
+    let _keychain_guard = install_mock_keychain().await;
 
     let tmp = tempfile::tempdir().expect("tempdir");
     let pool = open_migrated_temp_db(&tmp.path().join("settings.sqlite")).await;
@@ -784,7 +892,7 @@ async fn settings_are_workspace_scoped_and_upsert_guarded() {
 /// is a no-op (idempotent). Covers both the summary and transcript tables.
 #[tokio::test]
 async fn startup_migration_moves_plaintext_keys_into_keychain() {
-    install_mock_keychain();
+    let _keychain_guard = install_mock_keychain().await;
 
     let tmp = tempfile::tempdir().expect("tempdir");
     let pool = open_migrated_temp_db(&tmp.path().join("keymigration.sqlite")).await;
@@ -794,10 +902,13 @@ async fn startup_migration_moves_plaintext_keys_into_keychain() {
     // an anthropic (summary) key and a whisper (transcript) key, id = '1', local ws.
     let now = "2026-07-02T10:00:00.000Z";
     sqlx::query(
-        "INSERT INTO settings (id, workspace_id, provider, model, whisperModel, anthropicApiKey, created_at, updated_at) \
-         VALUES ('1', ?, 'claude', 'claude-3-5', 'large-v3', 'sk-ant-plaintext', ?, ?)",
+        "INSERT INTO settings (id, workspace_id, provider, model, whisperModel, anthropicApiKey, customOpenAIConfig, created_at, updated_at) \
+         VALUES ('1', ?, 'claude', 'claude-3-5', 'large-v3', 'sk-ant-plaintext', ?, ?, ?)",
     )
     .bind(LOCAL_WORKSPACE_ID)
+    .bind(
+        r#"{"endpoint":"http://localhost:8000/v1","apiKey":"sk-custom-plaintext","model":"local-model","maxTokens":1024,"temperature":0.2,"topP":0.9}"#,
+    )
     .bind(now)
     .bind(now)
     .execute(&pool)
@@ -814,11 +925,11 @@ async fn startup_migration_moves_plaintext_keys_into_keychain() {
     .await
     .expect("seed transcript_settings plaintext");
 
-    // Run the one-time migration: exactly two keys move.
-    let migrated = SettingsRepository::migrate_plaintext_keys_to_keychain(&pool)
+    // Run the one-time migration: both columns plus the legacy custom JSON move.
+    let migrated = SettingsRepository::migrate_plaintext_keys_to_keychain(&pool, &local)
         .await
         .expect("migration runs");
-    assert_eq!(migrated, 2, "both seeded plaintext keys must migrate");
+    assert_eq!(migrated, 3, "all seeded plaintext keys must leave SQLite");
 
     // Columns now hold the marker, never the secret.
     let summary_col: Option<String> =
@@ -834,6 +945,17 @@ async fn startup_migration_moves_plaintext_keys_into_keychain() {
             .await
             .expect("whisperApiKey column");
     assert_eq!(transcript_col.as_deref(), Some(KEYCHAIN_MARKER));
+    let custom_json: String =
+        sqlx::query_scalar("SELECT customOpenAIConfig FROM settings WHERE id = '1'")
+            .fetch_one(&pool)
+            .await
+            .expect("customOpenAIConfig column");
+    assert!(!custom_json.contains("sk-custom-plaintext"));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&custom_json).expect("sanitized custom JSON")
+            ["apiKey"],
+        serde_json::Value::Null
+    );
 
     // The secrets are now readable from the keychain via the normal getters.
     assert_eq!(
@@ -848,9 +970,17 @@ async fn startup_migration_moves_plaintext_keys_into_keychain() {
             .expect("get migrated transcript key"),
         Some("wk-plaintext".to_string())
     );
+    assert_eq!(
+        SettingsRepository::get_custom_openai_config(&pool, &local)
+            .await
+            .expect("get migrated custom config")
+            .expect("custom config")
+            .api_key,
+        Some("sk-custom-plaintext".to_string())
+    );
 
     // Idempotent: a second sweep migrates nothing.
-    let migrated_again = SettingsRepository::migrate_plaintext_keys_to_keychain(&pool)
+    let migrated_again = SettingsRepository::migrate_plaintext_keys_to_keychain(&pool, &local)
         .await
         .expect("second migration runs");
     assert_eq!(
@@ -859,6 +989,120 @@ async fn startup_migration_moves_plaintext_keys_into_keychain() {
     );
 
     pool.close().await;
+}
+
+#[tokio::test]
+async fn startup_key_migration_never_enumerates_a_foreign_workspace() {
+    let _keychain_guard = install_mock_keychain().await;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("keymigration-scope.sqlite")).await;
+    let local = AuthContext::local();
+    let other = other_ws_ctx();
+    let now = "2026-07-02T10:00:00.000Z";
+
+    sqlx::query(
+        "INSERT INTO settings \
+         (id, workspace_id, provider, model, whisperModel, openaiApiKey, created_at, updated_at) \
+         VALUES ('1', ?, 'openai', 'gpt-test', 'large-v3', 'sk-foreign-scope-test', ?, ?)",
+    )
+    .bind(other.tenant_id.as_str())
+    .bind(now)
+    .bind(now)
+    .execute(&pool)
+    .await
+    .expect("seed foreign plaintext key");
+
+    let migrated = SettingsRepository::migrate_plaintext_keys_to_keychain(&pool, &local)
+        .await
+        .expect("local scoped migration");
+    assert_eq!(
+        migrated, 0,
+        "local startup must not enumerate another workspace"
+    );
+
+    let still_plaintext: Option<String> =
+        sqlx::query_scalar("SELECT openaiApiKey FROM settings WHERE id = '1' AND workspace_id = ?")
+            .bind(other.tenant_id.as_str())
+            .fetch_one(&pool)
+            .await
+            .expect("foreign key remains untouched by local migration");
+    assert_eq!(still_plaintext.as_deref(), Some("sk-foreign-scope-test"));
+
+    let migrated = SettingsRepository::migrate_plaintext_keys_to_keychain(&pool, &other)
+        .await
+        .expect("authorized foreign migration");
+    assert_eq!(migrated, 1);
+    assert_eq!(
+        SettingsRepository::get_api_key(&pool, &other, "openai")
+            .await
+            .expect("foreign key getter"),
+        Some("sk-foreign-scope-test".to_string())
+    );
+    assert_eq!(
+        SettingsRepository::get_api_key(&pool, &local, "openai")
+            .await
+            .expect("local key getter"),
+        None,
+        "workspace-scoped keychain names must prevent a local read"
+    );
+
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn custom_openai_key_never_enters_sqlite_json() {
+    let _keychain_guard = install_mock_keychain().await;
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let database = tmp.path().join("custom-openai-keychain.sqlite");
+    let pool = open_migrated_temp_db(&database).await;
+    let local = AuthContext::local();
+    let config = app_lib::summary::CustomOpenAIConfig {
+        endpoint: "http://localhost:8000/v1".to_string(),
+        api_key: Some("sk-custom-must-not-hit-db".to_string()),
+        model: "local-model".to_string(),
+        max_tokens: Some(2048),
+        temperature: Some(0.2),
+        top_p: Some(0.9),
+    };
+
+    SettingsRepository::save_custom_openai_config(&pool, &local, &config)
+        .await
+        .expect("save custom config");
+    let stored_json: String =
+        sqlx::query_scalar("SELECT customOpenAIConfig FROM settings WHERE id = '1'")
+            .fetch_one(&pool)
+            .await
+            .expect("stored custom JSON");
+    assert!(!stored_json.contains("sk-custom-must-not-hit-db"));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&stored_json).expect("valid custom JSON")
+            ["apiKey"],
+        serde_json::Value::Null
+    );
+
+    let hydrated = SettingsRepository::get_custom_openai_config(&pool, &local)
+        .await
+        .expect("get custom config")
+        .expect("custom config exists");
+    assert_eq!(
+        hydrated.api_key.as_deref(),
+        Some("sk-custom-must-not-hit-db")
+    );
+
+    SettingsRepository::delete_api_key(&pool, &local, "custom-openai")
+        .await
+        .expect("delete custom key and config");
+    assert!(SettingsRepository::get_custom_openai_config(&pool, &local)
+        .await
+        .expect("get after delete")
+        .is_none());
+    pool.close().await;
+
+    let database_bytes = std::fs::read(database).expect("read SQLite file");
+    assert!(!database_bytes
+        .windows("sk-custom-must-not-hit-db".len())
+        .any(|window| window == b"sk-custom-must-not-hit-db"));
 }
 
 #[tokio::test]
@@ -1010,6 +1254,260 @@ async fn search_covers_transcripts_and_summaries_scoped_by_workspace() {
             .is_empty(),
         "a whitespace-only query must return no results"
     );
+
+    pool.close().await;
+}
+
+/// Product Intelligence / Kanıt Arama v1: FTS5/BM25 search is ranked,
+/// source-resolvable and tenant-scoped. The trusted evidence surface is
+/// transcript-only; the legacy summary-capable command above remains available
+/// for backwards compatibility but is not used by the new UI.
+#[tokio::test]
+async fn evidence_search_is_ranked_source_linked_unicode_safe_and_tenant_scoped() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("evidence-search.sqlite")).await;
+    let local = AuthContext::local();
+    let other = other_ws_ctx();
+
+    let strongest_meeting = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "İstanbul karar oturumu",
+        &[
+            segment(
+                "ignored-a",
+                "kararı ekip daha sonra yeniden değerlendirecek",
+                2.0,
+                4.0,
+            ),
+            segment(
+                "ignored-b",
+                "İstanbul yol haritası kararı kararı kararı netleşti",
+                8.0,
+                11.0,
+            ),
+        ],
+        None,
+    )
+    .await
+    .expect("seed strongest local meeting");
+
+    let second_meeting = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "Secondary review",
+        &[segment(
+            "ignored-c",
+            "İstanbul ekibi kararı bir kez değerlendirdi",
+            1.0,
+            3.0,
+        )],
+        None,
+    )
+    .await
+    .expect("seed second local meeting");
+
+    let foreign_meeting = TranscriptsRepository::save_transcript(
+        &pool,
+        &other,
+        "Foreign secret",
+        &[segment(
+            "ignored-d",
+            "İstanbul kararı foreign-only-secret kararı kararı kararı kararı",
+            0.0,
+            2.0,
+        )],
+        None,
+    )
+    .await
+    .expect("seed foreign meeting");
+
+    // `istanbul` must match Unicode `İstanbul`; `karar` is a prefix match for
+    // `kararı`. Results preserve backend BM25 order and dedupe to one best
+    // evidence segment per meeting.
+    let hits = TranscriptsRepository::search_evidence(&pool, &local, "istanbul karar")
+        .await
+        .expect("ranked local evidence search");
+    assert_eq!(hits.len(), 2, "only two local meetings may be returned");
+    assert_eq!(hits[0].id, strongest_meeting);
+    assert_eq!(hits[1].id, second_meeting);
+    assert_eq!(hits[0].matched_in, SearchMatchField::Transcript);
+    assert_eq!(hits[0].audio_start_time, Some(8.0));
+    assert!(hits[0].match_context.to_lowercase().contains("karar"));
+    assert!(hits.iter().all(|hit| hit.id != foreign_meeting));
+
+    // Every hit's evidence id resolves inside the caller's workspace and belongs
+    // to the returned meeting. This is the invariant consumed by jump-to-source.
+    for hit in &hits {
+        let resolved: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM transcripts \
+             WHERE id = ? AND meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
+        )
+        .bind(&hit.source_chunk_id)
+        .bind(&hit.id)
+        .bind(local.tenant_id.as_str())
+        .fetch_optional(&pool)
+        .await
+        .expect("resolve evidence source");
+        assert_eq!(resolved, Some(1));
+    }
+
+    // FTS operators/punctuation from user input become quoted literal tokens;
+    // punctuation-only input becomes an empty result instead of syntax or error.
+    TranscriptsRepository::search_evidence(&pool, &local, r#"istanbul OR "" NEAR * karar"#)
+        .await
+        .expect("operator-like input must not become FTS syntax");
+    assert!(
+        TranscriptsRepository::search_evidence(&pool, &local, "\"()* 😀")
+            .await
+            .expect("punctuation-only evidence search")
+            .is_empty()
+    );
+    assert!(
+        TranscriptsRepository::search_evidence(&pool, &local, "a")
+            .await
+            .expect("one-character evidence search")
+            .is_empty(),
+        "one-character tokens must not expand into corpus-wide prefix scans"
+    );
+    assert!(
+        TranscriptsRepository::search_evidence(&pool, &local, "is")
+            .await
+            .expect("two-character exact evidence search")
+            .is_empty(),
+        "two-character input must not prefix-expand to İstanbul"
+    );
+
+    // A foreign context sees only its own workspace's evidence.
+    let foreign_hits = TranscriptsRepository::search_evidence(&pool, &other, "foreign only secret")
+        .await
+        .expect("foreign evidence search");
+    assert_eq!(foreign_hits.len(), 1);
+    assert_eq!(foreign_hits[0].id, foreign_meeting);
+
+    pool.close().await;
+}
+
+/// Meeting-level deduplication must happen before the public result cap. A single
+/// long meeting with hundreds of high-scoring segments must not monopolize the
+/// segment candidate window and hide another matching meeting.
+#[tokio::test]
+async fn evidence_search_deduplicates_meetings_before_limiting_results() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("evidence-dedup-limit.sqlite")).await;
+    let local = AuthContext::local();
+
+    let dominant_segments: Vec<TranscriptSegment> = (0..260)
+        .map(|index| {
+            segment(
+                &format!("dominant-{index}"),
+                "monopolytoken monopolytoken monopolytoken monopolytoken",
+                index as f64,
+                index as f64 + 0.5,
+            )
+        })
+        .collect();
+
+    let dominant_meeting = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "Long matching meeting",
+        &dominant_segments,
+        None,
+    )
+    .await
+    .expect("seed dominant meeting");
+
+    let other_meeting = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "Independent matching meeting",
+        &[segment("other-match", "monopolytoken", 500.0, 501.0)],
+        None,
+    )
+    .await
+    .expect("seed independent meeting");
+
+    let hits = TranscriptsRepository::search_evidence(&pool, &local, "monopolytoken")
+        .await
+        .expect("search across a dominant meeting");
+
+    assert_eq!(hits.len(), 2, "one best segment per meeting must survive");
+    assert!(hits.iter().any(|hit| hit.id == dominant_meeting));
+    assert!(hits.iter().any(|hit| hit.id == other_meeting));
+
+    pool.close().await;
+}
+
+/// Retranscription is a delete+insert transaction. The FTS triggers must remove
+/// old tokens and index the replacement segment without leaving duplicate or
+/// stale evidence rows.
+#[tokio::test]
+async fn evidence_search_tracks_retranscription_atomically() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("evidence-replace.sqlite")).await;
+    let local = AuthContext::local();
+
+    let meeting_id = TranscriptsRepository::save_transcript(
+        &pool,
+        &local,
+        "Retranscription fixture",
+        &[segment(
+            "ignored-original",
+            "obsolete-evidence-token",
+            0.0,
+            2.0,
+        )],
+        None,
+    )
+    .await
+    .expect("seed original transcript");
+
+    assert_eq!(
+        TranscriptsRepository::search_evidence(&pool, &local, "obsolete")
+            .await
+            .expect("search old evidence")
+            .len(),
+        1
+    );
+
+    TranscriptsRepository::replace_meeting_transcripts(
+        &pool,
+        &local,
+        &meeting_id,
+        &[segment(
+            "replacement-source-id",
+            "replacement-evidence-token",
+            12.0,
+            15.0,
+        )],
+    )
+    .await
+    .expect("replace transcripts");
+
+    assert!(
+        TranscriptsRepository::search_evidence(&pool, &local, "obsolete")
+            .await
+            .expect("search removed evidence")
+            .is_empty()
+    );
+    let replacement = TranscriptsRepository::search_evidence(&pool, &local, "replacement")
+        .await
+        .expect("search replacement evidence");
+    assert_eq!(replacement.len(), 1);
+    assert_eq!(replacement[0].source_chunk_id, "replacement-source-id");
+    assert_eq!(replacement[0].audio_start_time, Some(12.0));
+
+    let indexed_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM transcript_search_documents \
+         WHERE meeting_id = ? AND workspace_id = ?",
+    )
+    .bind(&meeting_id)
+    .bind(local.tenant_id.as_str())
+    .fetch_one(&pool)
+    .await
+    .expect("count derived evidence rows");
+    assert_eq!(indexed_rows, 1);
 
     pool.close().await;
 }

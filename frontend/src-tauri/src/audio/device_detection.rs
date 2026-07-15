@@ -64,7 +64,7 @@ impl InputDeviceKind {
         }
 
         // Default: Unknown (conservative - treat as Bluetooth)
-        warn!("⚠️ Could not determine device type for '{}', using conservative (Bluetooth-like) settings", device_name);
+        warn!("Could not determine recording device type; using conservative settings");
         InputDeviceKind::Unknown
     }
 
@@ -166,8 +166,8 @@ impl InputDeviceKind {
         for pattern in TIER3_BLUETOOTH_PATTERNS {
             if name_lower.contains(pattern) {
                 warn!(
-                    "⚠️ Tier 3 Bluetooth pattern matched: '{}' (pattern: '{}') - lower confidence",
-                    device_name, pattern
+                    "Low-confidence Bluetooth device pattern matched: '{}'",
+                    pattern
                 );
                 return Some(InputDeviceKind::Bluetooth);
             }

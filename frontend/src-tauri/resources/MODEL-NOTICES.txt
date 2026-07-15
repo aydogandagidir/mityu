@@ -1,0 +1,36 @@
+Mityu model notices
+===================
+
+Model files are not bundled into the Mityu installer. They are downloaded only
+after a user chooses an on-device model. Mityu pins every built-in download to
+an immutable repository revision and verifies its exact byte length and SHA-256.
+
+Qwen 3.5 (2B and 4B)
+---------------------
+Copyright 2026 Alibaba Cloud. Licensed under the Apache License, Version 2.0.
+Upstream model and license: https://huggingface.co/Qwen/Qwen3.5-2B
+GGUF conversions: https://huggingface.co/unsloth
+
+Gemma 3 (1B and 4B)
+--------------------
+Gemma is provided under and subject to the Gemma Terms of Use found at
+https://ai.google.dev/gemma/terms
+
+Gemma use is also subject to the prohibited-use policy incorporated by those
+terms: https://ai.google.dev/gemma/prohibited_use_policy
+GGUF conversions: https://huggingface.co/bartowski
+
+OpenAI Whisper
+---------------
+Whisper code and model weights are provided under the MIT License.
+Upstream: https://github.com/openai/whisper
+GGML conversions: https://huggingface.co/ggerganov/whisper.cpp
+
+NVIDIA Parakeet TDT 0.6B
+-------------------------
+Licensed under Creative Commons Attribution 4.0 (CC BY 4.0).
+Original model: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+ONNX conversion: https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx
+
+These notices do not replace the linked model terms. Review the applicable terms
+before downloading, using, modifying, or redistributing a model.

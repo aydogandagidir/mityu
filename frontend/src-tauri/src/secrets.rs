@@ -376,6 +376,11 @@ pub mod licensing {
     /// validate/deactivate this device's seat.
     pub const ACTIVATION_ID_ENTRY: &str = "licensing:activation-id";
 
+    /// Stable, pseudonymous label used for a Polar activation. This is not a
+    /// secret, but keeping it in the credential store avoids exposing the host
+    /// name and keeps the label stable across app restarts.
+    pub const DEVICE_LABEL_ENTRY: &str = "licensing:device-label";
+
     /// Open the [`Entry`] for one of the fixed licensing entry names. Failure
     /// means the OS store itself is unreachable.
     fn open_entry(name: &str) -> Result<Entry> {

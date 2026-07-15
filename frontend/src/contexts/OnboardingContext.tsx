@@ -174,41 +174,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   };
 
   const performAutoDetection = async () => {
-    // Check Homebrew (macOS only)
-    if (typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('mac')) {
-      const homebrewDbPath = '/usr/local/var/meetily/meeting_minutes.db';
-      try {
-        const homebrewCheck = await invoke<{ exists: boolean; size: number } | null>(
-          'check_homebrew_database',
-          { path: homebrewDbPath }
-        );
-
-        if (homebrewCheck?.exists) {
-          console.log('[OnboardingContext] Found Homebrew database, importing');
-          await invoke('import_and_initialize_database', { legacyDbPath: homebrewDbPath });
-          setDatabaseExists(true);
-          return;
-        }
-      } catch (e) {
-        console.log('[OnboardingContext] Homebrew check failed, continuing:', e);
-      }
-    }
-
-    // Check default legacy database location
-    try {
-      const legacyPath = await invoke<string | null>('check_default_legacy_database');
-      if (legacyPath) {
-        console.log('[OnboardingContext] Found legacy database, importing');
-        await invoke('import_and_initialize_database', { legacyDbPath: legacyPath });
-        setDatabaseExists(true);
-        return;
-      }
-    } catch (e) {
-      console.log('[OnboardingContext] Legacy check failed, continuing:', e);
-    }
-
-    // No legacy database found - initialize fresh
-    console.log('[OnboardingContext] No legacy database found, initializing fresh');
+    // v1.0.4 initializes only Mityu's managed database. Legacy Meetily import
+    // stays disabled until Rust issues opaque picker grants instead of accepting
+    // renderer-controlled filesystem paths.
+    console.log('[OnboardingContext] Initializing managed local database');
     await invoke('initialize_fresh_database');
     setDatabaseExists(true);
   };

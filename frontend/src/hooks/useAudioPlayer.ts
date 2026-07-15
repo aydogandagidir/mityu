@@ -128,7 +128,7 @@ export const useAudioPlayer = (audioPath: string | null) => {
 
   // Load audio when path changes
   useEffect(() => {
-    console.log('Audio path changed:', audioPath);
+    console.log('Audio source changed');
     if (audioPath) {
       loadAudio();
     }

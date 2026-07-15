@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, File, Settings, PanelLeftClose, PanelLeftOpen, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ChevronDown, ChevronRight, File, Settings, PanelLeftClose, PanelLeftOpen, Calendar, Home, Trash2, Mic, Square, Plus, Pencil, NotebookPen, SearchIcon, X, Upload, ListChecks } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -13,14 +13,15 @@ import Analytics from '@/lib/analytics';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { isTauri } from '@/lib/isTauri';
-import { getApiKey } from '@/services/providerModelsService';
 import { configService } from '@/services/configService';
+import { indexedDBService } from '@/services/indexedDBService';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useImportDialog } from '@/contexts/ImportDialogContext';
 import { useConfig } from '@/contexts/ConfigContext';
 import { TOUR_ANCHORS } from '@/lib/tour';
+import { APP_VERSION } from '@/lib/appVersion';
 
 import {
   Dialog,
@@ -34,8 +35,12 @@ import { MessageToast } from '../MessageToast';
 import Logo from '../Logo';
 import Info from '../Info';
 import { ComplianceNotification } from '../ComplianceNotification';
-import { Input } from '../ui/input';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
+import { SearchResultsList } from './SearchResultsList';
+import {
+  isEvidenceQuerySearchable,
+  type TranscriptSearchResult,
+} from '@/services/search';
 
 interface SidebarItem {
   id: string;
@@ -47,6 +52,7 @@ interface SidebarItem {
 const Sidebar: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
+  const searchJumpNonceRef = useRef(0);
   const {
     currentMeeting,
     setCurrentMeeting,
@@ -57,6 +63,7 @@ const Sidebar: React.FC = () => {
     searchTranscripts,
     searchResults,
     isSearching,
+    searchError,
     meetings,
     setMeetings,
     serverAddress
@@ -70,9 +77,9 @@ const Sidebar: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showModelSettings, setShowModelSettings] = useState(false);
   // App version for the footer — read from the Tauri app (tauri.conf.json), so it
-  // never goes stale on a release bump. Falls back to the current version string
-  // in a plain-browser render where the Tauri API is absent.
-  const [appVersion, setAppVersion] = useState('1.0.1');
+  // never goes stale on a release bump. Plain-browser renders fall back to the
+  // synchronized package-manifest version when the Tauri API is absent.
+  const [appVersion, setAppVersion] = useState(APP_VERSION);
   useEffect(() => {
     if (isTauri()) getVersion().then(setAppVersion).catch(() => {});
   }, []);
@@ -116,6 +123,7 @@ const Sidebar: React.FC = () => {
 
 
   const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({ isOpen: false, itemId: null });
+  const [isDeletePending, setIsDeletePending] = useState(false);
 
   useEffect(() => {
     // Note: Don't set hardcoded defaults - let DB be the source of truth
@@ -129,19 +137,10 @@ const Sidebar: React.FC = () => {
       try {
         const data = await configService.getModelConfig() as any;
         if (data && data.provider !== null) {
-          // Fetch API key if not included and provider requires it
-          if (data.provider !== 'ollama' && !data.apiKey) {
-            try {
-              const apiKeyData = await getApiKey(data.provider);
-              data.apiKey = apiKeyData;
-            } catch (err) {
-              console.error('Failed to fetch API key:', err);
-            }
-          }
           setModelConfig(data);
         }
       } catch (error) {
-        console.error('Failed to fetch model config:', error);
+        console.error('Failed to fetch model config');
       }
     };
 
@@ -164,7 +163,7 @@ const Sidebar: React.FC = () => {
           setTranscriptModelConfig(data);
         }
       } catch (error) {
-        console.error('Failed to fetch transcript settings:', error);
+        console.error('Failed to fetch transcript settings');
       }
     };
     fetchTranscriptSettings();
@@ -175,7 +174,7 @@ const Sidebar: React.FC = () => {
     const setupListener = async () => {
       const { listen } = await import('@tauri-apps/api/event');
       const unlisten = await listen<ModelConfig>('model-config-updated', (event) => {
-        console.log('Sidebar received model-config-updated event:', event.payload);
+        console.log('Sidebar received model-config-updated event');
         setModelConfig(event.payload);
       });
 
@@ -212,9 +211,9 @@ const Sidebar: React.FC = () => {
       await emit('model-config-updated', config);
 
       // Track settings change
-      await Analytics.trackSettingsChanged('model_config', `${config.provider}_${config.model}`);
+      await Analytics.trackSettingsChanged('model_config');
     } catch (error) {
-      console.error('Error saving model config:', error);
+      console.error('Error saving model config');
       setSettingsSaveSuccess(false);
     }
   };
@@ -227,7 +226,7 @@ const Sidebar: React.FC = () => {
         model: configToSave.model,
         apiKey: configToSave.apiKey ?? null
       };
-      console.log('Saving transcript config with payload:', payload);
+      console.log('Saving transcript config');
 
       await invoke('api_save_transcript_config', {
         provider: payload.provider,
@@ -239,103 +238,55 @@ const Sidebar: React.FC = () => {
       setSettingsSaveSuccess(true);
 
       // Track settings change
-      const transcriptConfigToSave = updatedConfig || transcriptModelConfig;
-      await Analytics.trackSettingsChanged('transcript_config', `${transcriptConfigToSave.provider}_${transcriptConfigToSave.model}`);
+      await Analytics.trackSettingsChanged('transcript_config');
     } catch (error) {
-      console.error('Failed to save transcript config:', error);
+      console.error('Failed to save transcript config');
       setSettingsSaveSuccess(false);
     }
   };
 
-  // Handle search input changes
-  const handleSearchChange = useCallback(async (value: string) => {
+  // Keep search input responsive while the provider owns debounce, stale
+  // response suppression and the local evidence-search command.
+  const handleSearchChange = useCallback((value: string) => {
     setSearchQuery(value);
+    searchTranscripts(value);
 
-    // If search query is empty, just return to normal view
-    if (!value.trim()) return;
-
-    // Search through transcripts
-    await searchTranscripts(value);
-
-    // Make sure the meetings folder is expanded when searching
-    if (!expandedFolders.has('meetings')) {
-      const newExpanded = new Set(expandedFolders);
-      newExpanded.add('meetings');
-      setExpandedFolders(newExpanded);
+    if (value.trim()) {
+      setExpandedFolders((current) => {
+        if (current.has('meetings')) return current;
+        const next = new Set(current);
+        next.add('meetings');
+        return next;
+      });
     }
-  }, [expandedFolders, searchTranscripts]);
+  }, [searchTranscripts]);
 
-  // Combine search results with sidebar items
-  const filteredSidebarItems = useMemo(() => {
-    if (!searchQuery.trim()) return sidebarItems;
-
-    // If we have search results, highlight matching meetings
-    if (searchResults.length > 0) {
-      // Get the IDs of meetings that matched in transcripts
-      const matchedMeetingIds = new Set(searchResults.map(result => result.id));
-
-      return sidebarItems
-        .map(folder => {
-          // Always include folders in the results
-          if (folder.type === 'folder') {
-            if (!folder.children) return folder;
-
-            // Filter children based on search results or title match
-            const filteredChildren = folder.children.filter(item => {
-              // Include if the meeting ID is in our search results
-              if (matchedMeetingIds.has(item.id)) return true;
-
-              // Or if the title matches the search query
-              return item.title.toLowerCase().includes(searchQuery.toLowerCase());
-            });
-
-            return {
-              ...folder,
-              children: filteredChildren
-            };
-          }
-
-          // For non-folder items, check if they match the search
-          return (matchedMeetingIds.has(folder.id) ||
-            folder.title.toLowerCase().includes(searchQuery.toLowerCase()))
-            ? folder : undefined;
-        })
-        .filter((item): item is SidebarItem => item !== undefined); // Type-safe filter
-    } else {
-      // Fall back to title-only filtering if no transcript results
-      return sidebarItems
-        .map(folder => {
-          // Always include folders in the results
-          if (folder.type === 'folder') {
-            if (!folder.children) return folder;
-
-            // Filter children based on search query
-            const filteredChildren = folder.children.filter(item =>
-              item.title.toLowerCase().includes(searchQuery.toLowerCase())
-            );
-
-            return {
-              ...folder,
-              children: filteredChildren
-            };
-          }
-
-          // For non-folder items, check if they match the search
-          return folder.title.toLowerCase().includes(searchQuery.toLowerCase()) ? folder : undefined;
-        })
-        .filter((item): item is SidebarItem => item !== undefined); // Type-safe filter
-    }
-  }, [sidebarItems, searchQuery, searchResults, expandedFolders]);
+  const handleSearchResultSelect = useCallback((result: TranscriptSearchResult) => {
+    setCurrentMeeting({ id: result.id, title: result.title });
+    const jumpNonce = ++searchJumpNonceRef.current;
+    const params = new URLSearchParams({
+      id: result.id,
+      segment: result.sourceChunkId,
+      source: 'search',
+      jump: `${Date.now()}-${jumpNonce}`,
+    });
+    router.push(`/meeting-details?${params.toString()}`);
+  }, [router, setCurrentMeeting]);
 
 
-  const handleDelete = async (itemId: string) => {
-    console.log('Deleting item:', itemId);
-    const payload = {
-      meetingId: itemId
-    };
+  const handleDelete = async (itemId: string): Promise<boolean> => {
+    console.log('Deleting meeting');
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
+      // Browser recovery data is outside the native SQLite transaction. Purge
+      // legacy saved copies and an exact matching recovery ID before asking the
+      // native layer to remove its managed database/search/recording data.
+      await indexedDBService.purgeSavedMeetings();
+      await indexedDBService.deleteMeeting(itemId);
+      if (sessionStorage.getItem('indexeddb_current_meeting_id') === itemId) {
+        sessionStorage.removeItem('indexeddb_current_meeting_id');
+      }
+
       await invoke('api_delete_meeting', {
         meetingId: itemId,
       });
@@ -344,11 +295,11 @@ const Sidebar: React.FC = () => {
       setMeetings(updatedMeetings);
 
       // Track meeting deletion
-      Analytics.trackMeetingDeleted(itemId);
+      Analytics.trackMeetingDeleted();
 
       // Show success toast
       toast.success("Meeting deleted successfully", {
-        description: "All associated data has been removed"
+        description: "Mityu-managed database, search, recording, and recovery data was removed."
       });
 
       // If deleting the active meeting, navigate to home
@@ -356,19 +307,30 @@ const Sidebar: React.FC = () => {
         setCurrentMeeting({ id: 'intro-call', title: '+ New Call' });
         router.push('/');
       }
+
+      return true;
     } catch (error) {
-      console.error('Failed to delete meeting:', error);
+      console.error('Failed to delete meeting');
       toast.error("Failed to delete meeting", {
         description: error instanceof Error ? error.message : String(error)
       });
+      return false;
     }
   };
 
-  const handleDeleteConfirm = () => {
-    if (deleteModalState.itemId) {
-      handleDelete(deleteModalState.itemId);
+  const handleDeleteConfirm = async () => {
+    const itemId = deleteModalState.itemId;
+    if (!itemId || isDeletePending) return;
+
+    setIsDeletePending(true);
+    try {
+      const deleted = await handleDelete(itemId);
+      if (deleted) {
+        setDeleteModalState({ isOpen: false, itemId: null });
+      }
+    } finally {
+      setIsDeletePending(false);
     }
-    setDeleteModalState({ isOpen: false, itemId: null });
   };
 
   // Handle modal editing of meeting names
@@ -419,7 +381,7 @@ const Sidebar: React.FC = () => {
       setEditModalState({ isOpen: false, meetingId: null, currentTitle: '' });
       setEditingTitle('');
     } catch (error) {
-      console.error('Failed to update meeting title:', error);
+      console.error('Failed to update meeting title');
       toast.error("Failed to update meeting title", {
         description: error instanceof Error ? error.message : String(error)
       });
@@ -458,6 +420,7 @@ const Sidebar: React.FC = () => {
     if (!isCollapsed) return null;
 
     const isHomePage = pathname === '/';
+    const isActionsPage = pathname === '/actions';
     const isMeetingPage = pathname?.includes('/meeting-details');
     const isSettingsPage = pathname === '/settings';
 
@@ -476,6 +439,24 @@ const Sidebar: React.FC = () => {
             </TooltipTrigger>
             <TooltipContent side="right">
               <p>Home</p>
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => router.push('/actions')}
+                aria-label="Open Action Center"
+                aria-current={isActionsPage ? 'page' : undefined}
+                className={`grid h-10 w-10 place-items-center rounded-xl transition-colors duration-150 ${isActionsPage ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+              >
+                <ListChecks className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>Action Center</p>
             </TooltipContent>
           </Tooltip>
 
@@ -554,21 +535,11 @@ const Sidebar: React.FC = () => {
     );
   };
 
-  // Find matching transcript snippet for a meeting item
-  const findMatchingSnippet = (itemId: string) => {
-    if (!searchQuery.trim() || !searchResults.length) return null;
-    return searchResults.find(result => result.id === itemId);
-  };
-
   const renderItem = (item: SidebarItem, depth = 0) => {
     const isExpanded = expandedFolders.has(item.id);
     const paddingLeft = `${depth * 12 + 12}px`;
     const isActive = item.type === 'file' && currentMeeting?.id === item.id;
     const isMeetingItem = item.id.includes('-') && !item.id.startsWith('intro-call');
-
-    // Check if this item has a matching transcript snippet
-    const matchingResult = isMeetingItem ? findMatchingSnippet(item.id) : null;
-    const hasTranscriptMatch = !!matchingResult;
 
     if (isCollapsed) return null;
 
@@ -578,7 +549,7 @@ const Sidebar: React.FC = () => {
           className={`flex items-center transition-all duration-150 group ${item.type === 'folder' && depth === 0
             ? 'p-3 text-lg font-semibold h-10 mx-3 mt-3 rounded-lg'
             : `relative px-3 py-2 my-0.5 rounded-md text-sm transition-colors ${isActive ? 'bg-primary/10 text-primary font-medium before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-[3px] before:rounded-r-full before:bg-primary' :
-              hasTranscriptMatch ? 'bg-amber-50 dark:bg-amber-500/10' : 'text-foreground/80 hover:bg-muted hover:text-foreground'
+              'text-foreground/80 hover:bg-muted hover:text-foreground'
             } cursor-pointer`
             }`}
           style={item.type === 'folder' && depth === 0 ? {} : { paddingLeft }}
@@ -651,36 +622,6 @@ const Sidebar: React.FC = () => {
                 )}
               </div>
 
-              {/* Show transcript match snippet if available */}
-              {hasTranscriptMatch && (
-                <div className="mt-1 ml-8 text-xs text-muted-foreground bg-amber-50 dark:bg-amber-500/10 p-1.5 rounded border border-amber-100 dark:border-amber-500/20">
-                  <div className="flex items-center gap-1 mb-0.5">
-                    {/* Source badge: where the hit was found (transcript vs. summary) */}
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30 px-1.5 py-0.5 text-[10px] font-medium leading-none"
-                      title={
-                        matchingResult.matchedIn === 'summary'
-                          ? 'Matched in the AI summary'
-                          : 'Matched in the transcript'
-                      }
-                    >
-                      {matchingResult.matchedIn === 'summary' ? (
-                        <StickyNote className="w-2.5 h-2.5" />
-                      ) : (
-                        <File className="w-2.5 h-2.5" />
-                      )}
-                      {matchingResult.matchedIn}
-                    </span>
-                    {/* Timestamp only for transcript hits; summary-only hits have timestamp === "" */}
-                    {matchingResult.timestamp && (
-                      <span className="text-muted-foreground leading-none">{matchingResult.timestamp}</span>
-                    )}
-                  </div>
-                  <div className="line-clamp-2">
-                    <span className="font-medium text-amber-600 dark:text-amber-400">Match:</span> {matchingResult.matchContext}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -729,7 +670,8 @@ const Sidebar: React.FC = () => {
 
               <div className="relative">
                 <InputGroup>
-                  <InputGroupInput placeholder='Search meetings…' value={searchQuery}
+                  <InputGroupInput placeholder='Search meeting evidence…' value={searchQuery}
+                    aria-label="Search meeting evidence"
                     onChange={(e) => handleSearchChange(e.target.value)}
                   />
                   <InputGroupAddon>
@@ -738,6 +680,8 @@ const Sidebar: React.FC = () => {
                   {searchQuery &&
                     <InputGroupAddon align={'inline-end'}>
                       <InputGroupButton
+                        type="button"
+                        aria-label="Clear meeting search"
                         onClick={() => handleSearchChange('')}
                       >
                         <X />
@@ -755,13 +699,27 @@ const Sidebar: React.FC = () => {
           {/* Fixed navigation items */}
           <div className="flex-shrink-0">
             {!isCollapsed && (
-              <div
-                onClick={() => router.push('/')}
-                className="p-3  text-lg font-semibold items-center hover:bg-muted h-10   flex mx-3 mt-3 rounded-lg cursor-pointer"
-              >
-                <Home className="w-4 h-4 mr-2" />
-                <span>Home</span>
-              </div>
+              <>
+                <div
+                  onClick={() => router.push('/')}
+                  className="p-3 text-lg font-semibold items-center hover:bg-muted h-10 flex mx-3 mt-3 rounded-lg cursor-pointer"
+                >
+                  <Home className="w-4 h-4 mr-2" />
+                  <span>Home</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push('/actions')}
+                  aria-current={pathname === '/actions' ? 'page' : undefined}
+                  className={`mx-3 mt-2 flex h-10 w-[calc(100%_-_1.5rem)] items-center rounded-lg p-3 text-left text-lg font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${pathname === '/actions'
+                    ? 'bg-accent text-primary'
+                    : 'text-foreground hover:bg-muted'
+                    }`}
+                >
+                  <ListChecks className="mr-2 h-4 w-4" aria-hidden="true" />
+                  <span>Action Center</span>
+                </button>
+              </>
             )}
           </div>
 
@@ -771,7 +729,7 @@ const Sidebar: React.FC = () => {
             {/* Meeting Notes folder header - fixed */}
             {!isCollapsed && (
               <div className="flex-shrink-0">
-                {filteredSidebarItems.filter(item => item.type === 'folder').map(item => (
+                {sidebarItems.filter(item => item.type === 'folder').map(item => (
                   <div key={item.id}>
                     <div
                       className="flex items-center transition-all duration-150 p-3 text-lg font-semibold h-10 mx-3 mt-3 rounded-lg"
@@ -790,13 +748,23 @@ const Sidebar: React.FC = () => {
             {/* Scrollable meeting items */}
             {!isCollapsed && (
               <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
-                {filteredSidebarItems
-                  .filter(item => item.type === 'folder' && expandedFolders.has(item.id) && item.children)
-                  .map(item => (
-                    <div key={`${item.id}-children`} className="mx-3">
-                      {item.children!.map(child => renderItem(child, 1))}
-                    </div>
-                  ))}
+                {searchQuery.trim() ? (
+                  <SearchResultsList
+                    results={searchResults}
+                    isSearching={isSearching}
+                    isQueryTooShort={!isEvidenceQuerySearchable(searchQuery)}
+                    error={searchError}
+                    onSelect={handleSearchResultSelect}
+                  />
+                ) : (
+                  sidebarItems
+                    .filter(item => item.type === 'folder' && expandedFolders.has(item.id) && item.children)
+                    .map(item => (
+                      <div key={`${item.id}-children`} className="mx-3">
+                        {item.children!.map(child => renderItem(child, 1))}
+                      </div>
+                    ))
+                )}
               </div>
             )}
           </div>
@@ -858,9 +826,14 @@ const Sidebar: React.FC = () => {
       {/* Confirmation Modal for Delete */}
       <ConfirmationModal
         isOpen={deleteModalState.isOpen}
-        text="Are you sure you want to delete this meeting? This action cannot be undone."
+        text="This removes the meeting from Mityu-managed local database and search data, its Mityu-managed recording artifacts, and recovery cache. Unknown files you placed in the recording folder are retained. This cannot be undone. SSD wear-leveling, copy-on-write filesystems, snapshots, backups, exports, and WebView/browser storage may retain physical traces or separate copies that Mityu cannot erase."
         onConfirm={handleDeleteConfirm}
-        onCancel={() => setDeleteModalState({ isOpen: false, itemId: null })}
+        onCancel={() => {
+          if (!isDeletePending) {
+            setDeleteModalState({ isOpen: false, itemId: null });
+          }
+        }}
+        isBusy={isDeletePending}
       />
 
       {/* Edit Meeting Title Modal */}

@@ -5,7 +5,9 @@
 //! nullable at the SQL level (added by migration 20260702000000), so every
 //! INSERT here MUST populate them; writes also stamp `rev`/`updated_by`.
 
-use crate::api::{SearchMatchField, TranscriptSearchResult, TranscriptSegment};
+use crate::api::{
+    EvidenceSearchResult, SearchMatchField, TranscriptSearchResult, TranscriptSegment,
+};
 use crate::context::AuthContext;
 use chrono::Utc;
 use sqlx::{Connection, Error as SqlxError, SqlitePool};
@@ -54,7 +56,7 @@ impl TranscriptsRepository {
         .await;
 
         if let Err(e) = result {
-            error!("Failed to create meeting '{}': {}", meeting_title, e);
+            error!("Failed to create meeting {}: {}", meeting_id, e);
             transaction.rollback().await?;
             return Err(e);
         }
@@ -241,6 +243,121 @@ impl TranscriptsRepository {
         Ok(())
     }
 
+    /// Ranked local evidence search over persisted transcript segments.
+    ///
+    /// Product Intelligence v1 intentionally searches transcript evidence only:
+    /// every returned row has a resolvable `source_chunk_id`, so the UI can jump
+    /// straight to the supporting segment. Legacy/unreviewed summary JSON is not
+    /// part of this trusted retrieval surface. The older [`Self::search_transcripts`]
+    /// command remains available for backwards compatibility.
+    ///
+    /// The FTS table is a derived index, never an authority. Every candidate is
+    /// joined back to both source tables and all three workspace predicates are
+    /// bound from `AuthContext`; soft-deleted source rows cannot be returned even
+    /// if a stale derived row were ever present.
+    pub async fn search_evidence(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        query: &str,
+    ) -> Result<Vec<EvidenceSearchResult>, SqlxError> {
+        let Some(match_query) = build_evidence_match_query(query) else {
+            return Ok(Vec::new());
+        };
+
+        // Rank every matching segment, then select the best evidence segment per
+        // meeting before applying the public result cap. A long meeting can have
+        // hundreds of strong matches; limiting segments first would let that one
+        // meeting crowd every other matching meeting out of the result set.
+        const RESULT_LIMIT: i64 = 50;
+
+        let rows = sqlx::query_as::<_, (String, String, String, String, Option<f64>, String, f64)>(
+            "WITH matching_segments AS MATERIALIZED (
+                 SELECT m.id AS result_id,
+                        m.title,
+                        t.id AS source_chunk_id,
+                        t.timestamp,
+                        t.audio_start_time,
+                        t.transcript,
+                        bm25(transcript_search_fts) AS rank
+                   FROM transcript_search_fts
+                   JOIN transcript_search_documents AS d
+                     ON d.id = transcript_search_fts.rowid
+                   JOIN transcripts AS t
+                     ON t.id = d.source_chunk_id
+                    AND t.meeting_id = d.meeting_id
+                    AND t.workspace_id = d.workspace_id
+                   JOIN meetings AS m
+                     ON m.id = t.meeting_id
+                    AND m.workspace_id = t.workspace_id
+                  WHERE transcript_search_fts MATCH ?
+                    AND d.workspace_id = ?
+                    AND t.workspace_id = ?
+                    AND m.workspace_id = ?
+                    AND t.deleted_at IS NULL
+                    AND m.deleted_at IS NULL
+             ),
+             ranked_meetings AS (
+                 SELECT result_id,
+                        title,
+                        source_chunk_id,
+                        timestamp,
+                        audio_start_time,
+                        transcript,
+                        rank,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY result_id
+                            ORDER BY rank ASC,
+                                     COALESCE(audio_start_time, 1.0e30) ASC,
+                                     source_chunk_id ASC
+                        ) AS meeting_row
+                   FROM matching_segments
+             )
+             SELECT result_id,
+                    title,
+                    source_chunk_id,
+                    timestamp,
+                    audio_start_time,
+                    transcript,
+                    rank
+               FROM ranked_meetings
+              WHERE meeting_row = 1
+              ORDER BY rank ASC,
+                       COALESCE(audio_start_time, 1.0e30) ASC,
+                       source_chunk_id ASC
+              LIMIT ?",
+        )
+        .bind(&match_query)
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .bind(RESULT_LIMIT)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    title,
+                    source_chunk_id,
+                    timestamp,
+                    audio_start_time,
+                    transcript_text,
+                    _rank,
+                )| EvidenceSearchResult {
+                    id,
+                    title,
+                    match_context: evidence_match_context(&transcript_text, query),
+                    timestamp,
+                    matched_in: SearchMatchField::Transcript,
+                    source_chunk_id,
+                    audio_start_time,
+                },
+            )
+            .collect())
+    }
+
     /// Searches, within the caller's workspace, for a query string in either a
     /// meeting's transcript text OR its generated summary (BACKLOG C3). Returns
     /// one row per meeting; `matched_in` labels where the hit came from and
@@ -391,6 +508,139 @@ impl TranscriptsRepository {
     }
 }
 
+/// Convert free-form user input into a bounded, literal FTS5 prefix query.
+///
+/// Only Unicode alphanumeric runs become tokens, so FTS operators supplied by
+/// the user (`OR`, `NEAR`, quotes, parentheses, `*`) can never become syntax.
+/// Each token is still quoted defensively and joined with AND. One-character
+/// tokens are discarded and two-character tokens match exactly; only longer
+/// tokens get prefix expansion. An interactive query therefore cannot fan a
+/// one/two-character prefix across almost the entire corpus. A future hybrid
+/// retriever can improve morphology without weakening that bound.
+fn build_evidence_match_query(query: &str) -> Option<String> {
+    let tokens = evidence_query_tokens(query);
+    if tokens.is_empty() {
+        return None;
+    }
+
+    Some(
+        tokens
+            .into_iter()
+            .map(|token| {
+                let literal = token.replace('"', "\"\"");
+                if token.chars().count() == 2 {
+                    // Preserve useful acronyms such as AI/HR without expanding
+                    // a two-character prefix over a large vocabulary.
+                    format!("\"{literal}\"")
+                } else {
+                    format!("\"{literal}\"*")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" AND "),
+    )
+}
+
+/// Bounded Unicode tokenization shared by the FTS expression and snippet
+/// locator. Turkish I/İ/ı are intentionally folded together for forgiving
+/// TR/EN/code-switch search; common Turkish diacritics are transliterated so
+/// `toplanti` can find `toplantı` and the behavior does not depend on the host
+/// SQLite build's Unicode table.
+fn evidence_query_tokens(query: &str) -> Vec<String> {
+    const MAX_QUERY_CHARS: usize = 256;
+    const MAX_TOKEN_CHARS: usize = 64;
+    const MAX_TOKENS: usize = 16;
+    const MIN_TOKEN_CHARS: usize = 2;
+
+    let mut raw_tokens: Vec<String> = Vec::new();
+    let mut current = String::new();
+
+    for ch in query.chars().take(MAX_QUERY_CHARS) {
+        if ch.is_alphanumeric() {
+            if current.chars().count() < MAX_TOKEN_CHARS {
+                current.push(ch);
+            }
+        } else if !current.is_empty() {
+            raw_tokens.push(std::mem::take(&mut current));
+            if raw_tokens.len() == MAX_TOKENS {
+                break;
+            }
+        }
+    }
+    if !current.is_empty() && raw_tokens.len() < MAX_TOKENS {
+        raw_tokens.push(current);
+    }
+
+    let mut seen = HashSet::new();
+    raw_tokens
+        .into_iter()
+        .map(|token| normalize_evidence_token(&token))
+        .filter(|token| token.chars().count() >= MIN_TOKEN_CHARS && seen.insert(token.clone()))
+        .take(MAX_TOKENS)
+        .collect()
+}
+
+fn normalize_evidence_token(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            'I' | 'İ' | 'ı' => normalized.push('i'),
+            'Ç' | 'ç' => normalized.push('c'),
+            'Ğ' | 'ğ' => normalized.push('g'),
+            'Ö' | 'ö' => normalized.push('o'),
+            'Ş' | 'ş' => normalized.push('s'),
+            'Ü' | 'ü' => normalized.push('u'),
+            _ => normalized.extend(ch.to_lowercase()),
+        }
+    }
+    normalized
+}
+
+/// Return an original-text snippet around the first word that satisfies the FTS
+/// token semantics (two characters = exact; longer = prefix). The FTS table
+/// stores normalized text for Turkish recall, but the UI must always show the
+/// user's authoritative transcript.
+fn evidence_match_context(text: &str, query: &str) -> String {
+    let tokens = evidence_query_tokens(query);
+    let mut word_start: Option<usize> = None;
+
+    for (index, ch) in text
+        .char_indices()
+        .chain(std::iter::once((text.len(), ' ')))
+    {
+        if ch.is_alphanumeric() {
+            word_start.get_or_insert(index);
+            continue;
+        }
+
+        let Some(start) = word_start.take() else {
+            continue;
+        };
+        let word = normalize_evidence_token(&text[start..index]);
+        if tokens.iter().any(|token| {
+            if token.chars().count() == 2 {
+                word == token.as_str()
+            } else {
+                word.starts_with(token)
+            }
+        }) {
+            let context_start = floor_char_boundary(text, start.saturating_sub(100));
+            let context_end = ceil_char_boundary(text, (index + 100).min(text.len()));
+            let mut context = String::new();
+            if context_start > 0 {
+                context.push_str("...");
+            }
+            context.push_str(&text[context_start..context_end]);
+            if context_end < text.len() {
+                context.push_str("...");
+            }
+            return context;
+        }
+    }
+
+    text.chars().take(200).collect()
+}
+
 /// Largest char-boundary index `<= index` in `s` (stable stand-in for the
 /// nightly `str::floor_char_boundary`).
 fn floor_char_boundary(s: &str, index: usize) -> usize {
@@ -448,4 +698,22 @@ async fn insert_transcript_segment(
     .execute(&mut *conn)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod evidence_search_tests {
+    use super::evidence_match_context;
+
+    #[test]
+    fn two_character_snippet_anchors_to_exact_token_not_an_earlier_prefix() {
+        let transcript = format!("İstanbul {} is gerçek kanıt", "uzak bağlam ".repeat(30));
+
+        let context = evidence_match_context(&transcript, "is");
+
+        assert!(context.contains(" is gerçek kanıt"));
+        assert!(
+            !context.contains("İstanbul"),
+            "snippet must not anchor the exact 'is' query to the earlier İstanbul prefix"
+        );
+    }
 }

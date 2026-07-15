@@ -1,0 +1,42 @@
+FFmpeg third-party notice — Mityu Windows x64 distribution
+
+Mityu uses FFmpeg as a separate executable for local audio conversion. The
+Windows x64 executable bundled for Mityu v1.0.4 reports:
+
+  FFmpeg n8.1.2-22-g94138f6973-20260706
+  FFmpeg source commit: 94138f6973dd1ac6208ace92148ac0d172455d65
+  ffmpeg.exe SHA-256:
+    dd757098407e2ac4920647a2f66f41a6e1006dcf373b0825023948ae1b96912a
+  Configuration class: --enable-version3, without --enable-gpl or --enable-nonfree
+  License: GNU Lesser General Public License, version 3 or later
+
+Mityu's win64-lgpl.zip is the same BtbN build's latest repack payload; it is
+not claimed to be the byte-identical tagged ZIP:
+
+  Mityu repack SHA-256:
+    e2757eb478954028a18be862cc5927f585524f0f000d69e36fe35283aba157db
+  Permanent BtbN tagged ZIP SHA-256:
+    186b1440d90084d6d9667378b714efd92226230a18c860ab9823e955d2506385
+  BtbN build-script commit:
+    ca65803800fa316b49813e653e57b45808cfc087
+  BtbN Actions run / Windows LGPL 8.1 job:
+    https://github.com/BtbN/FFmpeg-Builds/actions/runs/28794367607
+
+The full LGPLv3 and GPLv3 texts, FFmpeg licensing notes, BtbN build-script
+license, configure output, dependency inventory, exact FFmpeg source, exact
+build scripts, and that run's dependency source cache accompany the binary via:
+
+  https://github.com/aydogandagidir/mityu/releases/tag/ffmpeg-deps-8.1-lgpl
+
+Required source asset names:
+
+  ffmpeg-94138f6973dd1ac6208ace92148ac0d172455d65-source.tar.gz
+  ffmpeg-builds-ca65803800fa316b49813e653e57b45808cfc087-scripts.tar.gz
+  ffmpeg-builds-run-28794367607-download-cache.tar.gz
+  ffmpeg-win64-lgpl-20260706-build-info.zip
+
+Do not publish a Mityu installer unless those matching machine-readable source
+and build-information assets are reachable beside win64-lgpl.zip.
+
+FFmpeg and its dependencies are provided without warranty. Mityu's MIT license
+does not replace or modify their respective licenses.

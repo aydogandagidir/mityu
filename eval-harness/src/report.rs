@@ -64,6 +64,18 @@ pub fn write_reports(eval_dir: &Path, rows: &[Row], meta: &RunMeta) -> Result<(P
         "whisper_models": meta.whisper_models,
         "parakeet_model": meta.parakeet_model,
         "quick": meta.quick,
+        "latency_semantics": {
+            "wall_secs": "Bir klibin batch transkripsiyonunun başlamasından tamamlanmasına kadar geçen duvar saati süresi.",
+            "rtf": "wall_secs / audio_secs; 1.0 gerçek zaman, 1.0 altı gerçek zamandan hızlı.",
+            "live_ui_ttft_measured": false,
+            "note": "Bu harness konuşmadan ekrandaki ilk metne kadar gecikmeyi (TTFT) veya canlı UI streaming gecikmesini ölçmez."
+        },
+        "human_review": {
+            "reviewer": null,
+            "reviewed_at": null,
+            "multi_speaker_diarization_sanity": null,
+            "multi_speaker_notes": null
+        },
         "thresholds": {
             "go_quiet_wer": GO_QUIET_WER,
             "go_field_wer": GO_FIELD_WER,
@@ -196,6 +208,12 @@ fn render_markdown(rows: &[Row], medians: &BTreeMap<String, MedianCell>, meta: &
          (ç→c, ğ→g, ı→i, ö→o, ş→s, ü→u, â→a, ...). Strict metrikler aksan hatasını sayar; \
          fold saymaz. Terim yakalama fold eşleşmesiyle hesaplanır (alt-dizgi).\n\n",
     );
+    md.push_str(
+        "- Gecikme semantiği: `Duvar(s)` bir klibin batch transkripsiyonunun baştan sona \
+         wall-clock süresidir; `RTF = wall_secs / audio_secs`. Bu harness konuşmadan ekrandaki ilk \
+         metne kadar gecikmeyi (**canlı UI TTFT**) veya streaming yenileme gecikmesini ölçmez; \
+         bunlar ayrı bir insan smoke testi gerektirir.\n\n",
+    );
 
     if !meta.notes.is_empty() {
         md.push_str("## Notlar\n\n");
@@ -248,6 +266,18 @@ fn render_markdown(rows: &[Row], medians: &BTreeMap<String, MedianCell>, meta: &
         ));
     }
     md.push('\n');
+
+    md.push_str("## İnsan incelemesi — multi-speaker / diyarisasyon sanity\n\n");
+    md.push_str(
+        "Harness diyarisasyonu otomatik puanlamaz. Bir insan `multi` kovasındaki hipotezleri \
+         kayıtlarla karşılaştırıp aşağıdaki alanları doldurmalıdır:\n\n",
+    );
+    md.push_str("- İnceleyen: ____________________\n");
+    md.push_str("- İnceleme tarihi: ____________________\n");
+    md.push_str(
+        "- Multi-speaker / diyarisasyon sanity (PASS / FAIL / N/A): ____________________\n",
+    );
+    md.push_str("- İncelenen klipler ve konuşmacı dönüşü notları: ____________________\n\n");
 
     md.push_str("## Verdict — Phase-0 kapısı (docs/PHASE0_VALIDATION.md §4)\n\n");
     md.push_str(&format!(
@@ -361,5 +391,8 @@ mod tests {
         assert!(md.contains("FAIL")); // field 0.30 > 0.25
         assert!(md.contains("test notu"));
         assert!(md.contains("large-v3, large-v3-turbo")); // joined whisper model list
+        assert!(md.contains("canlı UI TTFT"));
+        assert!(md.contains("multi-speaker / diyarisasyon sanity"));
+        assert!(md.contains("PASS / FAIL / N/A"));
     }
 }

@@ -246,6 +246,16 @@ pub fn current() -> AuthContext {
     ctx
 }
 
+/// Return the current workspace id to renderer-owned local caches.
+///
+/// The command deliberately accepts no identity argument: its value is derived
+/// exclusively from [`current`], preserving the same trust boundary as native
+/// repositories and commands.
+#[tauri::command]
+pub fn api_get_current_workspace_id() -> String {
+    current().tenant_id.as_str().to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,6 +373,11 @@ mod tests {
         assert_eq!(ctx.tenant_id.as_str(), LOCAL_WORKSPACE_ID);
         assert_eq!(ctx.user_id.as_str(), LOCAL_USER_ID);
         assert_eq!(ctx.roles, [Role::Owner]);
+    }
+
+    #[test]
+    fn workspace_command_resolves_identity_in_rust() {
+        assert_eq!(api_get_current_workspace_id(), LOCAL_WORKSPACE_ID);
     }
 
     #[test]

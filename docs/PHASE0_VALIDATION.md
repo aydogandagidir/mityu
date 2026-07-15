@@ -2,6 +2,8 @@
 
 The entire product depends on turning real-world speech into a reliable transcript. This protocol is **mandatory and human-reviewed**. The agent builds the harness and runs it; a human reads the verdict before feature work proceeds. Do not self-approve past a failing threshold.
 
+**Current v1.0.4 status (ADR-0027):** `DEFERRED / NON-BLOCKING — NOT EVALUATED`; all four buckets remain `0/5`. This version-scoped publication exception does not alter this protocol, count as PASS, support target-environment accuracy claims, or unlock any A5/C8-dependent phase.
+
 ## Why this gate exists
 whisper/Parakeet perform very differently on clean meeting-room audio vs noisy field audio (HVAC, machinery, forklifts, multiple overlapping speakers, accented technical jargon). If accuracy is unusable in the target environment, the product scope must narrow **before** money/time goes into features.
 
@@ -14,17 +16,22 @@ Collect and label reference transcripts for at least these buckets (≥5 clips e
 
 For each clip, create a ground-truth transcript (human-corrected). Store as `eval/<bucket>/<id>.wav` + `eval/<bucket>/<id>.ref.txt`.
 
+The Rust harness treats `.ref.txt` as the explicit human-approval artifact and validates the gate
+**fail-closed** before loading a model: every bucket must contain at least five pairs, every reference
+must be non-empty, and every WAV must be normalized 16 kHz mono signed-16-bit PCM. Drafts do not count.
+
 ## 2. Configurations to compare
 - whisper.cpp `large-v3` (baseline) — with and without an initial **domain vocabulary / prompt**.
 - Parakeet engine — with and without domain vocabulary.
 - (If relevant) a Turkish-tuned setting for whisper.
-Run each config over every clip; capture the hypothesis transcript and wall-clock latency (for streaming feel).
+Run each config over every clip; capture the hypothesis transcript plus batch wall-clock duration and RTF.
 
 ## 3. Metrics
 - **WER** (word error rate) per clip and per bucket (primary). Also **CER** for Turkish (diacritics).
 - **Term recall** on a curated jargon list (did the domain/part terms come through?).
-- **Diarization sanity** (are speaker turns roughly right?) — qualitative in Phase 0.
-- **Latency** (streaming): time from speech to on-screen text.
+- **Diarization sanity** (are speaker turns roughly right?) — qualitative in Phase 0 and recorded by a human in the report template.
+- **Batch performance:** per-clip wall-clock duration and `RTF = wall_secs / audio_secs`.
+- **Live UI latency:** speech-to-first-visible-text / TTFT is a separate human smoke test. The harness's wall-clock/RTF values do **not** measure UI TTFT or streaming refresh latency.
 
 ## 4. Go / No-Go thresholds (tune with the pilot, but decide up front)
 Suggested starting bar (record the agreed numbers in DECISIONS.md):
@@ -84,7 +91,8 @@ print("Wrote eval/report.md and eval/report.json")
 ```
 
 ## 6. Deliverable of this gate
-- `eval/report.md` + `eval/report.json` with per-bucket WER/CER, jargon term-recall, latency.
+- `eval/report.md` + `eval/report.json` with per-bucket WER/CER, jargon term-recall, batch wall-clock duration, and RTF. These latency fields are not live UI TTFT.
+- A human-completed multi-speaker / diarization sanity field in `eval/report.md` (reviewer, date, PASS/FAIL/N/A, and notes).
 - A one-paragraph **verdict**: GO / CONDITIONAL(meeting-room) / NO-GO, the chosen thresholds, and the recommended STT config (engine + vocabulary) to standardize on.
 - Record the verdict + thresholds in DECISIONS.md. Only then does the agent enter field-dependent features (BACKLOG EPIC C field items).
 
@@ -112,7 +120,10 @@ Flow:
 4. `cargo run -p eval-harness -- run [--configs whisper_large_v3,whisper_large_v3_vocab,whisper_large_v3_turbo,whisper_large_v3_turbo_vocab,parakeet,parakeet_vocab] [--quick N] [--model <name-or-path>] [--model-turbo <name-or-path>]`
    → `eval/report.json` + `eval/report.md` (per-clip rows, medians per config|bucket, §4
    threshold check pre-filled with computed numbers; the verdict line is filled by a human).
-   All six configs above are the default set.
+   Before loading any model, `run` fails closed unless **each** of quiet/field/multi/jargon has at
+   least five valid 16 kHz mono s16 WAV + non-empty, human-approved `.ref.txt` pairs. All six
+   configs above are the default set. `--quick N` only caps a larger complete set; `N < 5` cannot
+   produce a gate report.
 
 Details:
 - Optional per clip: `<id>.lang.txt` containing `tr` or `en` (default: whisper auto-detect;
@@ -131,4 +142,5 @@ Details:
   `parakeet_vocab` runs plain and the report notes it.
 - Metrics: strict **and** diacritic-folded WER/CER (Turkish-aware normalization: NFC, `I`→`ı` /
   `İ`→`i`, apostrophes removed, punctuation→space); term recall uses folded substring matching;
-  wall-clock secs + RTF per clip.
+  batch wall-clock secs + RTF per clip. These are offline/batch throughput indicators, **not**
+  live UI TTFT. The Markdown report contains a human-filled multi-speaker/diyarisasyon sanity section.

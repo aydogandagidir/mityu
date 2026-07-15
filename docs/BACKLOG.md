@@ -24,9 +24,11 @@ Legend: **Agent** = `.claude/agents/` file · **Cmd** = `.claude/commands/`.
 - Agent: sync-server-architect (0003), audio-pipeline-engineer (0004) · Cmd: — · depends-on: A2
 - AC: server language chosen; authoritative audio module identified with evidence; retention default confirmed. All Accepted in DECISIONS.md.
 
-### A5 · Phase 0 transcription validation ⛔ GATE
+### A5 · Phase 0 transcription validation ⏸ DEFERRED — not a v1.0.4 publication blocker
 - Agent: audio-pipeline-engineer + qa-release-engineer · Cmd: /phase0-validate · depends-on: A2
 - AC: PHASE0_VALIDATION.md report produced; WER + domain-vocab thresholds met; **human-reviewed go/no-go recorded**. If NO-GO → scope narrows to meeting-room; do not enter EPIC C field features.
+- Current evidence (2026-07-15): Whisper `large-v3` and Parakeet v3 int8 are installed/integrity-verified and the harness fails closed correctly. The four consented real-audio buckets remain `0/5`; twenty 2–10 minute recordings, human-corrected references, diarization review and the human verdict are still required. This is NOT EVALUATED, not a measured quality NO-GO.
+- v1.0.4 exception (ADR-0027): the product owner accepted this as explicit evidence debt for this patch only. A5 is neither PASS nor waived for field/accuracy claims; it must close before those claims or any downstream phase that depends on proven target-environment quality.
 
 ---
 
@@ -53,7 +55,8 @@ Legend: **Agent** = `.claude/agents/` file · **Cmd** = `.claude/commands/`.
 ## EPIC C — Core product value (Phase 1 MVP)
 
 ### C1 · Source-linked structured summaries + HITL
-- Agent: rust-tauri-core-engineer + frontend-nextjs-engineer · Cmd: /feature · depends-on: A5, B2
+- Agent: rust-tauri-core-engineer + frontend-nextjs-engineer · Cmd: /feature · depends-on: B2
+- v1.0.4 sequencing exception (ADR-0027): source linkage and HITL are quality-independent safety controls and may ship while A5 remains NOT EVALUATED. This does not establish transcription accuracy.
 - AC: summary uses the Block/Section schema; **every block/action item carries `source_chunk_id`**; UI renders drafts with Approve + visible source link; nothing publishes without approval.
 
 ### C2 · Action-item extraction
@@ -62,7 +65,17 @@ Legend: **Agent** = `.claude/agents/` file · **Cmd** = `.claude/commands/`.
 
 ### C3 · Search across meetings/transcripts
 - Agent: rust-tauri-core-engineer + frontend-nextjs-engineer · Cmd: /feature · depends-on: B2
-- AC: full-text search over transcripts/summaries within the workspace; tenant-scoped by construction.
+- AC: superseded/strengthened by C3a for transcript evidence. Summary retrieval may index **only human-approved, source-linked** blocks in a later additive slice; legacy or unapproved summary text is prohibited from the trusted search surface.
+
+### C3a · Ranked evidence search (Product Intelligence foundation)
+- Agent: rust-tauri-core-engineer + frontend-nextjs-engineer · Cmd: /feature then /db-migration · depends-on: B2
+- Owner-directed sequencing exception (2026-07-14, ADR-0024; narrowed for v1.0.4 by ADR-0027): transcription-quality-independent implementation may land while A5 and C8 remain deferred/not passed; no target-environment quality or pilot-value claim follows from it.
+- AC: local FTS5/BM25 ranks transcript evidence without a network/LLM dependency; every result resolves to an active same-workspace `source_chunk_id`; query syntax is bounded/escaped and one-character prefix scans are rejected; UI preserves backend relevance order, debounces and rejects stale responses, and opens/highlights the source segment; raw corpus-dependent rank, query and snippet never enter analytics/logs. Legacy/unapproved summaries are excluded; approved-summary retrieval is a later additive slice.
+
+### C3b · Approved Action Center (Product Intelligence slice 2)
+- Agent: rust-tauri-core-engineer + frontend-nextjs-engineer + security-privacy-auditor · Cmd: /feature · depends-on: C2, B2
+- Owner-directed sequencing exception (2026-07-14, ADR-0025; narrowed for v1.0.4 by ADR-0027): this read-only, quality-independent slice may land while A5 and C8 remain deferred/not passed; no target-environment quality or pilot-value claim follows from it.
+- AC: generation cannot persist a non-draft review state; only active same-workspace `action_items.status = 'approved'` rows with an active same-meeting transcript source are returned; draft/edited/rejected, stale, soft-deleted and cross-tenant rows fail closed. The bounded API exposes visible pagination and source metadata; the `/actions` UI preserves backend order, shows AI-extracted/human-approved provenance and opens the exact transcript segment. V1 is offline/read-only and adds no work-progress state, overdue inference, analytics content or automatic external action.
 
 ### C4 · Export (PDF / DOCX / Markdown)
 - Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: C1
@@ -76,13 +89,19 @@ Legend: **Agent** = `.claude/agents/` file · **Cmd** = `.claude/commands/`.
 - Agent: rust-tauri-core-engineer + security-privacy-auditor · Cmd: /feature · depends-on: B3
 - AC: configurable retention (default: delete audio after transcription); basic PII/keyword redaction rules applied before persistence/summary.
 
+### C6a · Verifiable local deletion semantics ✅ CLOSED for v1.0.4
+- Agent: rust-tauri-core-engineer + security-privacy-auditor · Cmd: /security-review then /feature · depends-on: B3, C3a
+- AC: an accepted ADR defines SQLite/FTS5 deletion semantics across FTS shadow tables, free pages and WAL; the implementation applies the chosen `secure_delete` + checkpoint/vacuum or crypto-erasure policy; an automated sentinel test verifies the documented guarantee after the maintenance cycle; SSD/filesystem limitations are disclosed in-product. This must pass before the C8 security sign-off—logical/index removal alone is insufficient for a forensic-erasure claim.
+- Closure evidence (2026-07-14): ADR-0026 accepted; migration `20260714010000` persists FTS5 secure-delete and a content-free crash-resume marker; every SQLite connection enables core secure-delete; tenant-scoped deletion scrubs only canonical-root Mityu-managed artifacts without following symlinks, retains unknown user files, then requires FTS optimize + checked WAL truncate + `VACUUM` + zero free pages + final checkpoint before success. Startup resumes pending maintenance and browser recovery copies are logically purged. `secure_local_deletion.rs` uses a unique sentinel to verify database, FTS, WAL and app-managed artifacts, including a cross-tenant no-op. The product copy explicitly disclaims SSD/COW/snapshot/backup/export/WebView physical-erasure guarantees. A5 and C8 remain open roadmap gates but are deferred/non-blocking for v1.0.4 under ADR-0027; legal, signing and updater-canary gates remain unchanged. The Windows FFmpeg technical publication gate closed on 2026-07-15.
+
 ### C7 · Editor convergence to BlockNote
 - Agent: frontend-nextjs-engineer · Cmd: /refactor via /feature · depends-on: C1
 - AC: canonical editor = BlockNote; no new TipTap/Remirror usage; legacy paths inert.
 
-### C8 · Phase 1 exit ⛔ GATE
-- Agent: qa-release-engineer · Cmd: /release (dry-run) · depends-on: C1–C7
+### C8 · Phase 1 exit ⏸ DEFERRED for v1.0.4 — still a downstream gate
+- Agent: qa-release-engineer · Cmd: /release (dry-run) · depends-on: C1–C7 (including C6a)
 - AC: app works fully offline; a real pilot user completes record→approve→export; DoD green; multitenancy-guardian + security-privacy-auditor pass.
+- Evidence protocol: `docs/PILOT_V1.0.4.md` is ready, but no human pilot has been performed. ADR-0027 makes C8 non-blocking only for publication of v1.0.4; it is not PASS, unlocks none of EPIC D/F/G, and still requires a real user to execute and sign the protocol against an immutable candidate after A5. An AI agent cannot substitute for the pilot user or approve the generated content.
 
 ---
 

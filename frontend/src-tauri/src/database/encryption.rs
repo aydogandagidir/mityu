@@ -168,11 +168,9 @@ async fn checkpoint_plaintext_wal(db_path: &Path) -> Result<()> {
             "Checkpointed plaintext WAL into {} before encryption",
             db_path.display()
         ),
-        Err(e) => log::warn!(
-            "Non-fatal: could not checkpoint the plaintext WAL for {} ({}); the export \
-             still reads committed WAL rows via the attached connection",
-            db_path.display(),
-            e
+        Err(_) => log::warn!(
+            "Non-fatal: could not checkpoint the plaintext WAL before encryption; the export \
+             still reads committed WAL rows via the attached connection"
         ),
     }
     let _ = conn.close().await;

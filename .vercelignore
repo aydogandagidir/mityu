@@ -1,0 +1,5 @@
+# The Vercel project uses `landing` as its monorepo Root Directory. Upload only
+# that project; never send desktop build outputs, local models, or repo tooling.
+/*
+!landing
+!landing/**

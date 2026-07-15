@@ -48,6 +48,25 @@ next-env.d.ts
 # Audio files
 *.wav
 
+# Phase-0 evidence contains participant audio and verbatim transcripts.
+# Keep every sensitive/raw artifact local; commit only templates and guidance.
+/eval/**/*.mp3
+/eval/**/*.m4a
+/eval/**/*.aac
+/eval/**/*.flac
+/eval/**/*.ogg
+/eval/**/*.opus
+/eval/**/*.wma
+/eval/**/*.webm
+/eval/**/*.mov
+/eval/**/*.ref.txt
+/eval/**/*.draft.txt
+/eval/**/*.hyp.txt
+/eval/report.json
+/eval/report.md
+/eval/evidence/manifest.csv
+/eval/evidence/private/
+
 # Large media files
 docs/demo.mov
 docs/demo.gif

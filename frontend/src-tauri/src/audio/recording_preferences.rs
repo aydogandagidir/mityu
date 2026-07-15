@@ -80,7 +80,7 @@ pub fn get_default_recordings_folder() -> PathBuf {
 pub fn ensure_recordings_directory(path: &PathBuf) -> Result<()> {
     if !path.exists() {
         std::fs::create_dir_all(path)?;
-        info!("Created recordings directory: {:?}", path);
+        info!("Created the Mityu recordings directory");
     }
     Ok(())
 }
@@ -106,7 +106,7 @@ pub async fn load_recording_preferences<R: Runtime>(
     };
 
     // Try to get the preferences from store
-    let prefs = if let Some(value) = store.get("preferences") {
+    let mut prefs = if let Some(value) = store.get("preferences") {
         match serde_json::from_value::<RecordingPreferences>(value.clone()) {
             Ok(mut p) => {
                 info!("Loaded recording preferences from store");
@@ -128,9 +128,16 @@ pub async fn load_recording_preferences<R: Runtime>(
         RecordingPreferences::default()
     };
 
-    info!("Loaded recording preferences: save_folder={:?}, auto_save={}, format={}, mic={:?}, system={:?}",
-          prefs.save_folder, prefs.auto_save, prefs.file_format,
-          prefs.preferred_mic_device, prefs.preferred_system_device);
+    // v1.0.4 records only inside the platform-owned Mityu recordings root.
+    // Never trust a renderer-controlled or legacy persisted deletion root.
+    prefs.save_folder = get_default_recordings_folder();
+    info!(
+        "Loaded recording preferences: auto_save={}, format={}, mic_selected={}, system_selected={}",
+        prefs.auto_save,
+        prefs.file_format,
+        prefs.preferred_mic_device.is_some(),
+        prefs.preferred_system_device.is_some()
+    );
     Ok(prefs)
 }
 
@@ -139,9 +146,15 @@ pub async fn save_recording_preferences<R: Runtime>(
     app: &AppHandle<R>,
     preferences: &RecordingPreferences,
 ) -> Result<()> {
-    info!("Saving recording preferences: save_folder={:?}, auto_save={}, format={}, mic={:?}, system={:?}",
-          preferences.save_folder, preferences.auto_save, preferences.file_format,
-          preferences.preferred_mic_device, preferences.preferred_system_device);
+    let mut preferences = preferences.clone();
+    preferences.save_folder = get_default_recordings_folder();
+    info!(
+        "Saving recording preferences: auto_save={}, format={}, mic_selected={}, system_selected={}",
+        preferences.auto_save,
+        preferences.file_format,
+        preferences.preferred_mic_device.is_some(),
+        preferences.preferred_system_device.is_some()
+    );
 
     // Get or create store
     let store = app
@@ -149,7 +162,7 @@ pub async fn save_recording_preferences<R: Runtime>(
         .map_err(|e| anyhow::anyhow!("Failed to access store: {}", e))?;
 
     // Serialize preferences to JSON value
-    let prefs_value = serde_json::to_value(preferences)
+    let prefs_value = serde_json::to_value(&preferences)
         .map_err(|e| anyhow::anyhow!("Failed to serialize preferences: {}", e))?;
 
     // Save to store

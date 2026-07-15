@@ -598,10 +598,18 @@ impl SummaryService {
                 }
                 StructuredOutcome::Degrade(reason) => {
                     warn!(
-                        meeting_id = %meeting_id,
-                        "structured generation degraded to the legacy summary path: {}",
-                        reason
+                        reason_chars = reason.chars().count(),
+                        "source-linked draft generation failed; legacy summary fallback is disabled"
                     );
+                    Self::update_process_failed(
+                        &pool,
+                        &ctx,
+                        &meeting_id,
+                        "Source-linked draft generation failed. No ungrounded legacy summary was created; retry generation.",
+                    )
+                    .await;
+                    Self::cleanup_cancellation_token(&meeting_id);
+                    return;
                 }
             }
         }
@@ -690,7 +698,11 @@ impl SummaryService {
                 if let Some(name) =
                     extract_meeting_name_from_markdown(&final_markdown).filter(|n| !n.is_empty())
                 {
-                    info!("Extracted meeting name from summary: '{}'", name);
+                    info!(
+                        "Extracted meeting name from summary (meeting_id={}, chars={})",
+                        meeting_id,
+                        name.chars().count()
+                    );
                     if let Err(e) =
                         MeetingsRepository::update_meeting_name(&pool, &ctx, &meeting_id, &name)
                             .await

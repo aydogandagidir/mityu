@@ -3,7 +3,8 @@ resolver = "2"
 members = [
     "frontend/src-tauri",
     "llama-helper",
-    "eval-harness"
+    "eval-harness",
+    "tools/updater-signature-verifier"
 ]
 
 # Shared workspace settings

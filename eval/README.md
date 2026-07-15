@@ -13,7 +13,7 @@ Amaç: Mityu'nun transkripsiyon kalitesini **senin gerçek ortamında** ölçmek
 
 - Format serbest (m4a/mp3/wav; telefon olur) — dönüşüm/normalizasyon otomatik yapılır.
 - Dosya adı: kısa ve benzersiz (örn. `q1.m4a`, `f3.wav`).
-- Erken sinyal için kova başına 2 kliple ön-tur koşulabilir; gate kararı ≥5 ister.
+- Taslakları iki kliple erken inceleyebilirsin; ancak `eval-harness run` fail-closed çalışır ve her kovada ≥5 geçerli çift olmadan gate raporu üretmez. `--quick N` kullanılıyorsa `N ≥ 5` olmalıdır.
 - **KVKK:** kayıttaki herkesten izin al.
 
 ## Referans transkript akışı
@@ -21,7 +21,14 @@ Amaç: Mityu'nun transkripsiyon kalitesini **senin gerçek ortamında** ölçmek
 2. Harness her klip için taslak transkript üretir (`<id>.draft.txt`).
 3. Sen taslağı düzeltip `<id>.ref.txt` olarak onaylarsın (insan-doğrulamalı referans şartı).
 
+`.ref.txt` dosyasının varlığı, bu akışta insan onayı beyanıdır; makine taslağını kontrol etmeden
+yalnızca yeniden adlandırmak kabul edilmez. `run`, model yüklemeden önce her kovada en az beş çift,
+boş olmayan referans ve 16 kHz mono s16 WAV biçimini doğrular; eksikte rapor yazmadan durur.
+
 ## Jargon listesi
 `jargon.txt` taslağı intralojistik/depo otomasyonu için hazırlandı — **yanlışları sil, kendi ürün/parça adlarını ekle** (müşteri adları, ürün kodları, marka adları çok değerli).
 
-Koşu ve rapor: `docs/PHASE0_VALIDATION.md` + `eval-harness` (workspace bin). Çıktılar: `eval/report.md` + `eval/report.json` → GO / CONDITIONAL / NO-GO kararı insana sunulur.
+Koşu ve rapor: `docs/PHASE0_VALIDATION.md` + `eval-harness` (workspace bin). Çıktılar:
+`eval/report.md` + `eval/report.json` → GO / CONDITIONAL / NO-GO kararı insana sunulur.
+Raporun multi-speaker/diyarisasyon sanity alanını bir insan doldurur. Raporlanan `wall_secs` ve RTF
+batch çalışma süresidir; canlı arayüzde konuşmadan ilk metne kadar geçen TTFT değildir.

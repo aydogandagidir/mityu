@@ -94,7 +94,6 @@ pub fn encode_single_audio(
 
     if !status.success() {
         error!("FFmpeg process failed with status: {}", status);
-        error!("FFmpeg stderr: {}", stderr);
         return Err(anyhow::anyhow!(
             "FFmpeg process failed with status: {}",
             status

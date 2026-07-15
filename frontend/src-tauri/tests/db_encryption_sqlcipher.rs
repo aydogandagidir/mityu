@@ -242,6 +242,17 @@ async fn count(pool: &SqlitePool, table: &str) -> i64 {
         .unwrap_or_else(|e| panic!("COUNT(*) on {table} failed: {e}"))
 }
 
+async fn fts_match_count(pool: &SqlitePool, query: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM transcript_search_fts \
+         WHERE transcript_search_fts MATCH ?",
+    )
+    .bind(query)
+    .fetch_one(pool)
+    .await
+    .expect("query transcript evidence FTS")
+}
+
 async fn applied_versions(pool: &SqlitePool) -> Vec<i64> {
     sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
         .fetch_all(pool)
@@ -453,6 +464,76 @@ async fn conversion_preserves_rows_and_migration_ledger() {
     let enc2 = open_encrypted(&db_path, TEST_KEY_HEX).await;
     assert_eq!(count(&enc2, "meetings").await, 2);
     enc2.close().await;
+}
+
+/// Product Intelligence derived evidence index must survive the same
+/// plaintext -> SQLCipher conversion as its transcript source rows. Trigger
+/// behavior after keyed reopen proves the virtual table remains live, not just
+/// copied as a stale snapshot.
+#[tokio::test]
+async fn conversion_preserves_transcript_fts_and_its_triggers() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db_path = tmp.path().join("fts_conversion.sqlite");
+
+    let plain = open_plaintext(&db_path).await;
+    MIGRATOR.run(&plain).await.expect("plaintext migrations");
+    seed_minimal(&plain).await;
+    assert_eq!(fts_match_count(&plain, "secret").await, 1);
+    plain.close().await;
+
+    encryption::ensure_encrypted(&db_path, TEST_KEY_HEX)
+        .await
+        .expect("convert database containing FTS5 index");
+
+    let encrypted = open_encrypted(&db_path, TEST_KEY_HEX).await;
+    assert_eq!(fts_match_count(&encrypted, "secret").await, 1);
+    assert_eq!(count(&encrypted, "transcript_search_documents").await, 3);
+
+    let trigger_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master \
+         WHERE type = 'trigger' AND name IN ( \
+             'transcripts_search_fts_ai', \
+             'transcripts_search_fts_au', \
+             'transcripts_search_fts_ad', \
+             'meetings_search_fts_au', \
+             'meetings_search_fts_ad' \
+         )",
+    )
+    .fetch_one(&encrypted)
+    .await
+    .expect("count converted FTS triggers");
+    assert_eq!(trigger_count, 5);
+
+    sqlx::query(
+        "UPDATE meetings SET deleted_at = '2026-07-14T10:00:00.000Z' \
+         WHERE id = 'm-enc-1'",
+    )
+    .execute(&encrypted)
+    .await
+    .expect("soft delete meeting after keyed reopen");
+    assert_eq!(fts_match_count(&encrypted, "secret").await, 0);
+    assert_eq!(count(&encrypted, "transcript_search_documents").await, 1);
+
+    sqlx::query("UPDATE meetings SET deleted_at = NULL WHERE id = 'm-enc-1'")
+        .execute(&encrypted)
+        .await
+        .expect("restore meeting after keyed reopen");
+    assert_eq!(fts_match_count(&encrypted, "secret").await, 1);
+    assert_eq!(count(&encrypted, "transcript_search_documents").await, 3);
+
+    sqlx::query(
+        "INSERT INTO transcripts \
+         (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration) \
+         VALUES ('t-enc-fts-live', 'm-enc-2', 'post conversion evidence', \
+                 '2026-07-02T10:00:10.000Z', 7.0, 9.0, 2.0)",
+    )
+    .execute(&encrypted)
+    .await
+    .expect("insert transcript after keyed reopen");
+    assert_eq!(fts_match_count(&encrypted, "conversion").await, 1);
+    assert_eq!(count(&encrypted, "transcript_search_documents").await, 4);
+
+    encrypted.close().await;
 }
 
 /// (c) Wrong key fails closed on a real converted DB.

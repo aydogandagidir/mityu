@@ -52,31 +52,31 @@ export interface TranscribeAudioRequest {
 export const MODEL_CONFIGS: Record<string, Partial<ModelInfo>> = {
   // Standard f16 models (full precision)
   'large-v3': {
-    description: 'Highest accuracy, best for important meetings. Slower processing.',
+    description: 'Largest supported model. Slower processing and higher resource use.',
     size_mb: 2951,
     accuracy: 'High',
     speed: 'Slow'
   },
   'large-v3-turbo': {
-    description: 'Best accuracy with improved speed.',
+    description: 'Large turbo model with moderate processing speed.',
     size_mb: 1549,
     accuracy: 'High',
     speed: 'Medium'
   },
   'medium': {
-    description: 'Balanced accuracy and speed. Good for most use cases.',
+    description: 'Larger model with slower processing.',
     size_mb: 1463,
     accuracy: 'High',
     speed: 'Slow'
   },
   'small': {
-    description: 'Fast processing with good quality. Great for quick transcription.',
+    description: 'Mid-size model with moderate processing speed.',
     size_mb: 466,
     accuracy: 'Good',
     speed: 'Medium'
   },
   'base': {
-    description: 'Good balance of speed and accuracy.',
+    description: 'Small general-purpose model with fast processing.',
     size_mb: 142,
     accuracy: 'Good',
     speed: 'Fast'
@@ -96,7 +96,7 @@ export const MODEL_CONFIGS: Record<string, Partial<ModelInfo>> = {
     speed: 'Very Fast'
   },
   'base-q5_1': {
-    description: 'Quantized base model, good speed/accuracy balance.',
+    description: 'Quantized base model with fast processing.',
     size_mb: 57,
     accuracy: 'Good',
     speed: 'Fast'
@@ -110,7 +110,7 @@ export const MODEL_CONFIGS: Record<string, Partial<ModelInfo>> = {
 
   // Q5_0 quantized models (balanced speed/accuracy)
   'medium-q5_0': {
-    description: 'Quantized medium model, professional quality with better speed.',
+    description: 'Quantized medium model with moderate processing speed.',
     size_mb: 514,
     accuracy: 'High',
     speed: 'Medium'
@@ -122,7 +122,7 @@ export const MODEL_CONFIGS: Record<string, Partial<ModelInfo>> = {
     speed: 'Medium'
   },
   'large-v3-q5_0': {
-    description: 'Quantized large model, best balance of speed and accuracy.',
+    description: 'Quantized large model with lower storage use than full precision.',
     size_mb: 1031,
     accuracy: 'High',
     speed: 'Slow'
@@ -190,7 +190,7 @@ export function getModelPerformanceBadge(modelName: string): { label: string; co
 }
 
 // Helper function to get concise tagline for model (similar to Parakeet style)
-export function getModelTagline(modelName: string, speed: ProcessingSpeed, accuracy: ModelAccuracy): string {
+export function getModelTagline(modelName: string, speed: ProcessingSpeed, _accuracy: ModelAccuracy): string {
   const isQuantized = isQuantizedModel(modelName);
   const baseName = getModelBaseName(modelName);
 
@@ -211,18 +211,19 @@ export function getModelTagline(modelName: string, speed: ProcessingSpeed, accur
       break;
   }
 
-  // Key feature based on model and accuracy
+  // Factual model-size/capability label. Accuracy is environment-dependent and
+  // is not asserted here while target-environment validation remains deferred.
   let featureText = '';
   if (baseName === 'large-v3') {
-    featureText = 'Most accurate';
+    featureText = 'Largest supported model';
   } else if (baseName === 'large-v3-turbo') {
-    featureText = 'Best accuracy with speed';
+    featureText = 'Large turbo model';
   } else if (baseName === 'medium') {
-    featureText = accuracy === 'High' ? 'Professional quality' : 'Balanced quality';
+    featureText = 'Larger model';
   } else if (baseName === 'small') {
-    featureText = 'Good accuracy';
+    featureText = 'Mid-size model';
   } else if (baseName === 'base') {
-    featureText = 'Balanced quality';
+    featureText = 'Small model';
   } else if (baseName === 'tiny') {
     featureText = 'Fastest option';
   }

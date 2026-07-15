@@ -75,7 +75,7 @@ pub fn get_safe_recording_devices_macos() -> Result<(Option<AudioDevice>, Option
         let device_kind = InputDeviceKind::detect(&mic.name, 512, 48000);
 
         if device_kind.is_bluetooth() {
-            warn!("🎧 Bluetooth microphone detected: '{}'", mic.name);
+            warn!("Bluetooth microphone detected");
             warn!("   Bluetooth introduces variable sample rates with Core Audio");
 
             // Try to find built-in microphone as fallback
@@ -122,7 +122,7 @@ pub fn get_safe_recording_devices_macos() -> Result<(Option<AudioDevice>, Option
         let device_kind = InputDeviceKind::detect(&speaker.name, 512, 48000);
 
         if device_kind.is_bluetooth() {
-            warn!("🔊 Bluetooth speaker detected: '{}'", speaker.name);
+            warn!("Bluetooth system-audio output detected");
             info!("   macOS: ScreenCaptureKit captures digital stream BEFORE Bluetooth encoding");
             info!("   Keeping Bluetooth speaker - captures from active output (pristine quality)");
             Some(speaker.clone())
@@ -150,11 +150,8 @@ pub fn get_safe_recording_devices_macos() -> Result<(Option<AudioDevice>, Option
             info!("   Microphone: '{}' (system audio unavailable)", mic.name);
         }
         (None, Some(speaker)) => {
-            warn!("📋 [macOS] Recording device selection complete:");
-            warn!(
-                "   System Audio: '{}' (microphone unavailable)",
-                speaker.name
-            );
+            let _ = speaker;
+            warn!("macOS recording will continue with system audio only; microphone unavailable");
         }
         (None, None) => {
             warn!("❌ No recording devices available - cannot start recording");

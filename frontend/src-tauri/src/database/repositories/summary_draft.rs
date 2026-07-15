@@ -16,16 +16,17 @@
 //!   server maps these to 404 (ADR-0010 Phase-2 rules).
 //!
 //! HITL invariants (CLAUDE.md §0.5, docs/CONTRACTS.md §4, ADR-0019):
-//! - **Generation may never produce an approved summary.**
-//!   [`SummariesRepository::upsert_draft`] persists per-block statuses exactly
-//!   as given but FORCES the summary-level status to `draft` on every write.
-//!   Only [`SummariesRepository::approve_summary`] — an explicit human action —
-//!   can set `approved`, stamping `approved_at`/`approved_by`.
+//! - **Generation may never produce an approved block or summary.**
+//!   [`SummariesRepository::upsert_draft`] FORCES every block and the
+//!   summary-level status to `draft` on every write, clearing producer-supplied
+//!   edit provenance. Only explicit human review commands can set approved or
+//!   edited states; [`SummariesRepository::approve_summary`] stamps
+//!   `approved_at`/`approved_by`.
 //! - **Evidence must resolve.** [`resolve_source_chunk_ids`] is THE single
 //!   definition of "resolvable" (also used by the action-items repository): the
-//!   cited id exists in `transcripts` for the same meeting AND the caller's
-//!   workspace. It is enforced at write time (upsert) and RE-checked at approve
-//!   time, because there is deliberately no SQL FK on `source_chunk_id`
+//!   cited id is an active `transcripts` row for the same active meeting AND
+//!   the caller's workspace. It is enforced at write time (upsert) and
+//!   RE-checked at approve time, because there is deliberately no SQL FK on `source_chunk_id`
 //!   (retranscription deletes + re-inserts segment rows; see the migration
 //!   header and ADR-0019).
 //! - **Errors carry counts, never content.** A failed validation names how many
@@ -37,12 +38,12 @@
 //! `deleted_at IS NOT NULL`, and [`SummariesRepository::soft_delete`] sets
 //! `deleted_at` rather than removing the row (sync-class table).
 //!
-//! Concurrency note: block-level mutations are a read-modify-write over the
-//! sections JSON issued on the pool (approve-time revalidation must run between
-//! the read and the write, and [`resolve_source_chunk_ids`] takes the pool).
-//! Phase 1 is a single-writer local SQLite app, so a lost update between two
-//! concurrent block writes is not a reachable state today; Phase-2 server
-//! endpoints get optimistic concurrency via `rev` instead.
+//! Concurrency note: block-level mutations are read-modify-write operations over
+//! the sections JSON. Every write is therefore a compare-and-swap on `rev`, and
+//! approval writes repeat their active-evidence predicate inside the same atomic
+//! UPDATE. Whole-summary approval uses the same `rev` snapshot and an atomic
+//! all-sources predicate, so an edit/reject/retranscription that wins the race
+//! makes approval return `Ok(false)` instead of approving stale content.
 
 use crate::context::AuthContext;
 use crate::summary::draft::{BlockStatus, DraftSection, MeetingNotesDraft, SummaryStatus};
@@ -97,6 +98,11 @@ pub enum SummaryDraftError {
         /// The offending stored token.
         token: String,
     },
+    /// A bounded compare-and-swap retry loop could not obtain a stable
+    /// revision. Callers must surface/retry instead of treating a stale
+    /// approval downgrade as a successful no-op.
+    #[error("summary changed concurrently; retry the operation")]
+    ConcurrentChange,
 }
 
 impl SummaryDraftError {
@@ -139,9 +145,10 @@ pub struct SummaryDraftRow {
 
 /// THE single definition of "resolvable" for `source_chunk_id` values
 /// (docs/CONTRACTS.md §4; shared by [`SummariesRepository`] and
-/// `ActionItemsRepository`): an id resolves iff a `transcripts` row with that
-/// id exists for the SAME meeting in the CALLER'S workspace. Returns the subset
-/// of `ids` that resolve. Chunks the `IN` clause at [`MAX_IN_CLAUSE_IDS`] ids.
+/// `ActionItemsRepository`): an id resolves iff an ACTIVE `transcripts` row
+/// with that id exists for the SAME ACTIVE meeting in the CALLER'S workspace.
+/// Returns the subset of `ids` that resolve. Chunks the `IN` clause at
+/// [`MAX_IN_CLAUSE_IDS`] ids.
 pub(crate) async fn resolve_source_chunk_ids(
     pool: &SqlitePool,
     ctx: &AuthContext,
@@ -156,11 +163,17 @@ pub(crate) async fn resolve_source_chunk_ids(
     for chunk in all.chunks(MAX_IN_CLAUSE_IDS) {
         let placeholders = vec!["?"; chunk.len()].join(", ");
         let sql = format!(
-            "SELECT id FROM transcripts \
-             WHERE meeting_id = ? AND workspace_id = ? AND id IN ({placeholders})"
+            "SELECT t.id FROM transcripts t \
+             INNER JOIN meetings m \
+                ON m.id = t.meeting_id AND m.workspace_id = t.workspace_id \
+             WHERE t.meeting_id = ? AND t.workspace_id = ? \
+               AND m.workspace_id = ? \
+               AND t.deleted_at IS NULL AND m.deleted_at IS NULL \
+               AND t.id IN ({placeholders})"
         );
         let mut query = sqlx::query_scalar::<_, String>(&sql)
             .bind(meeting_id)
+            .bind(ctx.tenant_id.as_str())
             .bind(ctx.tenant_id.as_str());
         for id in chunk {
             query = query.bind(*id);
@@ -267,10 +280,10 @@ impl SummariesRepository {
     ///    [`resolve_source_chunk_ids`] (else
     ///    [`SummaryDraftError::UnresolvableSources`] naming the count).
     ///
-    /// INVARIANT (docs/CONTRACTS.md §4, ADR-0019): per-block statuses are
-    /// persisted exactly as given, but the summary-level status is FORCED to
-    /// `draft` — generation may never produce an approved summary; only
-    /// [`Self::approve_summary`] (a human action) sets `approved`. On update,
+    /// INVARIANT (docs/CONTRACTS.md §4, ADR-0019): every generated block and
+    /// the summary-level status are FORCED to `draft`; producer-supplied
+    /// `original_content` is cleared. Generation may never mint a human-review
+    /// state; only explicit review commands can do so. On update,
     /// `approved_at`/`approved_by` are cleared (stale approval evidence must
     /// not survive a regeneration), `generated_at` is re-stamped, `rev` bumps,
     /// and a soft-deleted row is revived (`deleted_at = NULL`) — regeneration
@@ -284,12 +297,14 @@ impl SummariesRepository {
     ) -> Result<String, SummaryDraftError> {
         let meeting_id = draft.meeting_id.as_str();
 
-        let meeting_exists: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM meetings WHERE id = ? AND workspace_id = ?")
-                .bind(meeting_id)
-                .bind(ctx.tenant_id.as_str())
-                .fetch_optional(pool)
-                .await?;
+        let meeting_exists: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM meetings \
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL",
+        )
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await?;
         if meeting_exists.is_none() {
             info!(
                 meeting_id = %meeting_id,
@@ -298,15 +313,35 @@ impl SummariesRepository {
             return Err(SummaryDraftError::MeetingNotFound);
         }
 
-        let required: HashSet<String> = draft
-            .sections
+        let mut generated_sections = draft.sections.clone();
+        let forced_blocks = generated_sections
+            .iter()
+            .flat_map(|section| section.blocks.iter())
+            .filter(|block| block.status != BlockStatus::Draft || block.original_content.is_some())
+            .count();
+        for block in generated_sections
+            .iter_mut()
+            .flat_map(|section| section.blocks.iter_mut())
+        {
+            block.status = BlockStatus::Draft;
+            block.original_content = None;
+        }
+        if forced_blocks > 0 {
+            warn!(
+                meeting_id = %meeting_id,
+                forced_to_draft = forced_blocks,
+                "upsert_draft ignored producer-supplied human-review state"
+            );
+        }
+
+        let required: HashSet<String> = generated_sections
             .iter()
             .flat_map(|section| section.blocks.iter())
             .map(|block| block.source_chunk_id.clone())
             .collect();
         ensure_sources_resolve(pool, ctx, meeting_id, &required).await?;
 
-        let sections_json = serde_json::to_string(&draft.sections)?;
+        let sections_json = serde_json::to_string(&generated_sections)?;
         let now = Utc::now();
 
         let mut transaction = pool.begin().await?;
@@ -361,6 +396,58 @@ impl SummariesRepository {
                 id
             }
         };
+
+        // The write above upgrades this SQLite transaction to a writer. A
+        // second active-source gate here closes the validation→write window:
+        // retranscription/soft-delete cannot change the meeting or sources
+        // again before commit, and any change that won the race rolls back the
+        // summary write.
+        let meeting_still_active: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM meetings \
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL",
+        )
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if meeting_still_active.is_none() {
+            warn!(
+                meeting_id = %meeting_id,
+                "upsert_draft refused after acquiring write transaction: meeting inactive"
+            );
+            return Err(SummaryDraftError::MeetingNotFound);
+        }
+
+        let mut unresolvable_after_lock = 0usize;
+        for source_chunk_id in &required {
+            let source_active: Option<(i64,)> = sqlx::query_as(
+                "SELECT 1 FROM transcripts t \
+                 INNER JOIN meetings m \
+                    ON m.id = t.meeting_id AND m.workspace_id = t.workspace_id \
+                 WHERE t.id = ? AND t.meeting_id = ? \
+                   AND t.workspace_id = ? AND m.workspace_id = ? \
+                   AND t.deleted_at IS NULL AND m.deleted_at IS NULL",
+            )
+            .bind(source_chunk_id)
+            .bind(meeting_id)
+            .bind(ctx.tenant_id.as_str())
+            .bind(ctx.tenant_id.as_str())
+            .fetch_optional(&mut *transaction)
+            .await?;
+            if source_active.is_none() {
+                unresolvable_after_lock += 1;
+            }
+        }
+        if unresolvable_after_lock > 0 {
+            warn!(
+                meeting_id = %meeting_id,
+                unresolvable = unresolvable_after_lock,
+                "upsert_draft refused after acquiring write transaction: source inactive"
+            );
+            return Err(SummaryDraftError::UnresolvableSources {
+                count: unresolvable_after_lock,
+            });
+        }
 
         transaction.commit().await?;
 
@@ -437,7 +524,7 @@ impl SummariesRepository {
         new: BlockStatus,
     ) -> Result<bool, SummaryDraftError> {
         let row = sqlx::query(
-            "SELECT id, sections FROM summaries \
+            "SELECT id, sections, rev FROM summaries \
              WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
         )
         .bind(meeting_id)
@@ -454,6 +541,7 @@ impl SummariesRepository {
             return Ok(false);
         };
         let summary_id: String = row.get("id");
+        let current_rev: i64 = row.get("rev");
         let mut sections: Vec<DraftSection> =
             serde_json::from_str(&row.get::<String, _>("sections"))?;
 
@@ -497,11 +585,32 @@ impl SummariesRepository {
             }
         }
 
+        let approved_source_chunk_id =
+            (new == BlockStatus::Approved).then(|| block.source_chunk_id.clone());
         block.status = new;
         let sections_json = serde_json::to_string(&sections)?;
 
-        Self::write_sections_as_draft(pool, ctx, &summary_id, &sections_json).await?;
-        Ok(true)
+        let approved_source = approved_source_chunk_id
+            .as_deref()
+            .map(|source_chunk_id| (meeting_id, source_chunk_id));
+        let updated = Self::write_sections_as_draft_if_current(
+            pool,
+            ctx,
+            &summary_id,
+            current_rev,
+            &sections_json,
+            approved_source,
+        )
+        .await?;
+        if !updated {
+            warn!(
+                meeting_id = %meeting_id,
+                block_id = %block_id,
+                reason_code = "concurrent_change_or_unresolvable_source",
+                "set_block_status refused at atomic write gate"
+            );
+        }
+        Ok(updated)
     }
 
     /// Human edit of one block's content (read-modify-write). NEVER touches
@@ -522,7 +631,7 @@ impl SummariesRepository {
         content: &str,
     ) -> Result<bool, SummaryDraftError> {
         let row = sqlx::query(
-            "SELECT id, sections FROM summaries \
+            "SELECT id, sections, rev FROM summaries \
              WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
         )
         .bind(meeting_id)
@@ -539,6 +648,7 @@ impl SummariesRepository {
             return Ok(false);
         };
         let summary_id: String = row.get("id");
+        let current_rev: i64 = row.get("rev");
         let mut sections: Vec<DraftSection> =
             serde_json::from_str(&row.get::<String, _>("sections"))?;
 
@@ -573,8 +683,24 @@ impl SummariesRepository {
         block.status = BlockStatus::Edited;
         let sections_json = serde_json::to_string(&sections)?;
 
-        Self::write_sections_as_draft(pool, ctx, &summary_id, &sections_json).await?;
-        Ok(true)
+        let updated = Self::write_sections_as_draft_if_current(
+            pool,
+            ctx,
+            &summary_id,
+            current_rev,
+            &sections_json,
+            None,
+        )
+        .await?;
+        if !updated {
+            warn!(
+                meeting_id = %meeting_id,
+                block_id = %block_id,
+                reason_code = "concurrent_change",
+                "edit_block refused at atomic write gate"
+            );
+        }
+        Ok(updated)
     }
 
     /// The explicit HUMAN approval of a whole summary (docs/CONTRACTS.md §4).
@@ -594,7 +720,7 @@ impl SummariesRepository {
         meeting_id: &str,
     ) -> Result<bool, SummaryDraftError> {
         let row = sqlx::query(
-            "SELECT id, sections FROM summaries \
+            "SELECT id, status, sections, rev FROM summaries \
              WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
         )
         .bind(meeting_id)
@@ -610,6 +736,8 @@ impl SummariesRepository {
             return Ok(false);
         };
         let summary_id: String = row.get("id");
+        let current_status: String = row.get("status");
+        let current_rev: i64 = row.get("rev");
         let sections: Vec<DraftSection> = serde_json::from_str(&row.get::<String, _>("sections"))?;
 
         let non_rejected: Vec<_> = sections
@@ -655,19 +783,24 @@ impl SummariesRepository {
             return Ok(false);
         }
 
-        let now = Utc::now();
-        sqlx::query(
-            "UPDATE summaries SET status = 'approved', approved_at = ?, approved_by = ?, \
-             updated_at = ?, updated_by = ?, rev = rev + 1 WHERE id = ? AND workspace_id = ?",
+        if !Self::approve_summary_if_current(
+            pool,
+            ctx,
+            meeting_id,
+            &summary_id,
+            &current_status,
+            current_rev,
+            &required,
         )
-        .bind(now)
-        .bind(ctx.user_id.as_str())
-        .bind(now)
-        .bind(ctx.user_id.as_str())
-        .bind(&summary_id)
-        .bind(ctx.tenant_id.as_str())
-        .execute(pool)
-        .await?;
+        .await?
+        {
+            warn!(
+                meeting_id = %meeting_id,
+                reason_code = "concurrent_change_or_unresolvable_sources",
+                "approve_summary refused at atomic write gate"
+            );
+            return Ok(false);
+        }
 
         info!(
             meeting_id = %meeting_id,
@@ -675,6 +808,58 @@ impl SummariesRepository {
             "summary approved by human reviewer"
         );
         Ok(true)
+    }
+
+    /// Apply whole-summary approval only while the validated snapshot and every
+    /// cited source are still current. Kept as one SQL statement so SQLite's
+    /// write lock covers the evidence predicate and status/revision change.
+    async fn approve_summary_if_current(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        meeting_id: &str,
+        summary_id: &str,
+        expected_status: &str,
+        expected_rev: i64,
+        required: &HashSet<String>,
+    ) -> Result<bool, SummaryDraftError> {
+        // `json_each` consumes one bound JSON array rather than expanding an
+        // unbounded IN-list into SQLite host parameters.
+        let required_json = serde_json::to_string(required)?;
+        let now = Utc::now();
+        let result = sqlx::query(
+            "UPDATE summaries SET status = 'approved', approved_at = ?, approved_by = ?, \
+             updated_at = ?, updated_by = ?, rev = rev + 1 \
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL \
+               AND status = ? AND rev = ? \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM json_each(?) AS required_source \
+                   WHERE NOT EXISTS ( \
+                       SELECT 1 FROM transcripts t \
+                       INNER JOIN meetings m \
+                          ON m.id = t.meeting_id AND m.workspace_id = t.workspace_id \
+                       WHERE t.id = CAST(required_source.value AS TEXT) \
+                         AND t.meeting_id = ? \
+                         AND t.workspace_id = ? AND m.workspace_id = ? \
+                         AND t.deleted_at IS NULL AND m.deleted_at IS NULL \
+                   ) \
+               )",
+        )
+        .bind(now)
+        .bind(ctx.user_id.as_str())
+        .bind(now)
+        .bind(ctx.user_id.as_str())
+        .bind(summary_id)
+        .bind(ctx.tenant_id.as_str())
+        .bind(expected_status)
+        .bind(expected_rev)
+        .bind(required_json)
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .execute(pool)
+        .await?;
+
+        Ok(result.rows_affected() == 1)
     }
 
     /// ADR-0019 decision 2 (retranscription downgrade): drops the summary back
@@ -690,38 +875,61 @@ impl SummariesRepository {
         ctx: &AuthContext,
         meeting_id: &str,
     ) -> Result<bool, SummaryDraftError> {
-        let row = sqlx::query(
-            "SELECT id, sections FROM summaries \
-             WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
-        )
-        .bind(meeting_id)
-        .bind(ctx.tenant_id.as_str())
-        .fetch_optional(pool)
-        .await?;
-        let Some(row) = row else {
-            return Ok(false);
-        };
-        let summary_id: String = row.get("id");
-        let mut sections: Vec<DraftSection> =
-            serde_json::from_str(&row.get::<String, _>("sections"))?;
+        // Retranscription is an authoritative downgrade. Retry a bounded number
+        // of times if a concurrent human mutation wins the optimistic write;
+        // returning success with an approved stale snapshot is not acceptable.
+        for _ in 0..8 {
+            let row = sqlx::query(
+                "SELECT id, sections, rev FROM summaries \
+                 WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
+            )
+            .bind(meeting_id)
+            .bind(ctx.tenant_id.as_str())
+            .fetch_optional(pool)
+            .await?;
+            let Some(row) = row else {
+                return Ok(false);
+            };
+            let summary_id: String = row.get("id");
+            let current_rev: i64 = row.get("rev");
+            let mut sections: Vec<DraftSection> =
+                serde_json::from_str(&row.get::<String, _>("sections"))?;
 
-        for block in sections
-            .iter_mut()
-            .flat_map(|section| section.blocks.iter_mut())
-        {
-            if matches!(block.status, BlockStatus::Approved | BlockStatus::Edited) {
-                block.status = BlockStatus::Draft;
+            for block in sections
+                .iter_mut()
+                .flat_map(|section| section.blocks.iter_mut())
+            {
+                if matches!(block.status, BlockStatus::Approved | BlockStatus::Edited) {
+                    block.status = BlockStatus::Draft;
+                }
+            }
+            let sections_json = serde_json::to_string(&sections)?;
+
+            if Self::write_sections_as_draft_if_current(
+                pool,
+                ctx,
+                &summary_id,
+                current_rev,
+                &sections_json,
+                None,
+            )
+            .await?
+            {
+                info!(
+                    meeting_id = %meeting_id,
+                    summary_id = %summary_id,
+                    "summary downgraded to draft (evidence must be re-reviewed)"
+                );
+                return Ok(true);
             }
         }
-        let sections_json = serde_json::to_string(&sections)?;
 
-        Self::write_sections_as_draft(pool, ctx, &summary_id, &sections_json).await?;
-        info!(
+        warn!(
             meeting_id = %meeting_id,
-            summary_id = %summary_id,
-            "summary downgraded to draft (evidence must be re-reviewed)"
+            reason_code = "concurrent_change_retry_exhausted",
+            "summary downgrade refused after repeated concurrent changes"
         );
-        Ok(true)
+        Err(SummaryDraftError::ConcurrentChange)
     }
 
     /// Soft-deletes the meeting's summary (sets `deleted_at`, bumps `rev`).
@@ -751,31 +959,64 @@ impl SummariesRepository {
     /// stores the new sections JSON and enforces the "any block mutation
     /// de-approves the summary" invariant (`status = 'draft'`, approval stamps
     /// cleared), bumping `rev` and stamping `updated_by`/`updated_at`.
-    async fn write_sections_as_draft(
+    async fn write_sections_as_draft_if_current(
         pool: &SqlitePool,
         ctx: &AuthContext,
         summary_id: &str,
+        expected_rev: i64,
         sections_json: &str,
-    ) -> Result<(), SummaryDraftError> {
-        sqlx::query(
-            "UPDATE summaries SET sections = ?, status = 'draft', approved_at = NULL, \
-             approved_by = NULL, updated_at = ?, updated_by = ?, rev = rev + 1 \
-             WHERE id = ? AND workspace_id = ?",
-        )
-        .bind(sections_json)
-        .bind(Utc::now())
-        .bind(ctx.user_id.as_str())
-        .bind(summary_id)
-        .bind(ctx.tenant_id.as_str())
-        .execute(pool)
-        .await?;
-        Ok(())
+        approved_source: Option<(&str, &str)>,
+    ) -> Result<bool, SummaryDraftError> {
+        let now = Utc::now();
+        let result = if let Some((meeting_id, source_chunk_id)) = approved_source {
+            sqlx::query(
+                "UPDATE summaries SET sections = ?, status = 'draft', approved_at = NULL, \
+                 approved_by = NULL, updated_at = ?, updated_by = ?, rev = rev + 1 \
+                 WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL AND rev = ? \
+                   AND EXISTS ( \
+                       SELECT 1 FROM transcripts t \
+                       INNER JOIN meetings m \
+                          ON m.id = t.meeting_id AND m.workspace_id = t.workspace_id \
+                       WHERE t.id = ? AND t.meeting_id = ? \
+                         AND t.workspace_id = ? AND m.workspace_id = ? \
+                         AND t.deleted_at IS NULL AND m.deleted_at IS NULL \
+                   )",
+            )
+            .bind(sections_json)
+            .bind(now)
+            .bind(ctx.user_id.as_str())
+            .bind(summary_id)
+            .bind(ctx.tenant_id.as_str())
+            .bind(expected_rev)
+            .bind(source_chunk_id)
+            .bind(meeting_id)
+            .bind(ctx.tenant_id.as_str())
+            .bind(ctx.tenant_id.as_str())
+            .execute(pool)
+            .await?
+        } else {
+            sqlx::query(
+                "UPDATE summaries SET sections = ?, status = 'draft', approved_at = NULL, \
+                 approved_by = NULL, updated_at = ?, updated_by = ?, rev = rev + 1 \
+                 WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL AND rev = ?",
+            )
+            .bind(sections_json)
+            .bind(now)
+            .bind(ctx.user_id.as_str())
+            .bind(summary_id)
+            .bind(ctx.tenant_id.as_str())
+            .bind(expected_rev)
+            .execute(pool)
+            .await?
+        };
+        Ok(result.rows_affected() == 1)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
 
     /// Full 16-cell matrix of the §4 status machine — the legal arcs are
     /// exactly `draft→approved|edited|rejected`, `approved→edited|rejected`,
@@ -867,5 +1108,92 @@ mod tests {
             }
             other => panic!("expected Protocol, got {other:?}"),
         }
+    }
+
+    /// A whole-summary approval must never overwrite a block edit that landed
+    /// after approval validation read its snapshot.
+    #[tokio::test]
+    async fn stale_approval_snapshot_cannot_overwrite_concurrent_block_edit() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory SQLite");
+
+        sqlx::query(
+            "CREATE TABLE meetings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, deleted_at TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .expect("meetings table");
+        sqlx::query(
+            "CREATE TABLE transcripts (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL, workspace_id TEXT NOT NULL, deleted_at TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .expect("transcripts table");
+        sqlx::query(
+            "CREATE TABLE summaries (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL, workspace_id TEXT NOT NULL, status TEXT NOT NULL, sections TEXT NOT NULL, approved_at TEXT, approved_by TEXT, updated_at TEXT, updated_by TEXT, rev INTEGER NOT NULL, deleted_at TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .expect("summaries table");
+
+        sqlx::query("INSERT INTO meetings (id, workspace_id) VALUES (?, ?)")
+            .bind("meeting-race")
+            .bind("local")
+            .execute(&pool)
+            .await
+            .expect("seed meeting");
+        sqlx::query("INSERT INTO transcripts (id, meeting_id, workspace_id) VALUES (?, ?, ?)")
+            .bind("source-race")
+            .bind("meeting-race")
+            .bind("local")
+            .execute(&pool)
+            .await
+            .expect("seed transcript");
+        sqlx::query(
+            "INSERT INTO summaries (id, meeting_id, workspace_id, status, sections, rev) VALUES (?, ?, ?, 'draft', ?, 7)",
+        )
+        .bind("summary-race")
+        .bind("meeting-race")
+        .bind("local")
+        .bind("validated-snapshot")
+        .execute(&pool)
+        .await
+        .expect("seed summary");
+
+        // Simulate an edit winning after approval read status=draft/rev=7.
+        sqlx::query("UPDATE summaries SET sections = ?, rev = 8 WHERE id = ?")
+            .bind("edited-sentinel")
+            .bind("summary-race")
+            .execute(&pool)
+            .await
+            .expect("concurrent edit");
+
+        let required = HashSet::from(["source-race".to_owned()]);
+        let approved = SummariesRepository::approve_summary_if_current(
+            &pool,
+            &AuthContext::local(),
+            "meeting-race",
+            "summary-race",
+            "draft",
+            7,
+            &required,
+        )
+        .await
+        .expect("approval CAS");
+        assert!(!approved, "stale approval snapshot must lose the CAS");
+
+        let row =
+            sqlx::query("SELECT status, sections, rev, approved_at FROM summaries WHERE id = ?")
+                .bind("summary-race")
+                .fetch_one(&pool)
+                .await
+                .expect("read final summary");
+        assert_eq!(row.get::<String, _>("status"), "draft");
+        assert_eq!(row.get::<String, _>("sections"), "edited-sentinel");
+        assert_eq!(row.get::<i64, _>("rev"), 8);
+        assert_eq!(row.get::<Option<String>, _>("approved_at"), None);
     }
 }

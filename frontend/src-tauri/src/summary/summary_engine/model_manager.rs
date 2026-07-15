@@ -102,6 +102,10 @@ pub struct ModelInfo {
     /// Description
     pub description: String,
 
+    /// Model-specific terms surfaced by the download UI.
+    pub license_name: String,
+    pub license_url: String,
+
     /// GGUF filename on disk
     pub gguf_file: String,
 }
@@ -230,31 +234,25 @@ impl ModelManager {
                     Ok(metadata) => {
                         let file_size_mb = metadata.len() / (1024 * 1024);
 
-                        // Allow 10% variance for file size check
-                        let expected_min = (model_def.size_mb as f64 * 0.9) as u64;
-                        let expected_max = (model_def.size_mb as f64 * 1.1) as u64;
+                        let validation = async {
+                            crate::utils::verify_file_integrity(
+                                &model_path,
+                                model_def.size_bytes,
+                                &model_def.sha256,
+                            )
+                            .await?;
+                            self.validate_gguf_file(&model_path).await
+                        }
+                        .await;
 
-                        log::info!(
-                            "Model '{}': found {} MB (expected {}-{} MB)",
-                            model_def.name,
-                            file_size_mb,
-                            expected_min,
-                            expected_max
-                        );
-
-                        if file_size_mb >= expected_min && file_size_mb <= expected_max {
+                        if validation.is_ok() {
                             log::info!("Model '{}': AVAILABLE", model_def.name);
                             ModelStatus::Available
                         } else {
-                            log::warn!(
-                                "Model '{}': CORRUPTED (size mismatch: {} MB, expected {} MB)",
-                                model_def.name,
-                                file_size_mb,
-                                model_def.size_mb
-                            );
+                            log::warn!("Model failed its pinned integrity manifest");
                             ModelStatus::Corrupted {
                                 file_size: file_size_mb,
-                                expected_min_size: expected_min,
+                                expected_min_size: model_def.size_bytes,
                             }
                         }
                     }
@@ -276,6 +274,8 @@ impl ModelManager {
                 size_mb: model_def.size_mb,
                 context_size: model_def.context_size,
                 description: model_def.description.clone(),
+                license_name: model_def.license_name.clone(),
+                license_url: model_def.license_url.clone(),
                 gguf_file: model_def.gguf_file.clone(),
             };
 
@@ -394,7 +394,16 @@ impl ModelManager {
                 let expected_min = (model_def.size_mb as f64 * 0.9) as u64;
                 let expected_max = (model_def.size_mb as f64 * 1.1) as u64;
 
-                if file_size_mb >= expected_min && file_size_mb <= expected_max {
+                if file_size_mb >= expected_min
+                    && file_size_mb <= expected_max
+                    && crate::utils::verify_file_integrity(
+                        &file_path,
+                        model_def.size_bytes,
+                        &model_def.sha256,
+                    )
+                    .await
+                    .is_ok()
+                {
                     log::info!(
                         "Model '{}' already exists and is valid ({} MB), skipping download",
                         model_name,
@@ -422,6 +431,13 @@ impl ModelManager {
                     }
 
                     return Ok(());
+                } else if file_size_mb >= expected_min && file_size_mb <= expected_max {
+                    log::warn!(
+                        "Existing model failed its SHA-256 manifest check; deleting before retry"
+                    );
+                    fs::remove_file(&file_path)
+                        .await
+                        .map_err(|_| anyhow!("Failed to remove an invalid model artifact"))?;
                 } else if file_size_mb > expected_max {
                     // File is LARGER than expected - possibly corrupted or wrong file
                     // Delete and re-download in this case
@@ -742,7 +758,17 @@ impl ModelManager {
         // Small delay to ensure UI receives 100% event
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        if let Err(e) = self.validate_gguf_file(&file_path).await {
+        let validation_result = async {
+            crate::utils::verify_file_integrity(
+                &file_path,
+                model_def.size_bytes,
+                &model_def.sha256,
+            )
+            .await?;
+            self.validate_gguf_file(&file_path).await
+        }
+        .await;
+        if let Err(e) = validation_result {
             log::error!("Downloaded file failed validation: {}", e);
 
             // Clean up invalid file

@@ -51,31 +51,32 @@ li{margin:6px 0;max-width:68ch}
 
 <main>
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: July 11, 2026</p>
+  <p class="updated">Last updated: July 15, 2026</p>
 
   <div class="note">
-    <p><strong>The short version:</strong> your meetings are processed and stored on your own device. Audio is never uploaded. This website sets no cookies and runs no trackers. Analytics in the app is off by default and only ever covers anonymized usage — never content.</p>
+    <p><strong>The short version:</strong> your meetings are processed and stored on your own device. Audio is never uploaded. In v1.0.4, raw meeting audio stays in Mityu-managed local storage until you delete the meeting. This website sets no cookies and runs no advertising trackers. App analytics is off by default, and v1.0.4 sends no analytics events because no processor key is embedded.</p>
   </div>
 
   <h2>1. This website</h2>
-  <p>This site sets no cookies, runs no analytics or tracking scripts, and loads no third-party resources in your browser — the pages are static and self-contained. Our hosting provider (Vercel) may keep standard, short-lived server access logs (such as IP address and browser type) for security and operations. If you email us, we see the email you send — nothing more.</p>
-  <p><strong>Downloading the app.</strong> To start a download we ask for your name, email, and company, and we record that submission (with the time, and the country derived from your IP) so we know who is using Mityu and can contact you about it — for example about updates or new platform support. We never sell this data or share it with third parties; it is stored in our own database and you can ask us to delete it at any time by emailing <a href="mailto:info@bluedev.dev">info@bluedev.dev</a>. The installer itself is served straight from this site.</p>
+  <p>This site sets no cookies, runs no analytics or advertising trackers, and loads no third-party resources in your browser. Vercel hosts the site and may process short-lived request/security logs such as IP address, user agent, and request path under its service terms. If you email us, we receive the information you include in that message.</p>
+  <p><strong>Downloading the app.</strong> The download requires no account, name, email address, or marketing consent. v1.0.4 does not offer or store a product-update signup because an email-ownership verification flow has not yet been approved and deployed. We keep only an aggregate download counter. To limit automated abuse, the endpoint derives a keyed HMAC token from the request IP address using a server-only secret and keeps only a request counter under that token. The token expires no later than 15 minutes after the first request; later requests do not extend the window. The KV rate-limit record contains neither the IP address nor the HMAC secret, and the endpoint does not store the user agent, referrer, meeting content, audio, or contact details.</p>
 
   <h2>2. The app: local-first by design</h2>
   <ul>
     <li><strong>Recording &amp; transcription</strong> run entirely on your device, using local Whisper or Parakeet models. Your audio never leaves your machine.</li>
-    <li><strong>Storage</strong> is a local database on your device, encrypted at rest (SQLCipher). The encryption key lives in your operating system's secure credential store — never in plaintext files.</li>
+    <li><strong>Raw-audio retention in v1.0.4:</strong> the recording remains in Mityu-managed local storage until you delete the meeting. Automatic deletion immediately after transcription is not implemented in this version.</li>
+    <li><strong>Storage</strong> uses SQLCipher when the operating-system credential store can provide the database key. A fresh or already-plaintext database has a documented local-first plaintext fallback if key acquisition or conversion fails; an existing encrypted database is never opened without its key. Recording and export files rely on operating-system and filesystem protection rather than application-level encryption.</li>
     <li><strong>Summaries</strong> are generated locally by default (built-in local model, or your own model via Ollama). If you choose to connect a cloud provider with your own API key, only the transcript text you ask to summarize is sent to that provider — never audio, never your library.</li>
     <li><strong>API keys</strong> you add are stored in the operating system's secure credential store and are only ever sent to the provider they belong to.</li>
     <li><strong>Optional redaction</strong> can strip emails, phone numbers, card/ID numbers, and your own custom terms from transcripts before they are stored or sent to a summarization model.</li>
   </ul>
 
   <h2>3. Usage analytics — optional and off by default</h2>
-  <p>Mityu ships with analytics <strong>disabled</strong>. If you choose to enable it in settings, we collect a minimal, anonymized picture of how the app is used (feature usage, session duration, performance metrics, and anonymized error reports) through PostHog, linked to a generated ID rather than to you, and retained for no longer than 12 months.</p>
-  <p>We never collect: meeting content, transcripts or recordings; file names, meeting titles or metadata; audio or voice patterns; participant names or contact details; or anything you exchange with an AI model. You can turn analytics off again at any time.</p>
+  <p>Mityu ships with analytics <strong>disabled and opt-in</strong>. The v1.0.4 production build deliberately embeds no PostHog project key, so enabling the preference remains a local no-op and sends no analytics event to a processor. A future release may enable a bluedev-owned processor only after its region, retention, erasure process, access controls, processor terms, and this notice are updated and approved.</p>
+  <p>Analytics code is designed to exclude meeting content, transcripts and recordings; file names, meeting titles and metadata; audio and voice patterns; participant details; API keys; paths; and AI input/output. You can keep the preference off or turn it off again at any time.</p>
 
   <h2>4. Purchases &amp; licensing</h2>
-  <p>When purchasing is available, payments are processed by a merchant-of-record payment provider — Mityu never sees or stores your card details. Activating a license sends only the license key and an anonymous activation identifier; an occasional background validation (at most every 7 days) sends the same identifiers and nothing else. Your meetings and transcripts are never part of any licensing request. The free trial requires no account and sends nothing at all.</p>
+  <p>When purchasing is available, payments are processed by the merchant-of-record identified at checkout; Mityu does not receive card details. Activating a license sends the license key, public organization ID, Polar activation ID, and a random pseudonymous device label to Polar. Licensed installations validate in the background at most once every seven days; meeting content is never part of that request. The app trial requires no account, but obtaining the installer makes an ordinary website request to Vercel as described in Section 1.</p>
 
   <h2>5. Recording other people</h2>
   <p>Mityu shows a consent prompt before recording, but obtaining any consent required by the laws that apply to you (for example KVKK in Türkiye, or GDPR and local recording laws elsewhere) remains your responsibility.</p>
@@ -83,8 +84,9 @@ li{margin:6px 0;max-width:68ch}
   <h2>6. Your rights and control</h2>
   <ul>
     <li>All meeting data stays on your device: you can view, export, and delete it directly in the app, without asking anyone.</li>
+    <li>Deleting the meeting through the app removes its Mityu-managed raw recording; independently exported or copied files remain under your control. Closing the app or editing transcript text does not delete the recording.</li>
     <li>Because we do not hold your content, most statutory data rights (access, erasure, portability) are things you can exercise yourself, instantly and locally.</li>
-    <li>For anything related to the optional analytics or a purchase, contact us and we will help.</li>
+    <li>For licensing, a future analytics processor, a purchase, or any legacy website lead record, contact us to request access, correction, withdrawal, or deletion where applicable.</li>
   </ul>
 
   <h2>7. Changes to this policy</h2>

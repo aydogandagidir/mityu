@@ -1,0 +1,34 @@
+FFmpeg Windows x64 linked-component inventory
+
+This inventory is generated from the exact bundled executable's -buildconf
+output. Mityu invokes only local audio conversion paths, but the BtbN static
+FFmpeg executable contains additional compiled components.
+
+Enabled external components:
+
+  iconv; zlib; libxml2; libvmaf; fontconfig; HarfBuzz; FreeType; FriBidi;
+  Vulkan headers/loader; shaderc; libvorbis; GMP; LCEVC decoder; OpenCL;
+  AMD AMF; libaom; aribb24; Chromaprint; dav1d; NVIDIA codec headers/CUDA LLVM;
+  Game Music Emu; Kvazaar; libaribcaption; libass; libbluray; JPEG XL;
+  LAME; Opus; libplacebo; librist; libssh; libtheora; libvpx; libwebp;
+  ZeroMQ; LV2; oneVPL; OpenAL; OpenAPV; OpenCORE AMR-NB/AMR-WB; OpenH264;
+  OpenJPEG; libopenmpt; rav1e; SDL2; Snappy; libsoxr; SRT; SVT-AV1;
+  TwoLAME; uavs3d; VA-API; VVenC; zimg; ZVBI; and XZ/liblzma.
+
+Explicitly disabled GPL-only/nonfree codec libraries include libx264, libx265,
+libxvid, libxavs2, libdavs2, libfdk-aac, and the nonfree FFmpeg build mode.
+The executable does not report --enable-gpl or --enable-nonfree.
+
+Each component remains governed by its own copyright and license terms. The
+machine-readable corresponding-source archive for build run 28794367607
+contains the pinned dependency source archives (including their license and
+notice files), and SOURCE-CACHE-CONTENTS.txt in the build-info package lists
+them. The exact FFmpeg and BtbN source archives, full configure output, hashes,
+and rebuild guidance are published at:
+
+  https://github.com/aydogandagidir/mityu/releases/tag/ffmpeg-deps-8.1-lgpl
+
+This file is an inventory and provenance notice; it does not replace any
+component's license text. Distributors must keep the matching source assets
+available for as long as they distribute the binary and must complete their own
+legal review for the markets in which they distribute Mityu.

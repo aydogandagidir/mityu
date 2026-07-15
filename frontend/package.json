@@ -1,7 +1,8 @@
 {
     "name": "mityu",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "private": true,
+    "packageManager": "pnpm@10.33.0",
     "main": "electron/main.js",
     "scripts": {
         "dev": "next dev -p 3118",
@@ -50,7 +51,6 @@
         "@radix-ui/react-tooltip": "^1.2.8",
         "@tanstack/react-virtual": "^3.13.13",
         "@tauri-apps/api": "^2.6.0",
-        "@tauri-apps/plugin-fs": "^2.4.0",
         "@tauri-apps/plugin-notification": "~2.3.1",
         "@tauri-apps/plugin-os": "^2.3.2",
         "@tauri-apps/plugin-process": "^2.3.0",
@@ -64,10 +64,10 @@
         "date-fns": "^4.1.0",
         "docx": "^9.5.1",
         "framer-motion": "^11.15.0",
-        "jspdf": "^2.5.2",
+        "jspdf": "^4.2.1",
         "lodash": "^4.17.21",
         "lucide-react": "^0.469.0",
-        "next": "^14.2.25",
+        "next": "15.5.18",
         "next-themes": "^0.4.6",
         "radix-ui": "^1.4.3",
         "react": "^18.2.0",
@@ -86,24 +86,26 @@
             "prosemirror-state": "1.4.3",
             "prosemirror-view": "1.41.3",
             "prosemirror-transform": "1.10.4",
-            "prosemirror-tables": "1.8.1"
+            "prosemirror-tables": "1.8.1",
+            "linkify-it": "5.0.1",
+            "markdown-it": "14.3.0",
+            "postcss": "8.5.19",
+            "uuid": "11.1.1"
         }
     },
     "devDependencies": {
         "@tailwindcss/typography": "^0.5.15",
         "@tauri-apps/cli": "^2.1.0",
-        "@tauri-apps/plugin-fs": "~2.4.0",
         "@types/node": "^20",
         "@types/react": "^18.3.18",
         "@types/react-dom": "^18.3.5",
         "autoprefixer": "^10.0.1",
-        "concurrently": "^8.2.2",
         "eslint": "8.57.1",
-        "eslint-config-next": "14.2.35",
+        "eslint-config-next": "15.5.18",
+        "fake-indexeddb": "^6.2.5",
         "postcss": "^8",
         "tailwindcss": "^3.4.1",
         "typescript": "^5.7.2",
-        "vitest": "^4.1.10",
-        "wait-on": "^7.2.0"
+        "vitest": "^4.1.10"
     }
 }

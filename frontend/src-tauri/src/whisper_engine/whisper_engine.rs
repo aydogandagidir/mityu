@@ -38,6 +38,78 @@ pub struct ModelInfo {
     pub description: String,
 }
 
+fn whisper_model_artifact(model_name: &str) -> Option<(String, u64, &'static str)> {
+    const REVISION: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
+    let (filename, size, sha256) = match model_name {
+        "tiny" => (
+            "ggml-tiny.bin",
+            77_691_713,
+            "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+        ),
+        "base" => (
+            "ggml-base.bin",
+            147_951_465,
+            "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+        ),
+        "small" => (
+            "ggml-small.bin",
+            487_601_967,
+            "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+        ),
+        "medium" => (
+            "ggml-medium.bin",
+            1_533_763_059,
+            "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+        ),
+        "large-v3-turbo" => (
+            "ggml-large-v3-turbo.bin",
+            1_624_555_275,
+            "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+        ),
+        "large-v3" => (
+            "ggml-large-v3.bin",
+            3_095_033_483,
+            "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+        ),
+        "tiny-q5_1" => (
+            "ggml-tiny-q5_1.bin",
+            32_152_673,
+            "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7",
+        ),
+        "base-q5_1" => (
+            "ggml-base-q5_1.bin",
+            59_707_625,
+            "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
+        ),
+        "small-q5_1" => (
+            "ggml-small-q5_1.bin",
+            190_085_487,
+            "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
+        ),
+        "medium-q5_0" => (
+            "ggml-medium-q5_0.bin",
+            539_212_467,
+            "19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f",
+        ),
+        "large-v3-turbo-q5_0" => (
+            "ggml-large-v3-turbo-q5_0.bin",
+            574_041_195,
+            "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        ),
+        "large-v3-q5_0" => (
+            "ggml-large-v3-q5_0.bin",
+            1_081_140_203,
+            "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
+        ),
+        _ => return None,
+    };
+    Some((
+        format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/{REVISION}/{filename}"),
+        size,
+        sha256,
+    ))
+}
+
 pub struct WhisperEngine {
     models_dir: PathBuf,
     current_context: Arc<RwLock<Option<WhisperContext>>>,
@@ -226,8 +298,22 @@ impl WhisperEngine {
                     let expected_min_size_mb = (size_mb as f64 * 0.9) as u64; // Allow 90% of expected size as minimum for more accurate corruption detection
 
                     if file_size_mb >= expected_min_size_mb && file_size_mb > 1 {
-                        // File size looks good, but let's also check if it's a valid GGML file
-                        match self.validate_model_file(&model_path).await {
+                        let integrity = match whisper_model_artifact(name) {
+                            Some((_, expected_size, sha256)) => {
+                                crate::utils::verify_file_integrity(
+                                    &model_path,
+                                    expected_size,
+                                    sha256,
+                                )
+                                .await
+                            }
+                            None => Err(anyhow!("model is absent from the trusted manifest")),
+                        };
+                        let validation = match integrity {
+                            Ok(()) => self.validate_model_file(&model_path).await,
+                            Err(error) => Err(error),
+                        };
+                        match validation {
                             Ok(_) => ModelStatus::Available,
                             Err(_) => {
                                 log::warn!("Model file {} has correct size but appears corrupted (failed validation)",
@@ -878,11 +964,11 @@ impl WhisperEngine {
             // Only log segments for very long audio (>30s) or when explicitly debugging
             if duration_seconds > 30.0 {
                 perf_trace!(
-                    "Segment {} ({:.2}s-{:.2}s): '{}'",
+                    "Segment {} ({:.2}s-{:.2}s, chars={})",
                     i,
                     _start_time as f64 / 100.0,
                     _end_time as f64 / 100.0,
-                    segment_text
+                    segment_text.chars().count()
                 );
             }
 
@@ -913,10 +999,10 @@ impl WhisperEngine {
         } else {
             if cleaned_result != final_result {
                 log::info!(
-                    "Cleaned repetitive transcription #{}: '{}' -> '{}'",
+                    "Cleaned repetitive transcription #{} (chars_before={}, chars_after={})",
                     transcription_count,
-                    final_result,
-                    cleaned_result
+                    final_result.chars().count(),
+                    cleaned_result.chars().count()
                 );
             }
             // Reduce successful transcription logging frequency
@@ -924,15 +1010,15 @@ impl WhisperEngine {
             if transcription_count % 5 == 0 || cleaned_result.len() > 50 || duration_seconds > 10.0
             {
                 log::info!(
-                    "Transcription #{} result: '{}'",
+                    "Transcription #{} completed (chars={})",
                     transcription_count,
-                    cleaned_result
+                    cleaned_result.chars().count()
                 );
             } else {
                 perf_debug!(
-                    "Transcription #{} result: '{}'",
+                    "Transcription #{} completed (chars={})",
                     transcription_count,
-                    cleaned_result
+                    cleaned_result.chars().count()
                 );
             }
         }
@@ -1014,10 +1100,7 @@ impl WhisperEngine {
                         model_info.path.display()
                     );
                 } else {
-                    log::warn!(
-                        "File '{}' does not exist, nothing to delete",
-                        model_info.path.display()
-                    );
+                    log::warn!("Whisper model file does not exist; nothing to delete");
                 }
 
                 // Update model status to Missing
@@ -1050,10 +1133,7 @@ impl WhisperEngine {
                         model_info.path.display()
                     );
                 } else {
-                    log::warn!(
-                        "File '{}' does not exist, nothing to delete",
-                        model_info.path.display()
-                    );
+                    log::warn!("Whisper model file does not exist; nothing to delete");
                 }
 
                 // Update model status to Missing
@@ -1105,28 +1185,8 @@ impl WhisperEngine {
             *cancel_flag = None;
         }
 
-        // Official ggerganov/whisper.cpp model URLs from Hugging Face
-        let model_url = match model_name {
-            // Standard f16 models
-            "tiny" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
-            "base" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
-            "small" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
-            "medium" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
-            "large-v3-turbo" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
-            "large-v3" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
-
-            // Q5_1 quantized models
-            "tiny-q5_1" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin",
-            "base-q5_1" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin",
-            "small-q5_1" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin",
-
-            // Q5_0 quantized models
-            "medium-q5_0" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin",
-            "large-v3-turbo-q5_0" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
-            "large-v3-q5_0" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_0.bin",
-
-            _ => return Err(anyhow!("Unsupported model: {}", model_name))
-        };
+        let (model_url, expected_size, expected_sha256) = whisper_model_artifact(model_name)
+            .ok_or_else(|| anyhow!("Unsupported model: {}", model_name))?;
 
         log::info!("Model URL for {}: {}", model_name, model_url);
 
@@ -1156,7 +1216,7 @@ impl WhisperEngine {
 
         log::info!("Sending GET request to: {}", model_url);
         let response = client
-            .get(model_url)
+            .get(&model_url)
             .send()
             .await
             .map_err(|e| anyhow!("Failed to start download: {}", e))?;
@@ -1283,6 +1343,19 @@ impl WhisperEngine {
         file.flush()
             .await
             .map_err(|e| anyhow!("Failed to flush file: {}", e))?;
+        drop(file);
+
+        if let Err(error) =
+            crate::utils::verify_file_integrity(&file_path, expected_size, expected_sha256).await
+        {
+            let _ = fs::remove_file(&file_path).await;
+            let mut active = self.active_downloads.write().await;
+            active.remove(model_name);
+            return Err(anyhow!(
+                "Downloaded model failed integrity verification: {}",
+                error
+            ));
+        }
 
         log::info!("Download completed for model: {}", model_name);
 

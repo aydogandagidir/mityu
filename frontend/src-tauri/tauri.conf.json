@@ -1,7 +1,7 @@
 {
     "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
     "productName": "Mityu",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "identifier": "com.bluedev.mityu",
     "build": {
         "frontendDist": "../out",
@@ -25,6 +25,10 @@
         "security": {
             "csp": {
                 "default-src": "'self'",
+                "base-uri": "'none'",
+                "object-src": "'none'",
+                "form-action": "'none'",
+                "frame-ancestors": "'none'",
                 "style-src": "'self' 'unsafe-inline'",
                 "img-src": "'self' asset: https://asset.localhost data:",
                 "media-src": "'self' asset: http://asset.localhost https://asset.localhost",
@@ -33,27 +37,19 @@
             "assetProtocol": {
                 "enable": true,
                 "scope": [
-                    "$APPDATA/**",
-                    "$AUDIO/mityu-recordings/**"
+                    "$AUDIO/mityu-recordings/**",
+                    "$VIDEO/mityu-recordings/**",
+                    "$DOCUMENT/mityu-recordings/**"
                 ]
             },
             "capabilities": [
                 {
                     "identifier": "main",
-                    "description": "Main window capability with file system and media access",
+                    "description": "Main window capability with application UI access",
                     "windows": [
                         "main"
                     ],
                     "permissions": [
-                        "fs:default",
-                        "fs:allow-read-file",
-                        "fs:read-all",
-                        "fs:write-all",
-                        "fs:allow-app-read",
-                        "fs:allow-app-write",
-                        "fs:allow-download-write",
-                        "fs:allow-download-read",
-                        "fs:scope-download",
                         "core:path:default",
                         "core:event:default",
                         "core:window:default",
@@ -66,15 +62,7 @@
                         "notification:default",
                         "notification:allow-is-permission-granted",
                         "updater:default",
-                        "process:default",
-                        {
-                            "identifier": "fs:scope",
-                            "allow": [
-                                {
-                                    "path": "$APPDATA/*"
-                                }
-                            ]
-                        }
+                        "process:default"
                     ]
                 }
             ]
@@ -97,7 +85,18 @@
             "icons/icon.ico"
         ],
         "resources": [
-            "templates/*.json"
+            "templates/daily_standup.json",
+            "templates/project_sync.json",
+            "templates/retrospective.json",
+            "templates/sales_marketing_client_call.json",
+            "templates/standard_meeting.json",
+            "resources/FFMPEG-NOTICE.txt",
+            "resources/FFMPEG-THIRD-PARTY-NOTICES.txt",
+            "resources/FFMPEG-LICENSE.md",
+            "resources/FFMPEG-BUILDS-LICENSE.txt",
+            "resources/COPYING.LGPLv3",
+            "resources/COPYING.GPLv3",
+            "resources/MODEL-NOTICES.txt"
         ],
         "externalBin": [
             "binaries/llama-helper",

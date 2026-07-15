@@ -85,7 +85,7 @@ fn toggle_recording_handler<R: Runtime>(app: &AppHandle<R>) {
 
             // Handle result
             match stop_result {
-                Ok(_) => {
+                Ok(true) => {
                     log::info!("Tray toggle: Recording stopped successfully");
 
                     // Trigger frontend post-processing via event (works from any page)
@@ -96,6 +96,9 @@ fn toggle_recording_handler<R: Runtime>(app: &AppHandle<R>) {
                             e
                         );
                     }
+                }
+                Ok(false) => {
+                    log::info!("Tray toggle: Another caller owns recording shutdown");
                 }
                 Err(e) => {
                     log::error!("Tray toggle: Failed to stop recording: {}", e);
@@ -184,7 +187,7 @@ fn stop_recording_handler<R: Runtime>(app: &AppHandle<R>) {
 
         // Handle result
         match stop_result {
-            Ok(_) => {
+            Ok(true) => {
                 log::info!("Tray: Recording stopped successfully");
 
                 // Trigger frontend post-processing via event (works from any page)
@@ -192,6 +195,9 @@ fn stop_recording_handler<R: Runtime>(app: &AppHandle<R>) {
                 if let Err(e) = app_clone.emit("recording-stop-complete", true) {
                     log::error!("Tray: Failed to emit recording-stop-complete event: {}", e);
                 }
+            }
+            Ok(false) => {
+                log::info!("Tray: Another caller owns recording shutdown");
             }
             Err(e) => {
                 log::error!("Tray: Failed to stop recording: {}", e);
@@ -235,6 +241,11 @@ pub fn set_tray_state<R: Runtime>(app: &AppHandle<R>, state: RecordingState) {
 }
 
 async fn get_current_recording_state() -> RecordingState {
+    if crate::audio::recording_commands::is_recording_post_processing_pending() {
+        log::info!("Tray: Recording post-processing is still pending");
+        return RecordingState::Stopping;
+    }
+
     // Check if currently recording
     let is_recording = crate::audio::recording_commands::is_recording().await;
     log::info!(

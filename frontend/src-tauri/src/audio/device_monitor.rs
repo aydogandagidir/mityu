@@ -240,8 +240,8 @@ impl AudioDeviceMonitor {
                     // Only emit disconnect event once when threshold is reached
                     if monitored.consecutive_missing == monitored.disconnect_threshold() {
                         warn!(
-                            "❌ Device '{}' ({:?}) disconnected!",
-                            monitored.name, monitored.device_type
+                            "Recording device disconnected (type: {:?})",
+                            monitored.device_type
                         );
 
                         let _ = event_sender.send(DeviceEvent::DeviceDisconnected {

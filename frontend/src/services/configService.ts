@@ -17,11 +17,13 @@ export interface ModelConfig {
    * This field may contain stale data when provider changes without saving.
    */
   apiKey?: string | null;
+  hasApiKey?: boolean;
   ollamaEndpoint?: string | null;
   // Custom OpenAI fields (only populated when provider is 'custom-openai')
   customOpenAIEndpoint?: string | null;
   customOpenAIModel?: string | null;
   customOpenAIApiKey?: string | null;
+  customOpenAIHasApiKey?: boolean;
   maxTokens?: number | null;
   temperature?: number | null;
   topP?: number | null;
@@ -30,6 +32,7 @@ export interface ModelConfig {
 export interface CustomOpenAIConfig {
   endpoint: string;
   apiKey: string | null;
+  hasApiKey?: boolean;
   model: string;
   maxTokens: number | null;
   temperature: number | null;
