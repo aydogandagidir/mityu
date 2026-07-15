@@ -55,3 +55,14 @@ describe('recording consent authorization IPC contract', () => {
     );
   });
 });
+
+describe('recording stop ownership IPC contract', () => {
+  it('returns whether this caller owned native shutdown', async () => {
+    mockedInvoke.mockResolvedValueOnce(false);
+
+    await expect(recordingService.stopRecording('recording.wav')).resolves.toBe(false);
+    expect(mockedInvoke).toHaveBeenCalledExactlyOnceWith('stop_recording', {
+      args: { save_path: 'recording.wav' },
+    });
+  });
+});

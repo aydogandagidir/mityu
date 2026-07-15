@@ -139,11 +139,16 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
       const savePath = `${dataDir}/recording-${timestamp}.wav`;
       console.log('Saving recording');
       console.log('About to call stop_recording command');
-      await invoke('stop_recording', {
+      const completedByThisCall = await invoke<boolean>('stop_recording', {
         args: {
           save_path: savePath
         }
       });
+      if (!completedByThisCall) {
+        console.log('Recording shutdown is owned by another caller; skipping duplicate post-processing');
+        setIsProcessing(false);
+        return;
+      }
       console.log('stop_recording command completed successfully');
       setRecordingPath(savePath);
       // setShowPlayback(true);

@@ -169,13 +169,16 @@ async fn start_recording<R: Runtime>(
 }
 
 #[tauri::command]
-async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> Result<(), String> {
+async fn stop_recording<R: Runtime>(
+    app: AppHandle<R>,
+    args: RecordingArgs,
+) -> Result<bool, String> {
     log_info!("Attempting to stop recording...");
 
     // Check the actual audio recording system state instead of the flag
     if !audio::recording_commands::is_recording().await {
         log_info!("Recording is already stopped");
-        return Ok(());
+        return Ok(false);
     }
 
     // Call the actual audio recording system to stop
@@ -187,7 +190,11 @@ async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> R
     )
     .await
     {
-        Ok(_) => {
+        Ok(false) => {
+            log_info!("Recording stop is owned by another caller; skipping duplicate completion");
+            Ok(false)
+        }
+        Ok(true) => {
             RECORDING_FLAG.store(false, Ordering::SeqCst);
             tray::update_tray_menu(&app);
 
@@ -196,9 +203,11 @@ async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> R
                 if !parent.exists() {
                     log_info!("Creating the managed recording directory");
                     if let Err(e) = std::fs::create_dir_all(parent) {
-                        let err_msg = format!("Failed to create save directory: {}", e);
-                        log_error!("{}", err_msg);
-                        return Err(err_msg);
+                        // The authoritative native stop already completed and
+                        // emitted its one-time completion token. This legacy
+                        // caller path must not turn that success into a false
+                        // frontend failure that strands post-processing.
+                        log_error!("Failed to create the legacy save directory: {}", e);
                     }
                 }
             }
@@ -217,7 +226,7 @@ async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> R
                 log_info!("Successfully showed recording stopped notification");
             }
 
-            Ok(())
+            Ok(true)
         }
         Err(e) => {
             log_error!("Failed to stop audio recording: {}", e);
@@ -681,6 +690,9 @@ pub fn run() {
             api::api_get_meeting_transcripts,
             api::api_save_meeting_title,
             api::api_save_transcript,
+            api::api_acknowledge_recording_post_processing,
+            api::api_get_pending_recording_post_processing,
+            api::api_abandon_recording_post_processing,
             api::open_meeting_folder,
             api::open_external_url,
             // Custom OpenAI commands

@@ -833,12 +833,14 @@ pub async fn api_save_transcript<R: Runtime>(
     meeting_title: String,
     transcripts: Vec<serde_json::Value>,
     folder_path: Option<String>,
+    completion_token: Option<String>,
     auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
     log_info!(
-        "api_save_transcript called (segments={}, folder_present={}, auth_token_present={})",
+        "api_save_transcript called (segments={}, folder_present={}, completion_token_present={}, auth_token_present={})",
         transcripts.len(),
         folder_path.is_some(),
+        completion_token.is_some(),
         auth_token.is_some()
     );
 
@@ -859,6 +861,22 @@ pub async fn api_save_transcript<R: Runtime>(
 
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+
+    // A local IPC response can be interrupted after SQLite commits. Replaying
+    // the same context-bound token returns the original meeting instead of
+    // creating a duplicate row or stranding the native post-processing gate.
+    if let Some(token) = completion_token.as_deref() {
+        if let Some(meeting_id) =
+            crate::audio::recording_commands::persisted_meeting_id_for_completion(&ctx, token)
+        {
+            log_info!("Returning the existing meeting for an idempotent save retry");
+            return Ok(serde_json::json!({
+                "status": "success",
+                "message": "Transcript was already saved successfully",
+                "meeting_id": meeting_id
+            }));
+        }
+    }
 
     // Opt-in PII/keyword redaction BEFORE persistence (BACKLOG C6). Policy is loaded
     // per-workspace and applied at this call boundary — the repository stays a pure
@@ -889,12 +907,29 @@ pub async fn api_save_transcript<R: Runtime>(
     }
 
     // Bind the database row only to a folder created by the Rust recording
-    // pipeline. The renderer-provided path is a legacy wire field and is never a
-    // filesystem authority.
-    let trusted_folder_path =
-        crate::audio::recording_commands::take_last_completed_meeting_folder();
-    if folder_path.is_some() && trusted_folder_path.is_none() {
-        log_warn!("Ignored an unverified renderer-provided recording folder");
+    // pipeline and selected with its opaque, one-time completion token. The
+    // renderer-provided path is a legacy display/correlation field and is never
+    // a filesystem authority. Recovery/manual saves carry no token and cannot
+    // inspect, reserve, or consume the pending recording folder.
+    let mut recording_folder_reservation =
+        crate::audio::recording_commands::reserve_last_completed_recording_folder(
+            &ctx,
+            completion_token.as_deref(),
+        );
+    let trusted_folder_path = recording_folder_reservation
+        .as_ref()
+        .and_then(|reservation| reservation.folder_path().map(str::to_string));
+    if completion_token.is_some() && recording_folder_reservation.is_none() {
+        log_warn!(
+            "Rejected an invalid, stale, duplicate, or cross-context recording completion token"
+        );
+        return Err(
+            "The recording completion authorization is invalid or already used. The meeting was not saved; retry from the original post-recording flow."
+                .to_string(),
+        );
+    }
+    if folder_path.is_some() && completion_token.is_none() {
+        log_warn!("Ignored an unverified or stale recording-folder claim");
     }
 
     // Now, call the repository with the correctly typed data.
@@ -908,6 +943,9 @@ pub async fn api_save_transcript<R: Runtime>(
     .await
     {
         Ok(meeting_id) => {
+            if let Some(reservation) = recording_folder_reservation.take() {
+                reservation.commit(&meeting_id);
+            }
             log_info!("Successfully saved transcript and created meeting");
             Ok(serde_json::json!({
                 "status": "success",
@@ -920,6 +958,87 @@ pub async fn api_save_transcript<R: Runtime>(
             Err(format!("Failed to save transcript: {}", e))
         }
     }
+}
+
+#[tauri::command]
+pub async fn api_acknowledge_recording_post_processing<R: Runtime>(
+    app: AppHandle<R>,
+    completion_token: String,
+) -> Result<(), String> {
+    let ctx = crate::context::current();
+    ctx.require(crate::context::Role::Member)
+        .map_err(|_| "Not authorized to finalize recording post-processing".to_string())?;
+
+    let acknowledged =
+        crate::audio::recording_commands::acknowledge_completed_recording_post_processing(
+            &ctx,
+            &completion_token,
+        );
+    let no_pending_completion =
+        !crate::audio::recording_commands::has_pending_recording_post_processing_for_context(&ctx);
+
+    if acknowledged || no_pending_completion {
+        log_info!("Recording post-processing acknowledgement is complete");
+        crate::tray::update_tray_menu(&app);
+        Ok(())
+    } else {
+        log_warn!(
+            "Rejected an invalid, premature, duplicate, or cross-context post-processing acknowledgement"
+        );
+        Err("Recording post-processing acknowledgement was rejected".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn api_get_pending_recording_post_processing() -> Result<Option<serde_json::Value>, String>
+{
+    let ctx = crate::context::current();
+    ctx.require(crate::context::Role::Member)
+        .map_err(|_| "Not authorized to inspect recording post-processing".to_string())?;
+    crate::audio::recording_commands::pending_recording_post_processing_for_context(&ctx)
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|_| "Could not serialize pending recording state".to_string())
+}
+
+#[tauri::command]
+pub async fn api_abandon_recording_post_processing<R: Runtime>(
+    app: AppHandle<R>,
+    completion_token: String,
+) -> Result<(), String> {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+    let ctx = crate::context::current();
+    ctx.require(crate::context::Role::Member)
+        .map_err(|_| "Not authorized to unlock recording recovery".to_string())?;
+
+    let dialog_app = app.clone();
+    let confirmed = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app
+            .dialog()
+            .message(
+                "The previous recording did not finish saving. Unlocking permits a new recording but abandons automatic audio-folder linking for the interrupted one. Any existing transcript recovery copy is kept; the recording folder may require manual review or cleanup. Continue?",
+            )
+            .title("Unlock interrupted recording")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::YesNo)
+            .blocking_show()
+    })
+    .await
+    .map_err(|_| "The recovery confirmation is temporarily unavailable".to_string())?;
+
+    if !confirmed {
+        return Err("Recording recovery unlock was cancelled".to_string());
+    }
+
+    if !crate::audio::recording_commands::abandon_recording_post_processing(&ctx, &completion_token)
+    {
+        return Err("The interrupted recording is no longer pending".to_string());
+    }
+
+    log_warn!("User confirmed abandonment of interrupted recording post-processing");
+    crate::tray::update_tray_menu(&app);
+    Ok(())
 }
 
 /// Opens the meeting's recording folder in the system file explorer

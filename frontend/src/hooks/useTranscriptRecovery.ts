@@ -128,7 +128,8 @@ export function useTranscriptRecovery(): UseTranscriptRecoveryReturn {
       const saveResponse = await storageService.saveMeeting(
         metadata.title,
         formattedTranscripts,
-        null
+        null,
+        null,
       );
 
       const savedMeetingId = saveResponse.meeting_id;
