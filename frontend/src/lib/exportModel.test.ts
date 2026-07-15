@@ -10,7 +10,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildExportDoc, type ExportMeta } from './exportModel';
+import {
+  buildExportDoc,
+  buildExportProvenance,
+  buildVerifiedExportProvenance,
+  ExportApprovalError,
+  ExportSourceLinkError,
+  type ExportDoc,
+  type ExportMeta,
+} from './exportModel';
 import type {
   SummaryDraftResponse,
   DraftBlock,
@@ -47,7 +55,10 @@ function actionItem(overrides: Partial<ActionItemDraft>): ActionItemDraft {
 
 function response(overrides: Partial<SummaryDraftResponse>): SummaryDraftResponse {
   return {
-    draft: overrides.draft ?? null,
+    draft:
+      overrides.draft === undefined
+        ? { meeting_id: 'm1', status: 'approved', sections: [] }
+        : overrides.draft,
     status: overrides.status ?? 'approved',
     model: overrides.model ?? null,
     template_id: overrides.template_id ?? null,
@@ -59,6 +70,43 @@ function response(overrides: Partial<SummaryDraftResponse>): SummaryDraftRespons
 }
 
 describe('buildExportDoc', () => {
+  it('fails closed when child blocks are approved but the whole summary is draft', () => {
+    const resp = response({
+      status: 'draft',
+      draft: {
+        meeting_id: 'm1',
+        status: 'draft',
+        sections: [
+          {
+            title: 'Looks approved',
+            blocks: [
+              block({
+                id: 'b-approved-child',
+                status: 'approved',
+                source_chunk_id: 't1',
+              }),
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(() => buildExportDoc(resp, new Map([['t1', '[00:01]']]), META)).toThrowError(
+      ExportApprovalError,
+    );
+  });
+
+  it('fails closed when top-level and hydrated summary statuses disagree', () => {
+    const resp = response({
+      status: 'approved',
+      draft: { meeting_id: 'm1', status: 'draft', sections: [] },
+    });
+
+    expect(() => buildExportDoc(resp, new Map(), META)).toThrowError(
+      ExportApprovalError,
+    );
+  });
+
   describe('approved-only block filtering', () => {
     const resp = response({
       draft: {
@@ -99,9 +147,30 @@ describe('buildExportDoc', () => {
     it('attaches the resolved timestamp to the surviving block', () => {
       expect(doc.sections[0].items[0].sourceTs).toBe('[01:05]');
     });
+
+    it('carries the source chunk and item ids into the export model', () => {
+      expect(doc.sections[0].items[0]).toMatchObject({
+        id: 'b1',
+        sourceChunkId: 't1',
+      });
+    });
+
+    it('embeds the exact source link in machine provenance', () => {
+      expect(buildExportProvenance(doc)).toMatchObject({
+        source_linked: true,
+        source_links: [
+          {
+            item_type: 'summary_block',
+            item_id: 'b1',
+            source_chunk_id: 't1',
+            timestamp: '[01:05]',
+          },
+        ],
+      });
+    });
   });
 
-  it('leaves sourceTs undefined for an unresolved source_chunk_id (never fabricated)', () => {
+  it('fails closed for an approved block with an unresolved source_chunk_id', () => {
     const resp = response({
       draft: {
         meeting_id: 'm1',
@@ -114,8 +183,9 @@ describe('buildExportDoc', () => {
         ],
       },
     });
-    const doc = buildExportDoc(resp, new Map(), META);
-    expect(doc.sections[0].items[0].sourceTs).toBeUndefined();
+    expect(() => buildExportDoc(resp, new Map(), META)).toThrowError(
+      ExportSourceLinkError,
+    );
   });
 
   describe('action items', () => {
@@ -149,48 +219,94 @@ describe('buildExportDoc', () => {
       expect(doc.actionItems[0].sourceTs).toBe('[00:42]');
     });
 
+    it('carries action-item identity and source identity', () => {
+      expect(doc.actionItems[0]).toMatchObject({
+        id: 'a1',
+        sourceChunkId: 't1',
+      });
+    });
+
     it('counts the three non-approved items as excluded', () => {
       expect(doc.excludedActionItemCount).toBe(3);
     });
   });
 
-  describe('legacy `draft: null` degraded doc', () => {
+  it('fails closed for an approved action item with an unresolved timestamp', () => {
+    const resp = response({
+      action_items: [
+        actionItem({
+          id: 'a-missing',
+          status: 'approved',
+          source_chunk_id: 'missing',
+        }),
+      ],
+    });
+    expect(() => buildExportDoc(resp, new Map(), META)).toThrowError(
+      ExportSourceLinkError,
+    );
+  });
+
+  describe('missing whole-summary evidence', () => {
     const resp = response({
       draft: null,
       action_items: [actionItem({ id: 'a1', text: 'still here', status: 'approved', source_chunk_id: 't1' })],
     });
-    const doc = buildExportDoc(resp, new Map([['t1', '[00:01]']]), META);
 
-    it('yields zero sections', () => {
-      expect(doc.sections).toHaveLength(0);
-    });
-
-    it('still flows action items (they live in their own table)', () => {
-      expect(doc.actionItems).toHaveLength(1);
-    });
-
-    it('reports no excluded items', () => {
-      expect(doc.excludedActionItemCount).toBe(0);
+    it('does not infer summary approval from an approved action item', () => {
+      expect(() => buildExportDoc(resp, new Map([['t1', '[00:01]']]), META)).toThrowError(
+        ExportApprovalError,
+      );
     });
   });
 
   describe('fully null response (defensive)', () => {
-    const doc = buildExportDoc(null, new Map(), META);
-
-    it('has no sections', () => {
-      expect(doc.sections).toHaveLength(0);
+    it('fails closed without constructing an export document', () => {
+      expect(() => buildExportDoc(null, new Map(), META)).toThrowError(
+        ExportApprovalError,
+      );
     });
+  });
 
-    it('has no action items', () => {
-      expect(doc.actionItems).toHaveLength(0);
-    });
+  it('marks malformed hand-built provenance unlinked and blocks verified rendering', () => {
+    const malformed: ExportDoc = {
+      meta: META,
+      summaryStatus: 'approved',
+      sections: [
+        {
+          title: 'S',
+          items: [
+            {
+              id: 'b1',
+              kind: 'text',
+              text: 'x',
+              sourceChunkId: '',
+              sourceTs: '',
+            },
+          ],
+        },
+      ],
+      actionItems: [],
+      excludedActionItemCount: 0,
+    };
 
-    it('reports zero excluded items', () => {
-      expect(doc.excludedActionItemCount).toBe(0);
-    });
+    expect(buildExportProvenance(malformed).source_linked).toBe(false);
+    expect(() => buildVerifiedExportProvenance(malformed)).toThrowError(
+      ExportSourceLinkError,
+    );
+  });
 
-    it('passes meta through verbatim', () => {
-      expect(doc.meta.title).toBe('Weekly Sync');
-    });
+  it('derives human_reviewed=false and blocks verified provenance for a draft', () => {
+    const draftDoc: ExportDoc = {
+      meta: META,
+      summaryStatus: 'draft',
+      sections: [],
+      actionItems: [],
+      excludedActionItemCount: 0,
+    };
+
+    expect(buildExportProvenance(draftDoc).human_reviewed).toBe(false);
+    expect(() => buildVerifiedExportProvenance(draftDoc)).toThrowError(
+      ExportApprovalError,
+    );
   });
 });

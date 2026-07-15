@@ -84,77 +84,70 @@ pub async fn identify_user(
 }
 
 #[command]
-pub async fn track_meeting_started(meeting_id: String) -> Result<(), String> {
+pub async fn track_meeting_started() -> Result<(), String> {
     let client = {
         let guard = ANALYTICS_CLIENT.lock().unwrap();
         guard.as_ref().cloned()
     };
 
     if let Some(client) = client {
-        client.track_meeting_started(&meeting_id).await
+        client.track_meeting_started().await
     } else {
         Err("Analytics client not initialized".to_string())
     }
 }
 
 #[command]
-pub async fn track_recording_started(meeting_id: String) -> Result<(), String> {
+pub async fn track_recording_started() -> Result<(), String> {
     let client = {
         let guard = ANALYTICS_CLIENT.lock().unwrap();
         guard.as_ref().cloned()
     };
 
     if let Some(client) = client {
-        client.track_recording_started(&meeting_id).await
+        client.track_recording_started().await
     } else {
         Err("Analytics client not initialized".to_string())
     }
 }
 
 #[command]
-pub async fn track_recording_stopped(
-    meeting_id: String,
-    duration_seconds: Option<u64>,
-) -> Result<(), String> {
+pub async fn track_recording_stopped(duration_seconds: Option<u64>) -> Result<(), String> {
     let client = {
         let guard = ANALYTICS_CLIENT.lock().unwrap();
         guard.as_ref().cloned()
     };
 
     if let Some(client) = client {
-        client
-            .track_recording_stopped(&meeting_id, duration_seconds)
-            .await
+        client.track_recording_stopped(duration_seconds).await
     } else {
         Err("Analytics client not initialized".to_string())
     }
 }
 
 #[command]
-pub async fn track_meeting_deleted(meeting_id: String) -> Result<(), String> {
+pub async fn track_meeting_deleted() -> Result<(), String> {
     let client = {
         let guard = ANALYTICS_CLIENT.lock().unwrap();
         guard.as_ref().cloned()
     };
 
     if let Some(client) = client {
-        client.track_meeting_deleted(&meeting_id).await
+        client.track_meeting_deleted().await
     } else {
         Err("Analytics client not initialized".to_string())
     }
 }
 
 #[command]
-pub async fn track_settings_changed(setting_type: String, new_value: String) -> Result<(), String> {
+pub async fn track_settings_changed(setting_type: String) -> Result<(), String> {
     let client = {
         let guard = ANALYTICS_CLIENT.lock().unwrap();
         guard.as_ref().cloned()
     };
 
     if let Some(client) = client {
-        client
-            .track_settings_changed(&setting_type, &new_value)
-            .await
+        client.track_settings_changed(&setting_type).await
     } else {
         Err("Analytics client not initialized".to_string())
     }
@@ -177,7 +170,7 @@ pub async fn track_feature_used(feature_name: String) -> Result<(), String> {
 #[command]
 pub async fn is_analytics_enabled() -> bool {
     let guard = ANALYTICS_CLIENT.lock().unwrap();
-    guard.as_ref().map_or(false, |client| client.is_enabled())
+    guard.as_ref().is_some_and(|client| client.is_enabled())
 }
 
 // Enhanced analytics commands
@@ -264,7 +257,6 @@ pub async fn track_summary_generation_completed(
     model_name: String,
     success: bool,
     duration_seconds: Option<u64>,
-    error_message: Option<String>,
 ) -> Result<(), String> {
     let client = {
         let guard = ANALYTICS_CLIENT.lock().unwrap();
@@ -278,7 +270,6 @@ pub async fn track_summary_generation_completed(
                 &model_name,
                 success,
                 duration_seconds,
-                error_message.as_deref(),
             )
             .await
     } else {

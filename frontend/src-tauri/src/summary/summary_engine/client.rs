@@ -227,8 +227,10 @@ pub async fn generate_with_builtin(
     }
 
     // Parse response
+    // The sidecar payload can contain generated meeting content. Keep it out of
+    // anyhow's context chain because callers may persist or export diagnostics.
     let response: Response = serde_json::from_str(&response_json)
-        .with_context(|| format!("Failed to parse response: {}", response_json))?;
+        .context("Failed to parse the local generation response")?;
 
     match response {
         Response::Response { text, error } => {

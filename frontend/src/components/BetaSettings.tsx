@@ -13,7 +13,9 @@ export function BetaSettings() {
   const { betaFeatures, toggleBetaFeature } = useConfig();
 
   // Define feature order for display (allows custom ordering)
-  const featureOrder: BetaFeatureKey[] = ['importAndRetranscribe', 'structuredSummaries'];
+  // Structured summaries are a mandatory trust invariant in v1.0.4, not a
+  // user-disableable beta switch.
+  const featureOrder: BetaFeatureKey[] = [];
 
   return (
     <div className="space-y-6">

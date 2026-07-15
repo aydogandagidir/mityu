@@ -28,6 +28,15 @@ export interface RecordingStoppedPayload {
  */
 export class RecordingService {
   /**
+   * Request a short-lived, single-use native authorization after the consent
+   * UI gate has resolved positively. The returned bearer ticket must be passed
+   * to exactly one recording-start call and must never be persisted.
+   */
+  async authorizeRecordingStart(): Promise<string> {
+    return invoke<string>('authorize_recording_start');
+  }
+
+  /**
    * Check if recording is currently active
    * @returns Promise<boolean>
    */
@@ -55,8 +64,8 @@ export class RecordingService {
    * Start recording (no device configuration)
    * @returns Promise<void>
    */
-  async startRecording(): Promise<void> {
-    return invoke('start_recording');
+  async startRecording(consentTicket: string): Promise<void> {
+    return invoke('start_recording', { consent_ticket: consentTicket });
   }
 
   /**
@@ -69,12 +78,14 @@ export class RecordingService {
   async startRecordingWithDevices(
     micDeviceName: string | null,
     systemDeviceName: string | null,
-    meetingName: string
+    meetingName: string,
+    consentTicket: string
   ): Promise<void> {
     return invoke('start_recording_with_devices_and_meeting', {
       mic_device_name: micDeviceName,
       system_device_name: systemDeviceName,
-      meeting_name: meetingName
+      meeting_name: meetingName,
+      consent_ticket: consentTicket
     });
   }
 

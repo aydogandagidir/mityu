@@ -63,38 +63,42 @@ struct OllamaApiModel {
     size: i64,
 }
 
-// Helper function to check if endpoint is localhost
-fn is_localhost_endpoint(endpoint: Option<&str>) -> bool {
+// CLI fallback is valid only for the local daemon. Parse the host exactly so
+// names such as `localhost.evil.example` cannot be mistaken for loopback.
+fn is_loopback_endpoint(endpoint: Option<&str>) -> bool {
     match endpoint {
         None | Some("") => true,
-        Some(url) => url.contains("localhost") || url.contains("127.0.0.1") || url.contains("::1"),
+        Some(endpoint) => url::Url::parse(endpoint).is_ok_and(|parsed| match parsed.host() {
+            Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+            Some(url::Host::Ipv4(address)) => address.is_loopback(),
+            Some(url::Host::Ipv6(address)) => address.is_loopback(),
+            None => false,
+        }),
     }
 }
 
-// Helper function to validate endpoint URL format
-fn validate_endpoint_url(url: &str) -> Result<(), OllamaError> {
-    if url.is_empty() {
-        return Ok(()); // Empty is valid (uses default)
+pub(crate) fn validate_ollama_model_name(model_name: &str) -> Result<String, String> {
+    let model_name = model_name.trim();
+    if model_name.is_empty() || model_name.len() > 200 {
+        return Err("Ollama model name must contain between 1 and 200 characters".to_string());
     }
-
-    // Check if URL starts with http:// or https://
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err(OllamaError::InvalidEndpoint(
-            "URL must start with http:// or https://".to_string(),
-        ));
+    if !model_name.chars().all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-' | ':' | '/' | '@')
+    }) {
+        return Err("Ollama model name contains unsupported characters".to_string());
     }
-
-    Ok(())
+    Ok(model_name.to_string())
 }
 
 #[command]
 pub async fn get_ollama_models(endpoint: Option<String>) -> Result<Vec<OllamaModel>, String> {
-    // Validate endpoint format if provided
-    if let Some(ref ep) = endpoint {
-        if let Err(e) = validate_endpoint_url(ep) {
-            return Err(e.to_string());
-        }
-    }
+    let endpoint = endpoint
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| {
+            crate::summary::validate_llm_endpoint(&value)
+                .map_err(|message| OllamaError::InvalidEndpoint(message).to_string())
+        })
+        .transpose()?;
 
     // Add timeout wrapper (5 seconds max)
     match timeout(
@@ -112,7 +116,7 @@ pub async fn get_ollama_models(endpoint: Option<String>) -> Result<Vec<OllamaMod
         }
         Ok(Err(http_err)) => {
             // Only fallback to CLI if endpoint is localhost/empty
-            if is_localhost_endpoint(endpoint.as_deref()) {
+            if is_loopback_endpoint(endpoint.as_deref()) {
                 get_models_via_cli()
                     .map_err(|cli_err| format!("{}\n\nAlso tried CLI: {}", http_err, cli_err))
             } else {
@@ -159,7 +163,12 @@ async fn get_models_via_http_with_retry(
 }
 
 async fn get_models_via_http_async(endpoint: Option<&str>) -> Result<Vec<OllamaModel>, String> {
-    let client = Client::new();
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| {
+            OllamaError::NetworkError("HTTP client initialization failed".to_string()).to_string()
+        })?;
     let base_url = endpoint.unwrap_or("http://localhost:11434");
     let url = format!("{}/api/tags", base_url);
 
@@ -172,13 +181,10 @@ async fn get_models_via_http_async(endpoint: Option<&str>) -> Result<Vec<OllamaM
             if e.is_timeout() {
                 OllamaError::NetworkError("Connection timed out".to_string()).to_string()
             } else if e.is_connect() {
-                OllamaError::NetworkError(format!(
-                    "Cannot connect to {}. Please check if the server is running.",
-                    base_url
-                ))
-                .to_string()
+                OllamaError::NetworkError("Cannot connect to the configured server".to_string())
+                    .to_string()
             } else {
-                OllamaError::NetworkError(e.to_string()).to_string()
+                OllamaError::NetworkError("Request failed".to_string()).to_string()
             }
         })?;
 
@@ -265,15 +271,17 @@ pub async fn pull_ollama_model<R: Runtime>(
     model_name: String,
     endpoint: Option<String>,
 ) -> Result<(), String> {
+    let model_name = validate_ollama_model_name(&model_name)?;
+    let base_url = crate::summary::validate_llm_endpoint(
+        endpoint.as_deref().unwrap_or("http://localhost:11434"),
+    )?;
+
     // Check if model is already being downloaded
     {
         let downloading = DOWNLOADING_MODELS.read().await;
         if downloading.contains(&model_name) {
-            log::warn!(
-                "Model {} is already being downloaded, ignoring duplicate request",
-                model_name
-            );
-            return Err(format!("Model {} is already being downloaded", model_name));
+            log::warn!("Ignoring duplicate Ollama model download request");
+            return Err("This Ollama model is already being downloaded".to_string());
         }
     }
 
@@ -281,11 +289,13 @@ pub async fn pull_ollama_model<R: Runtime>(
     {
         let mut downloading = DOWNLOADING_MODELS.write().await;
         downloading.insert(model_name.clone());
-        log::info!("Started download tracking for model: {}", model_name);
+        log::info!("Started Ollama model download tracking");
     }
 
-    let client = Client::new();
-    let base_url = endpoint.as_deref().unwrap_or("http://localhost:11434");
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "Failed to initialize the Ollama HTTP client".to_string())?;
     let url = format!("{}/api/pull", base_url);
 
     let payload = serde_json::json!({
@@ -293,29 +303,33 @@ pub async fn pull_ollama_model<R: Runtime>(
         "stream": true
     });
 
-    let response = client
+    let response_result = client
         .post(&url)
         .json(&payload)
         .timeout(Duration::from_secs(600)) // 10 minutes timeout for pulling
         .send()
-        .await
-        .map_err(|e| {
-            if e.is_timeout() {
-                format!("Download timed out. The model may be large, please try using the Ollama CLI: ollama pull {}", model_name)
-            } else if e.is_connect() {
-                format!("Cannot connect to {}. Please check if the Ollama server is running.", base_url)
+        .await;
+    let response = match response_result {
+        Ok(response) => response,
+        Err(error) => {
+            DOWNLOADING_MODELS.write().await.remove(&model_name);
+            let message = if error.is_timeout() {
+                "Ollama model download timed out".to_string()
+            } else if error.is_connect() {
+                "Could not connect to the configured Ollama server".to_string()
             } else {
-                format!("Failed to download model: {}", e)
-            }
-        })?;
+                "Ollama model download request failed".to_string()
+            };
+            let _ = app_handle.emit(
+                "ollama-model-download-error",
+                serde_json::json!({ "modelName": model_name, "error": message.clone() }),
+            );
+            return Err(message);
+        }
+    };
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-
         // Remove from downloading set on error
         {
             let mut downloading = DOWNLOADING_MODELS.write().await;
@@ -327,13 +341,13 @@ pub async fn pull_ollama_model<R: Runtime>(
             "ollama-model-download-error",
             serde_json::json!({
                 "modelName": model_name,
-                "error": format!("HTTP {}: {}", status, error_text)
+                "error": format!("Ollama server returned HTTP status {}", status)
             }),
         );
 
         return Err(format!(
-            "Failed to pull model (HTTP {}): {}",
-            status, error_text
+            "Ollama model download failed with HTTP status {}",
+            status
         ));
     }
 
@@ -343,8 +357,8 @@ pub async fn pull_ollama_model<R: Runtime>(
     let mut last_progress = 0u8;
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| {
-            let error_msg = format!("Failed to read stream: {}", e);
+        let chunk = chunk.map_err(|_| {
+            let error_msg = "Failed to read the Ollama download stream".to_string();
 
             // Remove from downloading set on stream error
             let model_name_clone = model_name.clone();
@@ -409,7 +423,8 @@ pub async fn pull_ollama_model<R: Runtime>(
 
                 // Check for error status
                 if let Some(error) = json.get("error").and_then(|v| v.as_str()) {
-                    let error_msg = format!("Ollama error: {}", error);
+                    let _ = error;
+                    let error_msg = "Ollama server reported a model download error".to_string();
 
                     // Remove from downloading set on Ollama error
                     {
@@ -434,7 +449,7 @@ pub async fn pull_ollama_model<R: Runtime>(
     {
         let mut downloading = DOWNLOADING_MODELS.write().await;
         downloading.remove(&model_name);
-        log::info!("Removed {} from downloading set", model_name);
+        log::info!("Removed completed Ollama model from download tracking");
     }
 
     // Emit completion event
@@ -445,7 +460,7 @@ pub async fn pull_ollama_model<R: Runtime>(
         }),
     );
 
-    log::info!("Ollama model {} downloaded successfully", model_name);
+    log::info!("Ollama model downloaded successfully");
 
     Ok(())
 }
@@ -455,15 +470,21 @@ pub async fn delete_ollama_model(
     model_name: String,
     endpoint: Option<String>,
 ) -> Result<(), String> {
-    let client = Client::new();
-    let base_url = endpoint.as_deref().unwrap_or("http://localhost:11434");
+    let model_name = validate_ollama_model_name(&model_name)?;
+    let base_url = crate::summary::validate_llm_endpoint(
+        endpoint.as_deref().unwrap_or("http://localhost:11434"),
+    )?;
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "Failed to initialize the Ollama HTTP client".to_string())?;
     let url = format!("{}/api/delete", base_url);
 
     let payload = serde_json::json!({
         "name": model_name
     });
 
-    log::info!("Deleting Ollama model: {}", model_name);
+    log::info!("Deleting Ollama model");
 
     let response = client
         .delete(&url)
@@ -473,30 +494,23 @@ pub async fn delete_ollama_model(
         .await
         .map_err(|e| {
             if e.is_timeout() {
-                format!("Delete request timed out for model: {}", model_name)
+                "Ollama delete request timed out".to_string()
             } else if e.is_connect() {
-                format!(
-                    "Cannot connect to {}. Please check if the Ollama server is running.",
-                    base_url
-                )
+                "Could not connect to the configured Ollama server".to_string()
             } else {
-                format!("Failed to delete model: {}", e)
+                "Failed to send the Ollama delete request".to_string()
             }
         })?;
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
         return Err(format!(
-            "Failed to delete model (HTTP {}): {}",
-            status, error_text
+            "Ollama model deletion failed with HTTP status {}",
+            status
         ));
     }
 
-    log::info!("Successfully deleted Ollama model: {}", model_name);
+    log::info!("Successfully deleted Ollama model");
 
     Ok(())
 }
@@ -517,26 +531,22 @@ pub async fn get_ollama_model_context(
     model_name: String,
     endpoint: Option<String>,
 ) -> Result<usize, String> {
-    log::info!("Fetching context size for model: {}", model_name);
+    let model_name = validate_ollama_model_name(&model_name)?;
+    let endpoint = crate::summary::validate_llm_endpoint(
+        endpoint.as_deref().unwrap_or("http://localhost:11434"),
+    )?;
+    log::info!("Fetching Ollama model context size");
 
     match METADATA_CACHE
-        .get_or_fetch(&model_name, endpoint.as_deref())
+        .get_or_fetch(&model_name, Some(&endpoint))
         .await
     {
         Ok(metadata) => {
-            log::info!(
-                "Model {} context size: {} tokens",
-                model_name,
-                metadata.context_size
-            );
+            log::info!("Ollama model context size resolved");
             Ok(metadata.context_size)
         }
-        Err(e) => {
-            log::warn!(
-                "Failed to fetch context for {}: {}. Returning default 4000",
-                model_name,
-                e
-            );
+        Err(_) => {
+            log::warn!("Failed to fetch Ollama context; returning safe default");
             // Return default instead of error for better UX
             Ok(4000)
         }

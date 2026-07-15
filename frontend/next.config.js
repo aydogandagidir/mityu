@@ -9,6 +9,11 @@ const resolveFromTiptapPm = (pkg) =>
 const nextConfig = {
   reactStrictMode: false, // Disabled for BlockNote compatibility
   output: 'export',
+  compiler: {
+    // Release WebViews must not retain console calls that can accidentally
+    // expose meeting content, local paths, device names, or credentials.
+    removeConsole: process.env.NODE_ENV === 'production',
+  },
   images: {
     unoptimized: true,
   },

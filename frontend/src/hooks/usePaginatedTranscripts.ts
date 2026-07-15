@@ -55,7 +55,6 @@ export function usePaginatedTranscripts({
     const offsetRef = useRef(0);
     const loadedMeetingIdRef = useRef<string | null>(null);
     const isLoadingRef = useRef(false);
-    const lastLoadTimeRef = useRef(0); // Debounce protection
 
     // Reset state when meeting changes
     const reset = useCallback(() => {
@@ -131,17 +130,12 @@ export function usePaginatedTranscripts({
         }
     }, [meetingId]);
 
-    // Load next page with debounce protection
+    // Load the next page. The synchronous ref guard prevents overlapping
+    // requests without dropping a legitimate immediate follow-up request (the
+    // jump-to-source loop may need several fast local pages in succession).
     const loadMore = useCallback(async () => {
-        const now = Date.now();
-        // Debounce: require at least 100ms between calls
-        if (now - lastLoadTimeRef.current < 100) {
-            return;
-        }
-
         if (isLoadingRef.current || !hasMore || !meetingId || isLoading) return;
 
-        lastLoadTimeRef.current = now;
         isLoadingRef.current = true;
         setIsLoadingMore(true);
         try {

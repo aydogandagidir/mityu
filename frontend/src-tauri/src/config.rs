@@ -4,7 +4,8 @@
 /// Used across database initialization, import, and retranscription.
 
 /// Default Whisper model for transcription when no preference is configured.
-/// This is the recommended balance of accuracy and speed.
+/// This is the current default based on size/speed tradeoffs; it is not an
+/// application-specific accuracy claim.
 pub const DEFAULT_WHISPER_MODEL: &str = "large-v3-turbo";
 
 /// Default Parakeet model for transcription when no preference is configured.
@@ -23,7 +24,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         74,
         "Decent",
         "Very Fast",
-        "Fastest processing, good for real-time use",
+        "Smallest model with the fastest processing",
     ),
     (
         "base",
@@ -31,7 +32,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         142,
         "Good",
         "Fast",
-        "Good balance of speed and accuracy",
+        "Small general-purpose model with fast processing",
     ),
     (
         "small",
@@ -39,7 +40,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         466,
         "Good",
         "Medium",
-        "Better accuracy, moderate speed",
+        "Mid-size model with moderate processing speed",
     ),
     (
         "medium",
@@ -47,7 +48,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         1463,
         "High",
         "Slow",
-        "High accuracy for professional use",
+        "Larger model with slower processing",
     ),
     (
         "large-v3-turbo",
@@ -55,7 +56,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         1549,
         "High",
         "Medium",
-        "Best accuracy with improved speed",
+        "Large turbo model with moderate processing speed",
     ),
     (
         "large-v3",
@@ -63,7 +64,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         2951,
         "High",
         "Slow",
-        "Most Accurate, latest large model",
+        "Largest supported model with slower processing",
     ),
     // Q5_1 quantized models (balanced speed/accuracy, slightly better quality than Q5_0)
     (
@@ -80,7 +81,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         57,
         "Good",
         "Fast",
-        "Quantized base model, good speed/accuracy balance",
+        "Quantized base model with fast processing",
     ),
     (
         "small-q5_1",
@@ -97,7 +98,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         514,
         "High",
         "Medium",
-        "Quantized medium model, professional quality",
+        "Quantized medium model with moderate processing speed",
     ),
     (
         "large-v3-turbo-q5_0",
@@ -113,6 +114,6 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         1031,
         "High",
         "Slow",
-        "Quantized large model, high accuracy",
+        "Quantized large model with lower storage use than full precision",
     ),
 ];

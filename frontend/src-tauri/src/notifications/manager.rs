@@ -89,17 +89,18 @@ impl<R: Runtime> NotificationManager<R> {
         // Check if we should show notifications
         if !self.should_show_notification(&notification).await {
             log_info!(
-                "Skipping notification due to settings: {}",
-                notification.title
+                "Skipping notification due to settings (title_chars={}, body_chars={})",
+                notification.title.chars().count(),
+                notification.body.chars().count()
             );
             return Ok(());
         }
 
         // Log the notification attempt
         log_info!(
-            "Showing notification: {} - {}",
-            notification.title,
-            notification.body
+            "Showing notification (title_chars={}, body_chars={})",
+            notification.title.chars().count(),
+            notification.body.chars().count()
         );
 
         // Show the notification

@@ -22,8 +22,8 @@ async function resolveSummaryLanguage(
   try {
     const perMeeting = await readMeetingSummaryLanguage(meetingId);
     if (perMeeting.language) return perMeeting.language;
-  } catch (err) {
-    console.warn('Failed to load meeting summary language:', err);
+  } catch {
+    console.warn('Failed to load meeting summary language');
     toast.warning('Could not load saved summary language', {
       description: 'Using Auto for this generation.',
     });
@@ -32,8 +32,8 @@ async function resolveSummaryLanguage(
   try {
     const cachedDetected = await readCachedDetectedSummaryLanguage(meetingId);
     if (cachedDetected) return cachedDetected;
-  } catch (err) {
-    console.warn('Failed to load cached detected summary language:', err);
+  } catch {
+    console.warn('Failed to load cached detected summary language');
   }
 
   try {
@@ -44,8 +44,8 @@ async function resolveSummaryLanguage(
       });
     }
     return detection.language;
-  } catch (err) {
-    console.warn('Failed to detect transcript summary language:', err);
+  } catch {
+    console.warn('Failed to detect transcript summary language');
     return null;
   }
 }
@@ -63,10 +63,8 @@ interface UseSummaryGenerationProps {
   setAiSummary: (summary: Summary | null) => void;
   onOpenModelSettings?: () => void;
   /**
-   * Whether structured, source-linked HITL drafts are enabled for generation
-   * (the `structuredSummaries` beta flag). Passed through to
-   * `api_process_transcript` as `structured`; default false keeps the legacy
-   * path byte-compatible (BACKLOG C1.6).
+   * Compatibility signal for the source-linked HITL draft UI. The Rust command
+   * enforces structured generation regardless of this legacy wire field.
    */
   structuredSummaries?: boolean;
   /**
@@ -141,7 +139,7 @@ export function useSummaryGeneration({
         throw new Error('No transcript text available. Please add some text first.');
       }
 
-      console.log('Processing transcript with template:', selectedTemplate);
+      console.log('Processing transcript with selected template');
 
       // Calculate time since recording
       const timeSinceRecording = (Date.now() - new Date(meeting.created_at).getTime()) / 60000; // minutes
@@ -186,11 +184,11 @@ export function useSummaryGeneration({
       }) as any;
 
       const process_id = result.process_id;
-      console.log('Process ID:', process_id);
+      console.log('Summary process started');
 
       // Start global polling via context
       startSummaryPolling(meeting.id, process_id, async (pollingResult) => {
-        console.log('Summary status:', pollingResult);
+        console.log('Summary status updated');
 
         // Handle cancellation
         if (pollingResult.status === 'cancelled') {
@@ -209,8 +207,8 @@ export function useSummaryGeneration({
             } else {
               setSummaryStatus('idle');
             }
-          } catch (error) {
-            console.error('Failed to reload summary after cancellation:', error);
+          } catch {
+            console.error('Failed to reload summary after cancellation');
             setSummaryStatus('idle');
           }
 
@@ -220,7 +218,7 @@ export function useSummaryGeneration({
 
         // Handle errors
         if (pollingResult.status === 'error' || pollingResult.status === 'failed') {
-          console.error('Backend returned error:', pollingResult.error);
+          console.error('Summary backend returned an error');
           const errorMessage = pollingResult.error || `Summary ${isRegeneration ? 'regeneration' : 'generation'} failed`;
 
           // If this was a regeneration, try to restore previous summary from database
@@ -244,14 +242,12 @@ export function useSummaryGeneration({
                 await Analytics.trackSummaryGenerationCompleted(
                   modelConfig.provider,
                   modelConfig.model,
-                  false,
-                  undefined,
-                  errorMessage
+                  false
                 );
                 return;
               }
-            } catch (error) {
-              console.error('Failed to reload summary after error:', error);
+            } catch {
+              console.error('Failed to reload summary after error');
             }
           }
 
@@ -280,16 +276,14 @@ export function useSummaryGeneration({
           await Analytics.trackSummaryGenerationCompleted(
             modelConfig.provider,
             modelConfig.model,
-            false,
-            undefined,
-            errorMessage
+            false
           );
           return;
         }
 
         // Handle successful completion
         if (pollingResult.status === 'completed' && pollingResult.data) {
-          console.log('Summary generation completed:', pollingResult.data);
+          console.log('Summary generation completed');
 
           // Update meeting title if available
           const meetingName = pollingResult.data.MeetingName || pollingResult.meetingName;
@@ -338,9 +332,7 @@ export function useSummaryGeneration({
             await Analytics.trackSummaryGenerationCompleted(
               modelConfig.provider,
               modelConfig.model,
-              false,
-              undefined,
-              'Empty summary generated'
+              false
             );
             return;
           }
@@ -374,8 +366,8 @@ export function useSummaryGeneration({
                   };
                 }
               }
-            } catch (error) {
-              console.warn(`Error processing section ${key}:`, error);
+            } catch {
+              console.warn('Error processing legacy summary section');
             }
           }
 
@@ -405,7 +397,7 @@ export function useSummaryGeneration({
         }
       });
     } catch (error) {
-      console.error(`Failed to ${isRegeneration ? 'regenerate' : 'generate'} summary:`, error);
+      console.error(`Failed to ${isRegeneration ? 'regenerate' : 'generate'} summary`);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setSummaryError(errorMessage);
       setSummaryStatus('error');
@@ -418,9 +410,7 @@ export function useSummaryGeneration({
       await Analytics.trackSummaryGenerationCompleted(
         modelConfig.provider,
         modelConfig.model,
-        false,
-        undefined,
-        errorMessage
+        false
       );
     }
   }, [
@@ -438,7 +428,7 @@ export function useSummaryGeneration({
   // Helper function to fetch ALL transcripts for summary generation
   const fetchAllTranscripts = useCallback(async (meetingId: string): Promise<Transcript[]> => {
     try {
-      console.log('📊 Fetching all transcripts for meeting:', meetingId);
+      console.log('Fetching all transcripts for summary generation');
 
       // First, get total count by fetching first page
       const firstPage = await invokeTauri('api_get_meeting_transcripts', {
@@ -463,8 +453,8 @@ export function useSummaryGeneration({
 
       console.log(`✅ Fetched ${allData.transcripts.length} transcripts from database`);
       return allData.transcripts;
-    } catch (error) {
-      console.error('❌ Error fetching all transcripts:', error);
+    } catch {
+      console.error('Error fetching all transcripts');
       toast.error('Failed to fetch transcripts for summary generation');
       return [];
     }
@@ -511,11 +501,7 @@ export function useSummaryGeneration({
 
     console.log(`✅ Proceeding with ${allTranscripts.length} transcripts`);
 
-    console.log('🚀 Starting summary generation with config:', {
-      provider: modelConfig.provider,
-      model: modelConfig.model,
-      template: selectedTemplate
-    });
+    console.log('Starting summary generation');
 
     // Check if Ollama provider has models available
     if (modelConfig.provider === 'ollama') {
@@ -531,7 +517,7 @@ export function useSummaryGeneration({
           return;
         }
       } catch (error) {
-        console.error('Error checking Ollama models:', error);
+        console.error('Error checking Ollama models');
         const errorMessage = error instanceof Error ? error.message : String(error);
 
         if (isOllamaNotInstalledError(errorMessage)) {
@@ -636,7 +622,7 @@ export function useSummaryGeneration({
 
         // Model is ready, continue to backend call
       } catch (error) {
-        console.error('Error validating built-in AI model:', error);
+        console.error('Error validating built-in AI model');
         toast.error('Failed to validate built-in AI model', {
           description: error instanceof Error ? error.message : String(error),
           duration: 5000,
@@ -650,8 +636,7 @@ export function useSummaryGeneration({
     await processSummary({
       ...summaryPayload,
       customPrompt,
-      // C1.6: generation mode keys off the beta flag ONLY (not hasSummaryDraft),
-      // so an existing legacy meeting is not silently switched to structured.
+      // Kept for wire compatibility; Rust enforces structured HITL generation.
       structured: structuredSummaries,
     });
   }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary, modelConfig, isModelConfigLoading, selectedTemplate, structuredSummaries]);
@@ -669,24 +654,23 @@ export function useSummaryGeneration({
     await processSummary({
       ...buildSummaryTranscriptPayload(allTranscripts),
       isRegeneration: true,
-      // C1.6: regenerate honors the beta flag only — a legacy meeting stays
-      // legacy on regenerate unless the user opted into structured summaries.
+      // Kept for wire compatibility; Rust enforces structured HITL generation.
       structured: structuredSummaries,
     });
   }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary, structuredSummaries]);
 
   // Public API: Stop ongoing summary generation
   const handleStopGeneration = useCallback(async () => {
-    console.log('Stopping summary generation for meeting:', meeting.id);
+    console.log('Stopping summary generation');
 
     try {
       // Call backend to cancel the summary generation
       await invokeTauri('api_cancel_summary', {
         meetingId: meeting.id
       });
-      console.log('✓ Backend cancellation request sent for meeting:', meeting.id);
-    } catch (error) {
-      console.error('Failed to cancel summary generation:', error);
+      console.log('Backend cancellation request sent');
+    } catch {
+      console.error('Failed to cancel summary generation');
       // Continue with frontend cleanup even if backend call fails
     }
 

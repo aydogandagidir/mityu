@@ -159,8 +159,7 @@ impl SourceBuffer {
                     );
                 } else {
                     warn!(
-                        "⚠️ Unexpected gap in wired device '{}': {:.1}ms",
-                        self.device_name,
+                        "Unexpected gap in wired recording device: {:.1}ms",
                         gap_duration.as_secs_f64() * 1000.0
                     );
                 }

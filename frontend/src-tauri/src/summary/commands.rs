@@ -1,6 +1,11 @@
+use crate::context::{AuthContext, Role};
 use crate::database::repositories::{
-    action_item::ActionItemsRepository, meeting::MeetingsRepository,
-    summary::SummaryProcessesRepository, summary_draft::SummariesRepository,
+    action_item::{
+        ActionItemsRepository, ApprovedActionItemsPage, DEFAULT_ACTION_CENTER_PAGE_SIZE,
+    },
+    meeting::MeetingsRepository,
+    summary::SummaryProcessesRepository,
+    summary_draft::SummariesRepository,
     transcript_chunk::TranscriptChunksRepository,
 };
 use crate::state::AppState;
@@ -69,6 +74,45 @@ enum MeetingFolderResolution {
     NoFolder,
 }
 
+const MAX_LEGACY_SUMMARY_BYTES: usize = 2 * 1024 * 1024;
+
+/// The legacy editor cache remains for compatibility, but it is not a generic
+/// JSON write primitive. Accept only the two shapes emitted by the current
+/// BlockNote/legacy editors and keep the payload bounded before it reaches SQL.
+fn validate_legacy_summary_payload(summary: &serde_json::Value) -> Result<(), String> {
+    let object = summary
+        .as_object()
+        .ok_or_else(|| "Summary payload must be a JSON object".to_string())?;
+    let encoded_len = serde_json::to_vec(summary)
+        .map_err(|_| "Summary payload could not be encoded".to_string())?
+        .len();
+    if encoded_len > MAX_LEGACY_SUMMARY_BYTES {
+        return Err("Summary payload exceeds the local editor limit".to_string());
+    }
+
+    let blocknote_shape = object
+        .get("summary_json")
+        .is_some_and(serde_json::Value::is_array)
+        && match object.get("markdown") {
+            None => true,
+            Some(value) => value.is_string(),
+        };
+    let legacy_shape = object
+        .get("MeetingNotes")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|notes| notes.get("sections"))
+        .is_some_and(serde_json::Value::is_array)
+        && match object.get("MeetingName") {
+            None => true,
+            Some(value) => value.is_string(),
+        };
+
+    if !blocknote_shape && !legacy_shape {
+        return Err("Summary payload does not match a supported editor schema".to_string());
+    }
+    Ok(())
+}
+
 /// Saves a meeting summary (Native SQLx implementation)
 ///
 /// Expected format: { "markdown": "...", "summary_json": [...BlockNote blocks...] }
@@ -80,31 +124,27 @@ pub async fn api_save_meeting_summary<R: Runtime>(
     summary: serde_json::Value,
     _auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    log_info!(
-        "api_save_meeting_summary (native) called for meeting_id: {}",
-        meeting_id
-    );
+    log_info!("api_save_meeting_summary (native) called");
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
+    validate_legacy_summary_payload(&summary)?;
 
     match SummaryProcessesRepository::update_meeting_summary(pool, &ctx, &meeting_id, &summary)
         .await
     {
         Ok(true) => {
-            log_info!("Summary saved successfully for meeting_id: {}", meeting_id);
+            log_info!("Summary saved successfully");
             Ok(serde_json::json!({
                 "message": "Meeting summary saved successfully"
             }))
         }
         Ok(false) => {
-            log_warn!(
-                "Meeting not found or invalid JSON for meeting_id: {}",
-                meeting_id
-            );
+            log_warn!("Meeting was unavailable or the summary payload was rejected");
             Err("Meeting not found or can't convert the json".into())
         }
         Err(e) => {
-            log_error!("Failed to save meeting summary for {}: {}", meeting_id, e);
+            log_error!("Failed to save meeting summary");
             Err(e.to_string())
         }
     }
@@ -272,7 +312,11 @@ pub async fn api_get_summary<R: Runtime>(
             let meeting_name = match MeetingsRepository::get_meeting(pool, &ctx, &meeting_id).await
             {
                 Ok(Some(meeting_details)) => {
-                    log_info!("Fetched meeting title: {}", &meeting_details.title);
+                    log_info!(
+                        "Fetched meeting title (meeting_id={}, chars={})",
+                        meeting_id,
+                        meeting_details.title.chars().count()
+                    );
                     Some(meeting_details.title)
                 }
                 Ok(None) => {
@@ -296,11 +340,16 @@ pub async fn api_get_summary<R: Runtime>(
             };
 
             log_info!(
-                "Summary status for {}: {}, has_data: {}, meeting_name: {:?}",
+                "Summary status for {}: {}, has_data: {}, meeting_title_present: {}, meeting_title_chars: {}",
                 meeting_id,
                 status,
                 response.data.is_some(),
-                response.meeting_name
+                response.meeting_name.is_some(),
+                response
+                    .meeting_name
+                    .as_deref()
+                    .map(|name| name.chars().count())
+                    .unwrap_or(0)
             );
             Ok(response)
         }
@@ -374,7 +423,11 @@ pub async fn api_process_transcript<R: Runtime>(
     let final_prompt = custom_prompt.unwrap_or_default();
     let final_template_id = template_id.unwrap_or_else(|| "daily_standup".to_string());
     // C1.4 flag: absent/None → false (legacy path untouched).
-    let structured = structured.unwrap_or(false);
+    // v1.0.4 invariant: every AI summary is a source-linked draft with human
+    // approval. Retain the optional wire field for older frontends, but never
+    // allow it to reactivate the ungrounded legacy generation path.
+    let _requested_structured = structured;
+    let structured = true;
 
     // Normalise empty / whitespace-only to None so "" and null behave identically
     let summary_language = summary_language.and_then(|s| {
@@ -532,6 +585,8 @@ pub async fn api_cancel_summary<R: Runtime>(
 //   - resolves identity ONLY via `crate::context::current()` — the frontend
 //     never supplies `workspace_id`/`user_id` (ADR-0010, docs/MULTITENANCY.md
 //     rule 2; `AuthContext` deliberately is not `Deserialize`);
+//   - enforces Viewer for reads and Member for human review/edit mutations at
+//     the IPC boundary (default-deny before repository access);
 //   - is ALWAYS active — HITL/approval enforcement is never behind the C1.4
 //     `structured` generation flag (that flag only gates draft *generation*);
 //   - maps `SummaryDraftError` to a CONTENT-FREE `String` via
@@ -542,8 +597,8 @@ pub async fn api_cancel_summary<R: Runtime>(
 //
 // The repositories own ALL business rules (the §4 status machine,
 // approve-time source re-resolution, "any block mutation de-approves the
-// summary", soft-delete/scoping); these wrappers add NO logic beyond identity
-// resolution and error mapping.
+// summary", soft-delete/scoping); these wrappers add only identity resolution,
+// RBAC, and error mapping.
 // ---------------------------------------------------------------------------
 
 /// Content-free mapping of a repository [`SummaryDraftError`] to the `String`
@@ -554,6 +609,20 @@ fn summary_draft_err(
     err: crate::database::repositories::summary_draft::SummaryDraftError,
 ) -> String {
     err.to_string()
+}
+
+/// Read-side authorization for every source-linked summary/action command.
+/// Keeping this at the IPC boundary means a future request-scoped resolver can
+/// change identity without relying on each repository caller to remember RBAC.
+fn require_hitl_read(ctx: &AuthContext) -> Result<(), String> {
+    ctx.require(Role::Viewer)
+        .map_err(|_| "Not authorized to read meeting intelligence".to_string())
+}
+
+/// Mutation authorization for explicit human review/edit operations.
+fn require_hitl_mutation(ctx: &AuthContext) -> Result<(), String> {
+    ctx.require(Role::Member)
+        .map_err(|_| "Not authorized to change meeting intelligence".to_string())
 }
 
 /// The read-side payload for one meeting's structured, source-linked summary
@@ -604,6 +673,7 @@ pub async fn api_get_summary_draft(
     );
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_read(&ctx)?;
 
     let summary = SummariesRepository::get_by_meeting(pool, &ctx, &meeting_id)
         .await
@@ -648,6 +718,35 @@ pub async fn api_get_summary_draft(
     })
 }
 
+/// Returns a bounded page of active, source-resolvable action items that a
+/// human explicitly approved. `edited`/`draft`/`rejected` items never enter
+/// this trusted read surface, and no work-progress state is inferred.
+///
+/// Identity comes only from `context::current()`. The command accepts no
+/// workspace/user input and logs no meeting or action content.
+///
+/// TS binding: `invoke("api_list_approved_action_items", { limit, offset })
+///   -> ApprovedActionItemsPage`.
+#[tauri::command]
+pub async fn api_list_approved_action_items(
+    state: tauri::State<'_, AppState>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<ApprovedActionItemsPage, String> {
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    require_hitl_read(&ctx)?;
+
+    ActionItemsRepository::list_approved_with_sources(
+        pool,
+        &ctx,
+        limit.unwrap_or(DEFAULT_ACTION_CENTER_PAGE_SIZE),
+        offset.unwrap_or(0),
+    )
+    .await
+    .map_err(summary_draft_err)
+}
+
 /// Human APPROVE of one summary block. The repository re-validates that the
 /// block's `source_chunk_id` still resolves NOW (retranscription may have
 /// removed the cited segment — ADR-0019). `Ok(false)` = illegal transition,
@@ -668,6 +767,7 @@ pub async fn api_approve_summary_block(
     );
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Approved)
         .await
         .map_err(summary_draft_err)
@@ -691,6 +791,7 @@ pub async fn api_reject_summary_block(
     );
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Rejected)
         .await
         .map_err(summary_draft_err)
@@ -718,6 +819,7 @@ pub async fn api_edit_summary_block(
     );
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     SummariesRepository::edit_block(pool, &ctx, &meeting_id, &block_id, &content)
         .await
         .map_err(summary_draft_err)
@@ -742,6 +844,7 @@ pub async fn api_restore_summary_block(
     );
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Draft)
         .await
         .map_err(summary_draft_err)
@@ -762,6 +865,7 @@ pub async fn api_approve_summary(
     log_info!("api_approve_summary called for meeting_id: {}", meeting_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     SummariesRepository::approve_summary(pool, &ctx, &meeting_id)
         .await
         .map_err(summary_draft_err)
@@ -780,6 +884,7 @@ pub async fn api_approve_action_item(
     log_info!("api_approve_action_item called for item_id: {}", item_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Approved)
         .await
         .map_err(summary_draft_err)
@@ -812,6 +917,7 @@ pub async fn api_get_open_action_items(
     log_info!("api_get_open_action_items called (limit {})", limit);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_read(&ctx)?;
     let rows = ActionItemsRepository::list_open(pool, &ctx, limit)
         .await
         .map_err(summary_draft_err)?;
@@ -842,6 +948,7 @@ pub async fn api_reject_action_item(
     log_info!("api_reject_action_item called for item_id: {}", item_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Rejected)
         .await
         .map_err(summary_draft_err)
@@ -859,6 +966,7 @@ pub async fn api_restore_action_item(
     log_info!("api_restore_action_item called for item_id: {}", item_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Draft)
         .await
         .map_err(summary_draft_err)
@@ -945,6 +1053,7 @@ pub async fn api_edit_action_item(
     log_info!("api_edit_action_item called for item_id: {}", item_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    require_hitl_mutation(&ctx)?;
     ActionItemsRepository::edit(
         pool,
         &ctx,
@@ -960,6 +1069,24 @@ pub async fn api_edit_action_item(
 #[cfg(test)]
 mod hitl_command_types_tests {
     use super::*;
+
+    #[test]
+    fn hitl_command_role_gates_are_default_deny_and_separate_read_from_write() {
+        let mut no_roles = AuthContext::local();
+        no_roles.roles.clear();
+        assert!(require_hitl_read(&no_roles).is_err());
+        assert!(require_hitl_mutation(&no_roles).is_err());
+
+        let mut viewer = AuthContext::local();
+        viewer.roles = vec![Role::Viewer];
+        assert!(require_hitl_read(&viewer).is_ok());
+        assert!(require_hitl_mutation(&viewer).is_err());
+
+        let mut member = AuthContext::local();
+        member.roles = vec![Role::Member];
+        assert!(require_hitl_read(&member).is_ok());
+        assert!(require_hitl_mutation(&member).is_ok());
+    }
 
     /// The wire vocabulary for [`FieldPatch`] lowers to the exact repository
     /// `Option<Option<&str>>` intents — the whole reason this enum exists is to
@@ -1000,5 +1127,33 @@ mod hitl_command_types_tests {
             "explicit clear must be Some(None), NOT None"
         );
         assert_eq!(explicit.due.as_repo_patch(), Some(Some("Friday")));
+    }
+
+    #[test]
+    fn legacy_summary_write_accepts_only_bounded_editor_shapes() {
+        assert!(validate_legacy_summary_payload(&serde_json::json!({
+            "markdown": "# Notes",
+            "summary_json": []
+        }))
+        .is_ok());
+        assert!(validate_legacy_summary_payload(&serde_json::json!({
+            "MeetingName": "Meeting",
+            "MeetingNotes": { "sections": [] }
+        }))
+        .is_ok());
+        assert!(validate_legacy_summary_payload(&serde_json::json!({
+            "forged": { "status": "approved" }
+        }))
+        .is_err());
+        assert!(
+            validate_legacy_summary_payload(&serde_json::json!(["not", "an", "object"])).is_err()
+        );
+
+        let oversized = "x".repeat(MAX_LEGACY_SUMMARY_BYTES + 1);
+        assert!(validate_legacy_summary_payload(&serde_json::json!({
+            "markdown": oversized,
+            "summary_json": []
+        }))
+        .is_err());
     }
 }

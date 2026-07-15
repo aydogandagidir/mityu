@@ -14,7 +14,7 @@
  *     heading1/heading2 -> bold, sized
  *     text              -> wrapped body via splitTextToSize
  *     bullet            -> "• …" wrapped body
- *   each line prefixes its "[MM:SS]" sourceTs when the model resolved one.
+ *   each line prefixes its verified source timestamp.
  *   Action Items                                         (bold heading)
  *     • [MM:SS] text — assignee — due                    (one wrapped row per item)
  *   Note: N action item(s) not yet approved — not included.  (footer, when >0)
@@ -32,7 +32,12 @@
  * prerender — it only loads in the Tauri webview when a user clicks Export.
  */
 
-import type { ExportDoc, ExportItem, ExportActionItem } from './exportModel';
+import {
+  buildVerifiedExportProvenance,
+  type ExportDoc,
+  type ExportItem,
+  type ExportActionItem,
+} from './exportModel';
 
 /** Page geometry in points (jsPDF default unit for the 'a4' format). */
 const PAGE = {
@@ -45,7 +50,7 @@ const PAGE = {
 
 const CONTENT_WIDTH = PAGE.width - PAGE.marginX * 2;
 
-/** Prefix an item's text with its `[MM:SS]` when present. */
+/** Prefix an item's text with its verified source timestamp. */
 function itemText(item: ExportItem): string {
   const ts = item.sourceTs ? `${item.sourceTs} ` : '';
   return `${ts}${item.text.trim()}`;
@@ -71,10 +76,23 @@ function actionItemLine(item: ExportActionItem): string {
  * @returns a `Blob` of MIME type `application/pdf`.
  */
 export async function renderExportPdf(doc: ExportDoc): Promise<Blob> {
+  const machineProvenance = buildVerifiedExportProvenance(doc);
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
 
   const { meta, sections, actionItems, excludedActionItemCount } = doc;
+  pdf.setProperties({
+    title: meta.title.trim() || 'Meeting Summary',
+    subject: 'AI-assisted meeting export with human review and source links',
+    author: 'Mityu',
+    creator: 'Mityu',
+    keywords: 'Mityu; AI-generated; human-reviewed; source-linked',
+  });
+  // The namespace form XML-escapes the JSON payload inside the XMP packet.
+  pdf.addMetadata(
+    JSON.stringify(machineProvenance),
+    'https://bluedev.dev/mityu/export-provenance/v1#',
+  );
 
   // Running vertical cursor. A tiny closure toolkit keeps the flow readable and
   // the pagination in one place.

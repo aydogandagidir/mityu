@@ -7,10 +7,11 @@ import { updateService, UpdateInfo } from '@/services/updateService';
 import { Button } from './ui/button';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { APP_VERSION } from '@/lib/appVersion';
 
 
 export function About() {
-    const [currentVersion, setCurrentVersion] = useState<string>('1.0.1');
+    const [currentVersion, setCurrentVersion] = useState<string>(APP_VERSION);
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
     const [isChecking, setIsChecking] = useState(false);
     const [showUpdateDialog, setShowUpdateDialog] = useState(false);
@@ -70,7 +71,7 @@ export function About() {
                 </div>
                 <span className="text-sm text-muted-foreground"> v{currentVersion}</span>
                 <p className="text-medium text-muted-foreground mt-1">
-                    Every meeting, understood — entirely on your machine. No bots, no uploads, no account.
+                    Meetings captured and reviewed — entirely on your machine. No bots, no uploads, no account.
                 </p>
                 <div className="mt-3">
                     <Button
@@ -98,6 +99,11 @@ export function About() {
                         </div>
                     )}
                 </div>
+            </div>
+
+            <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                <span className="font-semibold">v1.0.4 validation and storage notice:</span>{' '}
+                transcription quality varies by language, microphone, overlap, and noise; the target-environment benchmark and human pilot are deferred. Review important text against its source audio. Raw meeting audio remains local on this device until you delete the meeting.
             </div>
 
             {/* Why Mityu - three pillars, aligned with the landing page copy */}
@@ -130,7 +136,7 @@ export function About() {
             <div className="text-center space-y-2">
                 <h3 className="text-medium font-semibold text-foreground">Ready to push your business further?</h3>
                 <p className="text-s text-muted-foreground">
-                    If you're planning to build privacy-first custom AI agents or a fully tailored product for your <span className="font-bold">business</span>, we can help you build it.
+                    If you&apos;re planning to build privacy-first custom AI agents or a fully tailored product for your <span className="font-bold">business</span>, we can help you build it.
                 </p>
                 <button
                     onClick={handleContactClick}
@@ -156,6 +162,20 @@ export function About() {
                     <button onClick={() => openExternalLink('https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx')} className="underline hover:text-foreground">
                         istupakov
                     </button>.
+                    {' '}Built-in summarization models include{' '}
+                    <button onClick={() => openExternalLink('https://huggingface.co/Qwen/Qwen3.5-2B')} className="underline hover:text-foreground">
+                        Qwen 3.5
+                    </button>{' '}
+                    (Apache 2.0) and{' '}
+                    <button onClick={() => openExternalLink('https://ai.google.dev/gemma/terms')} className="underline hover:text-foreground">
+                        Gemma 3
+                    </button>{' '}
+                    (subject to Google&apos;s Gemma Terms and prohibited-use policy). Model notices are included with the app.
+                    {' '}Audio conversion uses a separately bundled{' '}
+                    <button onClick={() => openExternalLink('https://ffmpeg.org/')} className="underline hover:text-foreground">
+                        FFmpeg
+                    </button>{' '}
+                    executable (this build: LGPL v3 or later); license and source details are included with the app.
                 </p>
             </div>
 

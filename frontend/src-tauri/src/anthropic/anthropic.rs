@@ -71,14 +71,23 @@ fn is_chat_model(model_id: &str) -> bool {
 /// # Returns
 /// Vector of available models, or fallback models on error
 #[command]
-pub async fn get_anthropic_models(api_key: Option<String>) -> Result<Vec<AnthropicModel>, String> {
-    // Return fallback if no API key provided
+pub async fn get_anthropic_models(
+    state: tauri::State<'_, crate::state::AppState>,
+    api_key: Option<String>,
+) -> Result<Vec<AnthropicModel>, String> {
     let api_key = match api_key {
         Some(key) if !key.trim().is_empty() => key.trim().to_string(),
-        _ => {
-            log::info!("No Anthropic API key provided, returning fallback models");
-            return Ok(get_fallback_models());
-        }
+        _ => match crate::database::repositories::setting::SettingsRepository::get_api_key(
+            state.db_manager.pool(),
+            &crate::context::current(),
+            "claude",
+        )
+        .await
+        .map_err(|_| "Could not access the stored Anthropic credential".to_string())?
+        {
+            Some(key) => key,
+            None => return Ok(get_fallback_models()),
+        },
     };
 
     // Check cache first
@@ -97,7 +106,10 @@ pub async fn get_anthropic_models(api_key: Option<String>) -> Result<Vec<Anthrop
 
     // Fetch from API
     log::info!("Fetching Anthropic models from API...");
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "Could not create the Anthropic client".to_string())?;
 
     let response = match client
         .get("https://api.anthropic.com/v1/models")
@@ -108,8 +120,8 @@ pub async fn get_anthropic_models(api_key: Option<String>) -> Result<Vec<Anthrop
         .await
     {
         Ok(resp) => resp,
-        Err(e) => {
-            log::warn!("Failed to fetch Anthropic models: {}. Using fallback.", e);
+        Err(_) => {
+            log::warn!("Failed to fetch Anthropic models; using fallback");
             return Ok(get_fallback_models());
         }
     };
@@ -125,8 +137,8 @@ pub async fn get_anthropic_models(api_key: Option<String>) -> Result<Vec<Anthrop
 
     let api_response: AnthropicApiResponse = match response.json().await {
         Ok(data) => data,
-        Err(e) => {
-            log::warn!("Failed to parse Anthropic response: {}. Using fallback.", e);
+        Err(_) => {
+            log::warn!("Failed to parse Anthropic response; using fallback");
             return Ok(get_fallback_models());
         }
     };

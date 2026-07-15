@@ -82,18 +82,19 @@ export default function Home() {
           return;
         }
 
-        // 1. Clean up old meetings (7+ days)
+        // 1. Immediately purge legacy plaintext copies that older releases
+        // retained after the same meeting had already been saved to SQLite.
+        try {
+          await indexedDBService.purgeSavedMeetings();
+        } catch (error) {
+          console.warn('⚠️ Failed to purge saved recovery copies:', error);
+        }
+
+        // 2. Apply the seven-day retention limit to remaining crash-recovery data.
         try {
           await indexedDBService.deleteOldMeetings(7);
         } catch (error) {
-          console.warn('⚠️ Failed to clean up old meetings:', error);
-        }
-
-        // 2. Clean up saved meetings (24+ hours after save)
-        try {
-          await indexedDBService.deleteSavedMeetings(24);
-        } catch (error) {
-          console.warn('⚠️ Failed to clean up saved meetings:', error);
+          console.warn('⚠️ Failed to clean up old recovery data:', error);
         }
 
         // 3. Always check for recoverable meetings on startup

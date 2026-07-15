@@ -1,6 +1,6 @@
 # Mityu Terms of Service
 
-*Last updated: 2026-07-07*
+*Last updated: 2026-07-14*
 
 > **⚠ DRAFT — NOT LEGAL ADVICE, NOT YET REVIEWED BY COUNSEL.** This document was authored by an AI coding assistant to close a gap identified in a commercial-launch-readiness audit (`docs/GA_READINESS.md`, Tier 0, item 4): Mityu had no Terms of Service at all. It follows common structure for BYOK desktop software and tries to reflect this codebase's actual behavior (local-first processing, recording consent flow, HITL review, redaction), but it has **not been reviewed by a lawyer** and must not be published or relied on as-is — especially given KVKK (Turkey) and potential GDPR (EU) exposure from recording third parties' voices. Replace this notice only after real legal review.
 
@@ -26,9 +26,11 @@ Transcripts, summaries, and action items produced by Mityu — whether from loca
 
 If you configure a third-party LLM provider (OpenAI, Anthropic, Groq, OpenRouter, or an OpenAI-compatible endpoint), you are contracting directly with that provider under its own terms of service and privacy policy, using your own API key. Mityu sends the minimum content needed for the requested operation directly from your device to the provider you selected; bluedev is not a party to that exchange and is not responsible for the provider's handling, pricing, availability, or output. Using a local model (Ollama, built-in on-device summarization) avoids sending content to any third party.
 
+Built-in model files are downloaded separately at your request and remain subject to their own terms. Qwen 3.5 is licensed under Apache 2.0. Gemma 3 is subject to the [Gemma Terms of Use](https://ai.google.dev/gemma/terms), including the incorporated [Gemma Prohibited Use Policy](https://ai.google.dev/gemma/prohibited_use_policy); you must not use or redistribute Gemma contrary to those restrictions. Whisper and Parakeet notices are included in `MODEL-NOTICES.txt` with the distributed App. These model terms apply independently of Mityu's MIT-licensed source code.
+
 ## 6. Your data, your control
 
-You own your recordings, transcripts, summaries, and action items. They are stored locally on your device, encrypted at rest. You may export, redact, or delete them at any time through the App. bluedev does not have access to your meeting content unless you explicitly export or share it yourself. See the [Privacy Policy](PRIVACY_POLICY.md) for details on optional, off-by-default analytics.
+You own your recordings, transcripts, summaries, and action items. They are stored locally on your device. In v1.0.4 the raw recording is retained in Mityu-managed local storage until you delete the meeting; automatic deletion immediately after transcription is not implemented. The SQLite database uses SQLCipher when its operating-system credential-store key is available, with the limited fresh/plaintext local-first fallback described in the [Privacy Policy](PRIVACY_POLICY.md); recording and export files rely on operating-system and filesystem protection rather than application-level encryption. You may export, redact, or request deletion of Mityu-managed copies through the App. Application-controlled deletion does not guarantee forensic erasure from SSD wear-leveling, copy-on-write storage, snapshots, backups, exports, or other external copies. bluedev does not have access to your meeting content unless you explicitly send it to a provider, export it, or share it yourself. See the Privacy Policy for details on optional, off-by-default analytics.
 
 ## 7. Acceptable use
 

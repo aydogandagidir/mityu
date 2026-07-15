@@ -68,7 +68,10 @@ impl ModelMetadataCache {
         model_name: &str,
         endpoint: Option<&str>,
     ) -> Result<ModelMetadata, String> {
-        let cache_key = format!("{}::{}", model_name, endpoint.unwrap_or("default"));
+        let model_name = super::ollama::validate_ollama_model_name(model_name)?;
+        let endpoint =
+            crate::summary::validate_llm_endpoint(endpoint.unwrap_or("http://localhost:11434"))?;
+        let cache_key = format!("{}::{}", model_name, endpoint);
 
         // Check cache first
         {
@@ -77,8 +80,7 @@ impl ModelMetadataCache {
                 // Check if entry is still valid (within TTL)
                 if entry.fetched_at.elapsed() < self.ttl {
                     tracing::debug!(
-                        "Cache hit for model {}: context_size={}",
-                        model_name,
+                        "Ollama metadata cache hit; context_size={}",
                         entry.metadata.context_size
                     );
                     return Ok(entry.metadata.clone());
@@ -87,8 +89,8 @@ impl ModelMetadataCache {
         }
 
         // Cache miss or expired - fetch from API
-        tracing::info!("Fetching metadata for model: {}", model_name);
-        let metadata = fetch_model_info(model_name, endpoint).await?;
+        tracing::info!("Fetching Ollama model metadata");
+        let metadata = fetch_model_info(&model_name, &endpoint).await?;
 
         // Store in cache
         {
@@ -137,16 +139,17 @@ const ULTIMATE_FALLBACK: usize = 4000;
 ///
 /// # Returns
 /// ModelMetadata on success, error string on failure
-async fn fetch_model_info(
-    model_name: &str,
-    endpoint: Option<&str>,
-) -> Result<ModelMetadata, String> {
-    let client = Client::new();
-    let base_url = endpoint.unwrap_or("http://localhost:11434");
+async fn fetch_model_info(model_name: &str, endpoint: &str) -> Result<ModelMetadata, String> {
+    let model_name = super::ollama::validate_ollama_model_name(model_name)?;
+    let base_url = crate::summary::validate_llm_endpoint(endpoint)?;
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "Failed to initialize the Ollama HTTP client".to_string())?;
     let url = format!("{}/api/show", base_url);
 
     let payload = serde_json::json!({
-        "name": model_name,
+        "name": &model_name,
         "verbose": true
     });
 
@@ -158,29 +161,23 @@ async fn fetch_model_info(
         .await
         .map_err(|e| {
             if e.is_timeout() {
-                format!(
-                    "Request timed out while fetching metadata for {}",
-                    model_name
-                )
+                "Ollama metadata request timed out".to_string()
             } else if e.is_connect() {
-                format!(
-                    "Cannot connect to {}. Ollama server may not be running.",
-                    base_url
-                )
+                "Could not connect to the configured Ollama server".to_string()
             } else {
-                format!("Network error: {}", e)
+                "Ollama metadata request failed".to_string()
             }
         })?;
 
     if !response.status().is_success() {
         // Try fallback based on model name
-        return Ok(get_fallback_metadata(model_name));
+        return Ok(get_fallback_metadata(&model_name));
     }
 
     let show_response: OllamaShowResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse API response: {}", e))?;
+        .map_err(|_| "Failed to parse the Ollama metadata response".to_string())?;
 
     // Try to get context size from model_info (verbose mode) first
     let mut context_size =
@@ -196,7 +193,7 @@ async fn fetch_model_info(
         let family = if !show_response.details.family.is_empty() {
             &show_response.details.family
         } else {
-            model_name
+            model_name.as_str()
         };
 
         // Check if this model family has a known context size
@@ -204,17 +201,13 @@ async fn fetch_model_info(
             .iter()
             .find(|(fam, _)| family.to_lowercase().contains(fam))
         {
-            tracing::info!(
-                "No num_ctx in modelfile for {}, using family-based default: {} tokens",
-                model_name,
-                size
-            );
+            tracing::info!("Using family-based Ollama context default: {} tokens", size);
             context_size = *size;
         }
     }
 
     Ok(ModelMetadata {
-        name: model_name.to_string(),
+        name: model_name,
         context_size,
         parameter_count: show_response.details.parameter_size,
         family: show_response.details.family,
@@ -304,8 +297,7 @@ fn get_fallback_metadata(model_name: &str) -> ModelMetadata {
         .to_string();
 
     tracing::warn!(
-        "Using fallback metadata for {}: context_size={}",
-        model_name,
+        "Using fallback Ollama metadata: context_size={}",
         context_size
     );
 

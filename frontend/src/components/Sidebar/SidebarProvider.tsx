@@ -1,11 +1,15 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Analytics from '@/lib/analytics';
 import { invoke } from '@tauri-apps/api/core';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
-import { searchService, type TranscriptSearchResult } from '@/services/search';
+import {
+  isEvidenceQuerySearchable,
+  searchService,
+  type TranscriptSearchResult,
+} from '@/services/search';
 
 
 interface SidebarItem {
@@ -35,9 +39,10 @@ interface SidebarContextType {
   isMeetingActive: boolean;
   setIsMeetingActive: (active: boolean) => void;
   handleRecordingToggle: () => void;
-  searchTranscripts: (query: string) => Promise<void>;
+  searchTranscripts: (query: string) => void;
   searchResults: TranscriptSearchResult[];
   isSearching: boolean;
+  searchError: string | null;
   setServerAddress: (address: string) => void;
   serverAddress: string;
   transcriptServerAddress: string;
@@ -67,8 +72,11 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [meetings, setMeetings] = useState<CurrentMeeting[]>([]);
   const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>([]);
   const [isMeetingActive, setIsMeetingActive] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<TranscriptSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRequestIdRef = useRef(0);
   const [serverAddress, setServerAddress] = useState('');
   const [transcriptServerAddress, setTranscriptServerAddress] = useState('');
   const [activeSummaryPolls, setActiveSummaryPolls] = useState<Map<string, NodeJS.Timeout>>(new Map());
@@ -93,7 +101,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error('Error fetching meetings:', error);
         setMeetings([]);
-        Analytics.trackBackendConnection(false, error instanceof Error ? error.message : 'Unknown error');
+        Analytics.trackBackendConnection(false);
       }
     }
   }, [serverAddress]);
@@ -160,26 +168,67 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     // The actual recording start/stop is handled in the Home component
   };
 
-  // Function to search through meeting transcripts
-  const searchTranscripts = async (query: string) => {
-    if (!query.trim()) {
+  // Debounce local evidence search while invalidating an in-flight request as
+  // soon as the input changes. Tauri invokes are not cancellable, so the
+  // monotonically increasing request id prevents a late response from replacing
+  // results for a newer query.
+  const searchTranscripts = useCallback((query: string) => {
+    const requestId = ++searchRequestIdRef.current;
+
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+
+    const normalizedQuery = query.trim();
+    setSearchError(null);
+
+    if (!normalizedQuery || !isEvidenceQuerySearchable(normalizedQuery)) {
       setSearchResults([]);
+      setIsSearching(false);
       return;
     }
 
-    try {
-      setIsSearching(true);
+    // Do not leave results from a previous query visible during the debounce.
+    setSearchResults([]);
+    setIsSearching(true);
 
+    searchTimerRef.current = setTimeout(async () => {
+      searchTimerRef.current = null;
 
-      const results = await searchService.searchMeetings(query);
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Error searching transcripts:', error);
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  };
+      try {
+        const results = await searchService.searchEvidence(normalizedQuery);
+        if (requestId === searchRequestIdRef.current) {
+          // The backend relevance order is authoritative.
+          setSearchResults(results);
+        }
+      } catch {
+        if (requestId === searchRequestIdRef.current) {
+          // Never include the raw query or meeting content in logs.
+          console.error('Local meeting search failed');
+          setSearchResults([]);
+          setSearchError('Search could not be completed. Please try again.');
+        }
+      } finally {
+        if (requestId === searchRequestIdRef.current) {
+          setIsSearching(false);
+        }
+      }
+    }, 275);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      // Invalidate any invoke already in flight.
+      // Increment instead of assigning MAX_SAFE_INTEGER: React Strict Mode can
+      // run effect cleanup/setup twice in development, and increments above the
+      // safe-integer boundary would stop being unique.
+      searchRequestIdRef.current += 1;
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
   // Summary polling management
   const startSummaryPolling = React.useCallback((
@@ -301,6 +350,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       searchTranscripts,
       searchResults,
       isSearching,
+      searchError,
       setServerAddress,
       serverAddress,
       transcriptServerAddress,

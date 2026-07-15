@@ -232,7 +232,7 @@ pub fn log_detection_summary(
 
 /// Log buffer health statistics during recording
 pub fn log_buffer_health(
-    device_name: &str,
+    _device_name: &str,
     device_kind: InputDeviceKind,
     current_buffer_size: usize,
     max_buffer_size: usize,
@@ -242,8 +242,8 @@ pub fn log_buffer_health(
 
     if buffer_utilization > 80.0 {
         warn!(
-            "⚠️ HIGH BUFFER UTILIZATION: '{}' ({:?})",
-            device_name, device_kind
+            "High recording buffer utilization (device type: {:?})",
+            device_kind
         );
         warn!(
             "   Current: {} / {} samples ({:.1}%)",
@@ -256,7 +256,7 @@ pub fn log_buffer_health(
             warn!("   Consider moving closer to reduce wireless interference");
         }
     } else if current_buffer_size == 0 && dropped_frames > 0 {
-        warn!("⚠️ BUFFER UNDERRUN: '{}' ({:?})", device_name, device_kind);
+        warn!("Recording buffer underrun (device type: {:?})", device_kind);
         warn!("   Dropped frames: {}", dropped_frames);
     }
 }

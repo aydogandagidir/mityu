@@ -1,9 +1,3 @@
-use ffmpeg_sidecar::{
-    command::ffmpeg_is_installed,
-    download::{check_latest_version, download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg},
-    paths::sidecar_dir,
-    version::ffmpeg_version,
-};
 use log::{debug, error};
 use once_cell::sync::Lazy;
 use std::path::PathBuf;
@@ -34,7 +28,35 @@ fn find_ffmpeg_path_internal() -> Option<PathBuf> {
                 debug!("Found bundled ffmpeg: {:?}", bundled);
                 return Some(bundled);
             }
+
+            #[cfg(target_os = "macos")]
+            {
+                let bundled = exe_folder.join("../Resources").join(EXECUTABLE_NAME);
+                if bundled.exists() && bundled.is_file() {
+                    debug!("Found bundled ffmpeg resource: {:?}", bundled);
+                    return Some(bundled);
+                }
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                let bundled = exe_folder.join("lib").join(EXECUTABLE_NAME);
+                if bundled.exists() && bundled.is_file() {
+                    debug!("Found bundled ffmpeg library: {:?}", bundled);
+                    return Some(bundled);
+                }
+            }
         }
+    }
+
+    // Release builds must use the binary whose archive digest and build flags
+    // were verified at build time. Falling back to PATH or the working directory
+    // would let an unrelated GPL/nonfree binary silently replace it.
+    if !cfg!(debug_assertions) {
+        error!(
+            "bundled ffmpeg executable not found; reinstall Mityu to restore the verified offline binary"
+        );
+        return None;
     }
 
     // ============================================================
@@ -80,155 +102,10 @@ fn find_ffmpeg_path_internal() -> Option<PathBuf> {
         debug!("ffmpeg not found in current working directory");
     }
 
-    // Check in the same folder as the executable
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_folder) = exe_path.parent() {
-            debug!("Executable folder: {:?}", exe_folder);
-
-            // Platform-specific checks
-            #[cfg(target_os = "macos")]
-            {
-                let resources_folder = exe_folder.join("../Resources");
-                debug!("Resources folder: {:?}", resources_folder);
-                let ffmpeg_in_resources = resources_folder.join(EXECUTABLE_NAME);
-                if ffmpeg_in_resources.exists() {
-                    debug!(
-                        "Found ffmpeg in Resources folder: {:?}",
-                        ffmpeg_in_resources
-                    );
-                    return Some(ffmpeg_in_resources);
-                }
-                debug!("ffmpeg not found in Resources folder");
-            }
-
-            #[cfg(target_os = "linux")]
-            {
-                let lib_folder = exe_folder.join("lib");
-                debug!("Lib folder: {:?}", lib_folder);
-                let ffmpeg_in_lib = lib_folder.join(EXECUTABLE_NAME);
-                if ffmpeg_in_lib.exists() {
-                    debug!("Found ffmpeg in lib folder: {:?}", ffmpeg_in_lib);
-                    return Some(ffmpeg_in_lib);
-                }
-                debug!("ffmpeg not found in lib folder");
-            }
-        }
-    }
-
-    debug!("ffmpeg not found. installing...");
-
-    if let Err(error) = handle_ffmpeg_installation() {
-        error!("failed to install ffmpeg: {}", error);
-        return None;
-    }
-
-    if let Ok(path) = which(EXECUTABLE_NAME) {
-        debug!("found ffmpeg after installation: {:?}", path);
-        return Some(path);
-    }
-
-    let installation_dir = sidecar_dir().map_err(|e| e.to_string()).unwrap();
-    let ffmpeg_in_installation = installation_dir.join(EXECUTABLE_NAME);
-    if ffmpeg_in_installation.is_file() {
-        debug!("found ffmpeg in directory: {:?}", ffmpeg_in_installation);
-        return Some(ffmpeg_in_installation);
-    }
-
-    // Windows often has nested structure like ffmpeg-6.0-full_build/bin/ffmpeg.exe
-    #[cfg(windows)]
-    {
-        debug!("Searching for nested ffmpeg in {:?}", installation_dir);
-        if let Ok(entries) = std::fs::read_dir(&installation_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    // Check bin/ffmpeg.exe
-                    let bin_ffmpeg = path.join("bin").join(EXECUTABLE_NAME);
-                    if bin_ffmpeg.exists() {
-                        debug!("found ffmpeg in nested bin: {:?}", bin_ffmpeg);
-                        return Some(bin_ffmpeg);
-                    }
-                    // Check root of subdir
-                    let root_ffmpeg = path.join(EXECUTABLE_NAME);
-                    if root_ffmpeg.exists() {
-                        debug!("found ffmpeg in nested root: {:?}", root_ffmpeg);
-                        return Some(root_ffmpeg);
-                    }
-                }
-            }
-        }
-    }
-
-    error!("ffmpeg not found even after installation");
-    None // Return None if ffmpeg is not found
-}
-
-fn handle_ffmpeg_installation() -> Result<(), anyhow::Error> {
-    if ffmpeg_is_installed() {
-        debug!("ffmpeg is already installed");
-        return Ok(());
-    }
-
-    debug!("ffmpeg not found. installing...");
-    match check_latest_version() {
-        Ok(version) => debug!("latest version: {}", version),
-        Err(e) => debug!("skipping version check due to error: {e}"),
-    }
-
-    let download_url = ffmpeg_download_url()?;
-    let destination = get_ffmpeg_install_dir()?;
-
-    debug!("downloading from: {:?}", download_url);
-    let archive_path = download_ffmpeg_package(download_url, &destination)?;
-    debug!("downloaded package: {:?}", archive_path);
-
-    debug!("extracting...");
-    unpack_ffmpeg(&archive_path, &destination)?;
-
-    let version = ffmpeg_version()?;
-
-    debug!("done! installed ffmpeg version {}", version);
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn get_ffmpeg_install_dir() -> Result<PathBuf, anyhow::Error> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("couldn't find home directory"))?;
-
-    let local_bin = home.join(".local").join("bin");
-
-    // Create directory if it doesn't exist
-    if !local_bin.exists() {
-        debug!("creating .local/bin directory");
-        std::fs::create_dir_all(&local_bin)?;
-
-        // Check both .bashrc and .zshrc
-        let shell_configs = vec![
-            home.join(".bashrc"),
-            home.join(".bash_profile"), // macOS often uses .bash_profile instead of .bashrc
-            home.join(".zshrc"),
-        ];
-
-        for config in shell_configs {
-            if config.exists() {
-                let content = std::fs::read_to_string(&config)?;
-                if !content.contains(".local/bin") {
-                    debug!("adding .local/bin to PATH in {:?}", config);
-                    std::fs::write(
-                        config,
-                        format!("{}\nexport PATH=\"$HOME/.local/bin:$PATH\"\n", content),
-                    )?;
-                }
-            }
-        }
-    }
-
-    Ok(local_bin)
-}
-
-// For other platforms, keep your existing installation directory logic
-#[cfg(not(target_os = "macos"))]
-fn get_ffmpeg_install_dir() -> Result<PathBuf, anyhow::Error> {
-    // Your existing logic for other platforms
-    sidecar_dir().map_err(|e| anyhow::anyhow!(e))
+    // Production bundles FFmpeg at build time. Never download an executable at
+    // runtime: that would break offline guarantees and bypass the pinned archive
+    // digest and license-policy checks in build/ffmpeg.rs. PATH/local fallbacks
+    // above are limited to debug builds.
+    error!("ffmpeg executable not found; reinstall Mityu to restore the bundled offline binary");
+    None
 }

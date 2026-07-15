@@ -244,12 +244,9 @@ export function useRecordingStop(
         const folderPath = sessionStorage.getItem('last_recording_folder_path');
         const savedMeetingName = sessionStorage.getItem('last_recording_meeting_name');
 
-        console.log('💾 Saving COMPLETE transcripts to database...', {
+        console.log('Saving complete transcript set to the local database', {
           transcript_count: freshTranscripts.length,
-          meeting_name: savedMeetingName || meetingTitle,
-          folder_path: folderPath,
-          sample_text: freshTranscripts.length > 0 ? freshTranscripts[0].text.substring(0, 50) + '...' : 'none',
-          last_transcript: freshTranscripts.length > 0 ? freshTranscripts[freshTranscripts.length - 1].text.substring(0, 30) + '...' : 'none',
+          recording_folder_present: Boolean(folderPath),
         });
 
         try {
@@ -289,9 +286,8 @@ export function useRecordingStop(
             }
           }
 
-          console.log('✅ Successfully saved COMPLETE meeting with ID:', meetingId);
+          console.log('Successfully saved the complete meeting');
           console.log('   Transcripts:', freshTranscripts.length);
-          console.log('   folder_path:', folderPath);
 
           // Mark meeting as saved in IndexedDB (for recovery system)
           await markMeetingAsSaved();
@@ -312,7 +308,7 @@ export function useRecordingStop(
                 id: meetingId,
                 title: meetingData.title
               });
-              console.log('✅ Current meeting set:', meetingData.title);
+              console.log('Current meeting state updated');
             }
           } catch (error) {
             console.warn('Could not fetch meeting details, using ID only:', error);
@@ -366,7 +362,7 @@ export function useRecordingStop(
             const meetingsToday = await Analytics.getMeetingsCountToday();
 
             // Track meeting completed
-            await Analytics.trackMeetingCompleted(meetingId, {
+            await Analytics.trackMeetingCompleted({
               duration_seconds: durationSeconds,
               transcript_segments: freshTranscripts.length,
               transcript_word_count: transcriptWordCount,

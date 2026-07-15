@@ -33,7 +33,7 @@ Mityu records meetings and on-site conversations, transcribes them <b>on your de
 
 Mityu is a **Tauri 2 desktop app** (Rust core + Next.js UI) that captures your meetings, transcribes them locally in real time, and generates summaries — without sending audio or transcripts to anyone else's servers. The capture → transcript → summary → store path runs entirely on your machine and keeps working with **no network and no server**. An optional sync/collaboration server can be added later for teams, but it is strictly additive: turn it off and the desktop app keeps working on your local data.
 
-This makes Mityu a fit for professionals and enterprises who must keep control of sensitive conversations — legal, healthcare, defense, finance, and field work.
+Mityu is designed for professionals and enterprises who must keep control of sensitive conversations. v1.0.4 has not yet completed its human-reviewed target-environment benchmark or pilot, so noisy-field, jargon, diarization, and accuracy claims are intentionally withheld.
 
 ## Why Mityu?
 
@@ -52,7 +52,7 @@ This makes Mityu a fit for professionals and enterprises who must keep control o
 - **Professional audio mixing:** capture microphone and system audio simultaneously with ducking and clipping prevention.
 - **GPU acceleration:** Apple Silicon (Metal) + CoreML on macOS; NVIDIA (CUDA) and AMD/Intel (Vulkan) on Windows/Linux — enabled at build time, no configuration needed.
 - **Multi-platform:** macOS and Windows (Linux builds from source).
-- **Local-first storage:** recordings and transcripts stay on your machine in a local SQLite store.
+- **Local-first storage:** recordings and transcripts stay on your machine. In v1.0.4, raw meeting audio remains local until you delete the meeting.
 
 <p align="center">
     <img src="docs/summary.png" width="640" style="border-radius: 10px;" alt="Source-linked AI summary" />

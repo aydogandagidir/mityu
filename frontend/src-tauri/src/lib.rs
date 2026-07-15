@@ -60,6 +60,7 @@ pub mod onboarding;
 pub mod openai;
 pub mod openrouter;
 pub mod parakeet_engine;
+pub mod recording_consent;
 /// Opt-in PII/keyword redaction (BACKLOG C6). OFF by default; when a workspace
 /// enables it, transcript text is scrubbed before DB persistence and before it
 /// reaches a summary LLM provider (docs/SECURITY_PRIVACY.md "Retention/redaction").
@@ -101,20 +102,24 @@ struct TranscriptionStatus {
     last_activity_ms: u64,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 async fn start_recording<R: Runtime>(
     app: AppHandle<R>,
     mic_device_name: Option<String>,
     system_device_name: Option<String>,
     meeting_name: Option<String>,
+    consent_ticket: String,
 ) -> Result<(), String> {
-    log_info!("🔥 CALLED start_recording with meeting: {:?}", meeting_name);
     log_info!(
-        "📋 Backend received parameters - mic: {:?}, system: {:?}, meeting: {:?}",
-        mic_device_name,
-        system_device_name,
-        meeting_name
+        "start_recording called (microphone_selected={}, system_audio_selected={}, meeting_title_present={})",
+        mic_device_name.is_some(),
+        system_device_name.is_some(),
+        meeting_name.is_some()
     );
+
+    // Native consent authorization is single-use and fail-closed. It must be
+    // consumed before any recording implementation can be entered.
+    recording_consent::consume_recording_start_authorization(&app, &consent_ticket)?;
 
     // Licensing gate (ADR-0023 §5): TrialExpired/Revoked block starting a NEW
     // recording; Trial/Licensed pass. Existing data is never gated.
@@ -189,7 +194,7 @@ async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> R
             // Create the save directory if it doesn't exist
             if let Some(parent) = std::path::Path::new(&args.save_path).parent() {
                 if !parent.exists() {
-                    log_info!("Creating directory: {:?}", parent);
+                    log_info!("Creating the managed recording directory");
                     if let Err(e) = std::fs::create_dir_all(parent) {
                         let err_msg = format!("Failed to create save directory: {}", e);
                         log_error!("{}", err_msg);
@@ -236,34 +241,6 @@ fn get_transcription_status() -> TranscriptionStatus {
         is_processing: false,
         last_activity_ms: 0,
     }
-}
-
-#[tauri::command]
-fn read_audio_file(file_path: String) -> Result<Vec<u8>, String> {
-    match std::fs::read(&file_path) {
-        Ok(data) => Ok(data),
-        Err(e) => Err(format!("Failed to read audio file: {}", e)),
-    }
-}
-
-#[tauri::command]
-async fn save_transcript(file_path: String, content: String) -> Result<(), String> {
-    log_info!("Saving transcript to: {}", file_path);
-
-    // Ensure parent directory exists
-    if let Some(parent) = std::path::Path::new(&file_path).parent() {
-        if !parent.exists() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create directory: {}", e))?;
-        }
-    }
-
-    // Write content to file
-    std::fs::write(&file_path, content)
-        .map_err(|e| format!("Failed to write transcript: {}", e))?;
-
-    log_info!("Transcript saved successfully");
-    Ok(())
 }
 
 // Audio level monitoring commands
@@ -313,50 +290,75 @@ async fn trigger_microphone_permission() -> Result<bool, String> {
         .map_err(|e| format!("Failed to trigger microphone permission: {}", e))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 async fn start_recording_with_devices<R: Runtime>(
     app: AppHandle<R>,
     mic_device_name: Option<String>,
     system_device_name: Option<String>,
+    consent_ticket: String,
 ) -> Result<(), String> {
-    start_recording_with_devices_and_meeting(app, mic_device_name, system_device_name, None).await
+    recording_consent::consume_recording_start_authorization(&app, &consent_ticket)?;
+    licensing::commands::ensure_capture_allowed(&app).await?;
+
+    start_recording_with_devices_and_meeting_authorized(
+        app,
+        mic_device_name,
+        system_device_name,
+        None,
+    )
+    .await
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 async fn start_recording_with_devices_and_meeting<R: Runtime>(
     app: AppHandle<R>,
     mic_device_name: Option<String>,
     system_device_name: Option<String>,
     meeting_name: Option<String>,
+    consent_ticket: String,
 ) -> Result<(), String> {
-    log_info!("🚀 CALLED start_recording_with_devices_and_meeting - Mic: {:?}, System: {:?}, Meeting: {:?}",
-             mic_device_name, system_device_name, meeting_name);
+    log_info!(
+        "start_recording_with_devices_and_meeting called (microphone_selected={}, system_audio_selected={}, meeting_title_present={})",
+        mic_device_name.is_some(),
+        system_device_name.is_some(),
+        meeting_name.is_some()
+    );
+
+    recording_consent::consume_recording_start_authorization(&app, &consent_ticket)?;
 
     // Licensing gate (ADR-0023 §5): blocks starting a NEW recording when the
-    // trial expired or the license was revoked. Also covers the
-    // `start_recording_with_devices` command, which delegates here.
+    // trial expired or the license was revoked.
     licensing::commands::ensure_capture_allowed(&app).await?;
 
+    start_recording_with_devices_and_meeting_authorized(
+        app,
+        mic_device_name,
+        system_device_name,
+        meeting_name,
+    )
+    .await
+}
+
+/// Shared implementation reached only after the Tauri entry point consumed a
+/// native recording-consent ticket and passed the license gate.
+async fn start_recording_with_devices_and_meeting_authorized<R: Runtime>(
+    app: AppHandle<R>,
+    mic_device_name: Option<String>,
+    system_device_name: Option<String>,
+    meeting_name: Option<String>,
+) -> Result<(), String> {
     // Clone meeting_name for notification use later
     let meeting_name_for_notification = meeting_name.clone();
 
     // Call the recording module functions that support meeting names
     let recording_result = match (mic_device_name.clone(), system_device_name.clone()) {
         (None, None) => {
-            log_info!(
-                "No devices specified, starting with defaults and meeting: {:?}",
-                meeting_name
-            );
+            log_info!("Starting recording with default devices");
             audio::recording_commands::start_recording_with_meeting_name(app.clone(), meeting_name)
                 .await
         }
         _ => {
-            log_info!(
-                "Starting with specified devices: mic={:?}, system={:?}, meeting={:?}",
-                mic_device_name,
-                system_device_name,
-                meeting_name
-            );
+            log_info!("Starting recording with explicitly selected devices");
             audio::recording_commands::start_recording_with_devices_and_meeting(
                 app.clone(),
                 mic_device_name,
@@ -409,18 +411,12 @@ pub fn get_language_preference_internal() -> Option<String> {
 }
 
 pub fn run() {
-    log::set_max_level(log::LevelFilter::Info);
-
     let mut builder = tauri::Builder::default();
 
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            log_info!(
-                "Second app instance requested with args: {:?}, cwd: {:?}",
-                args,
-                cwd
-            );
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            log_info!("Second app instance requested");
 
             tray::focus_main_window(app);
         }));
@@ -437,6 +433,7 @@ pub fn run() {
             None::<notifications::manager::NotificationManager<tauri::Wry>>,
         )) as NotificationManagerState<tauri::Wry>)
         .manage(audio::init_system_audio_state())
+        .manage(recording_consent::RecordingConsentTicketState::default())
         .manage(summary::summary_engine::ModelManagerState(Arc::new(
             tokio::sync::Mutex::new(None),
         )))
@@ -567,8 +564,6 @@ pub fn run() {
             stop_recording,
             is_recording,
             get_transcription_status,
-            read_audio_file,
-            save_transcript,
             analytics::commands::init_analytics,
             analytics::commands::disable_analytics,
             analytics::commands::track_event,
@@ -635,6 +630,7 @@ pub fn run() {
             whisper_engine::parallel_commands::test_parallel_processing_setup,
             get_audio_devices,
             trigger_microphone_permission,
+            recording_consent::authorize_recording_start,
             start_recording_with_devices,
             start_recording_with_devices_and_meeting,
             start_audio_level_monitoring,
@@ -655,10 +651,8 @@ pub fn run() {
             audio::recording_commands::attempt_device_reconnect,
             // Playback device detection (Bluetooth warning)
             audio::recording_commands::get_active_audio_output,
-            // Audio recovery commands (for transcript recovery feature)
-            audio::incremental_saver::recover_audio_from_checkpoints,
-            audio::incremental_saver::cleanup_checkpoints,
-            audio::incremental_saver::has_audio_checkpoints,
+            // Native audio checkpoint recovery remains disabled in v1.0.4.
+            // The legacy commands accepted renderer-controlled filesystem paths.
             console_utils::show_console,
             console_utils::hide_console,
             console_utils::toggle_console,
@@ -670,15 +664,17 @@ pub fn run() {
             anthropic::anthropic::get_anthropic_models,
             groq::groq::get_groq_models,
             api::api_get_meetings,
+            context::api_get_current_workspace_id,
+            api::api_search_evidence,
             api::api_search_transcripts,
             api::api_get_model_config,
             api::api_save_model_config,
-            api::api_get_api_key,
+            api::api_has_api_key,
             // api::api_get_auto_generate_setting,
             // api::api_save_auto_generate_setting,
             api::api_get_transcript_config,
             api::api_save_transcript_config,
-            api::api_get_transcript_api_key,
+            api::api_has_transcript_api_key,
             api::api_delete_meeting,
             api::api_get_meeting,
             api::api_get_meeting_metadata,
@@ -710,6 +706,7 @@ pub fn run() {
             summary::commands::api_cancel_summary,
             // C1.5 HITL commands (source-linked draft review/approval; ADR-0019)
             summary::commands::api_get_summary_draft,
+            summary::commands::api_list_approved_action_items,
             summary::commands::api_approve_summary_block,
             summary::commands::api_reject_summary_block,
             summary::commands::api_edit_summary_block,
@@ -761,7 +758,9 @@ pub fn run() {
             notifications::commands::test_notification_with_auto_consent,
             notifications::commands::get_notification_stats,
             // System audio capture commands
-            audio::system_audio_commands::start_system_audio_capture_command,
+            // The unused raw system-audio capture start command is deliberately
+            // not exposed to renderer IPC. Supported recording starts flow only
+            // through the consent-ticket-protected commands above.
             audio::system_audio_commands::list_system_audio_devices_command,
             audio::system_audio_commands::check_system_audio_permissions_command,
             audio::system_audio_commands::start_system_audio_monitoring,
@@ -773,12 +772,9 @@ pub fn run() {
             audio::permissions::trigger_system_audio_permission_command,
             // Database import commands
             database::commands::check_first_launch,
-            database::commands::select_legacy_database_path,
-            database::commands::detect_legacy_database,
-            database::commands::check_default_legacy_database,
-            database::commands::check_homebrew_database,
-            database::commands::import_and_initialize_database,
             database::commands::initialize_fresh_database,
+            // Legacy database import is disabled in v1.0.4. The old IPC
+            // contract accepted renderer-controlled filesystem paths.
             // Database and Models path commands
             database::commands::get_database_directory,
             database::commands::open_database_folder,
@@ -793,16 +789,9 @@ pub fn run() {
             // System settings commands
             #[cfg(target_os = "macos")]
             utils::open_system_settings,
-            // Retranscription commands
-            audio::retranscription::start_retranscription_command,
-            audio::retranscription::cancel_retranscription_command,
-            audio::retranscription::is_retranscription_in_progress_command,
-            // Import audio commands
-            audio::import::select_and_validate_audio_command,
-            audio::import::validate_audio_file_command,
-            audio::import::start_import_audio_command,
-            audio::import::cancel_import_command,
-            audio::import::is_import_in_progress_command,
+            // Import/retranscription commands are intentionally not exposed in
+            // v1.0.4. Their UI flag is forced off until every filesystem path is
+            // resolved from tenant-scoped Rust state rather than renderer input.
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

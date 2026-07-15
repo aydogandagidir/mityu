@@ -56,6 +56,29 @@ pub struct TranscriptSearchResult {
     pub matched_in: SearchMatchField,
 }
 
+/// A ranked, source-resolvable local evidence hit (Product Intelligence v1).
+///
+/// Unlike the legacy meeting-level search result above, every hit is anchored
+/// to one real transcript segment. SQLite FTS5 BM25 is internal ordering
+/// metadata: its raw corpus-dependent score is deliberately not exposed as a
+/// confidence value or cross-workspace side channel.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EvidenceSearchResult {
+    /// Meeting id the evidence belongs to (kept as `id` for existing sidebar
+    /// item conventions).
+    pub id: String,
+    pub title: String,
+    #[serde(rename = "matchContext")]
+    pub match_context: String,
+    pub timestamp: String,
+    #[serde(rename = "matchedIn")]
+    pub matched_in: SearchMatchField,
+    #[serde(rename = "sourceChunkId")]
+    pub source_chunk_id: String,
+    #[serde(rename = "audioStartTime")]
+    pub audio_start_time: Option<f64>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelConfig {
     pub provider: String,
@@ -64,6 +87,8 @@ pub struct ModelConfig {
     pub whisper_model: String,
     #[serde(rename = "apiKey")]
     pub api_key: Option<String>,
+    #[serde(rename = "hasApiKey")]
+    pub has_api_key: bool,
     #[serde(rename = "ollamaEndpoint")]
     pub ollama_endpoint: Option<String>,
 }
@@ -91,6 +116,23 @@ pub struct TranscriptConfig {
     pub model: String,
     #[serde(rename = "apiKey")]
     pub api_key: Option<String>,
+    #[serde(rename = "hasApiKey")]
+    pub has_api_key: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CustomOpenAIConfigView {
+    pub endpoint: String,
+    #[serde(rename = "apiKey")]
+    pub api_key: Option<String>,
+    #[serde(rename = "hasApiKey")]
+    pub has_api_key: bool,
+    pub model: String,
+    #[serde(rename = "maxTokens")]
+    pub max_tokens: Option<i32>,
+    pub temperature: Option<f32>,
+    #[serde(rename = "topP")]
+    pub top_p: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -191,8 +233,7 @@ async fn get_auth_token<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     match store.get("authToken") {
         Some(token) => {
             if let Some(token_str) = token.as_str() {
-                let truncated = token_str.chars().take(20).collect::<String>();
-                log_info!("Found auth token: {}", truncated);
+                log_info!("Auth token loaded from the secure application store");
                 Some(token_str.to_string())
             } else {
                 log_warn!("Auth token is not a string");
@@ -250,9 +291,10 @@ pub async fn api_search_transcripts<R: Runtime>(
     query: String,
     auth_token: Option<String>,
 ) -> Result<Vec<TranscriptSearchResult>, String> {
+    // Search text is meeting content. Log only non-content metadata.
     log_info!(
-        "api_search_transcripts called with query: '{}', auth_token: {}",
-        query,
+        "api_search_transcripts called (query_chars={}, auth_token_present={})",
+        query.chars().count(),
         auth_token.is_some()
     );
 
@@ -268,8 +310,42 @@ pub async fn api_search_transcripts<R: Runtime>(
             Ok(results)
         }
         Err(e) => {
-            log_error!("Error searching transcripts for query '{}': {}", query, e);
+            log_error!("Transcript search failed: {}", e);
             Err(format!("Failed to search transcripts: {}", e))
+        }
+    }
+}
+
+/// Ranked, transcript-segment evidence search used by the Product Intelligence
+/// surface. Fully local/offline; no LLM or network provider participates.
+#[tauri::command]
+pub async fn api_search_evidence<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    query: String,
+) -> Result<Vec<EvidenceSearchResult>, String> {
+    // Never log the query or snippets. They are meeting content.
+    log_info!(
+        "api_search_evidence called (query_chars={})",
+        query.chars().count()
+    );
+
+    let pool = state.db_manager.pool();
+    let ctx = crate::context::current();
+    ctx.require(crate::context::Role::Viewer)
+        .map_err(|_| "Not authorized to search meeting evidence".to_string())?;
+
+    match TranscriptsRepository::search_evidence(pool, &ctx, &query).await {
+        Ok(results) => {
+            log_info!(
+                "Evidence search completed successfully with {} results",
+                results.len()
+            );
+            Ok(results)
+        }
+        Err(e) => {
+            log_error!("Evidence search failed: {}", e);
+            Err(format!("Failed to search meeting evidence: {}", e))
         }
     }
 }
@@ -286,21 +362,16 @@ pub async fn api_get_model_config<R: Runtime>(
 
     match SettingsRepository::get_model_config(pool, &ctx).await {
         Ok(Some(config)) => {
-            log_info!(
-                "✅ Found model config in database: provider={}, model={}, whisperModel={}, ollamaEndpoint={:?}",
-                &config.provider,
-                &config.model,
-                &config.whisper_model,
-                &config.ollama_endpoint
-            );
+            log_info!("Found model configuration in the local database");
             match SettingsRepository::get_api_key(pool, &ctx, &config.provider).await {
                 Ok(api_key) => {
-                    log_info!("Successfully retrieved model config and API key.");
+                    log_info!("Successfully retrieved model configuration");
                     Ok(Some(ModelConfig {
                         provider: config.provider,
                         model: config.model,
                         whisper_model: config.whisper_model,
-                        api_key,
+                        has_api_key: api_key.is_some(),
+                        api_key: None,
                         ollama_endpoint: config.ollama_endpoint,
                     }))
                 }
@@ -336,15 +407,17 @@ pub async fn api_save_model_config<R: Runtime>(
     ollama_endpoint: Option<String>,
     _auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    log_info!(
-        "💾 api_save_model_config called (native): provider='{}', model='{}', whisperModel='{}', ollamaEndpoint={:?}",
-        &provider,
-        &model,
-        &whisper_model,
-        &ollama_endpoint
-    );
+    log_info!("api_save_model_config called");
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    let ollama_endpoint = if provider.eq_ignore_ascii_case("ollama") {
+        ollama_endpoint
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| crate::summary::validate_llm_endpoint(&value))
+            .transpose()?
+    } else {
+        ollama_endpoint
+    };
 
     if let Err(e) = SettingsRepository::save_model_config(
         pool,
@@ -385,28 +458,19 @@ pub async fn api_save_model_config<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn api_get_api_key<R: Runtime>(
+pub async fn api_has_api_key<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     provider: String,
     _auth_token: Option<String>,
-) -> Result<String, String> {
-    log_info!(
-        "api_get_api_key called (native) for provider '{}'",
-        &provider
-    );
+) -> Result<bool, String> {
+    log_info!("api_has_api_key called");
     let ctx = crate::context::current();
     match SettingsRepository::get_api_key(state.db_manager.pool(), &ctx, &provider).await {
-        Ok(key) => {
-            log_info!(
-                "Successfully retrieved API key for provider '{}'.",
-                &provider
-            );
-            Ok(key.unwrap_or_default())
-        }
+        Ok(key) => Ok(key.is_some()),
         Err(e) => {
-            log_error!("Failed to get API key for provider '{}': {}", &provider, e);
-            Err(e.to_string())
+            log_error!("Failed to inspect API key presence");
+            Err(format!("Failed to inspect API key presence: {}", e))
         }
     }
 }
@@ -423,18 +487,15 @@ pub async fn api_get_transcript_config<R: Runtime>(
 
     match SettingsRepository::get_transcript_config(pool, &ctx).await {
         Ok(Some(config)) => {
-            log_info!(
-                "Found transcript config: provider={}, model={}",
-                &config.provider,
-                &config.model
-            );
+            log_info!("Found transcript configuration");
             match SettingsRepository::get_transcript_api_key(pool, &ctx, &config.provider).await {
                 Ok(api_key) => {
-                    log_info!("Successfully retrieved transcript config and API key.");
+                    log_info!("Successfully retrieved transcript configuration");
                     Ok(Some(TranscriptConfig {
                         provider: config.provider,
                         model: config.model,
-                        api_key,
+                        has_api_key: api_key.is_some(),
+                        api_key: None,
                     }))
                 }
                 Err(e) => {
@@ -453,6 +514,7 @@ pub async fn api_get_transcript_config<R: Runtime>(
                 provider: "parakeet".to_string(),
                 model: crate::config::DEFAULT_PARAKEET_MODEL.to_string(),
                 api_key: None,
+                has_api_key: false,
             }))
         }
         Err(e) => {
@@ -503,33 +565,23 @@ pub async fn api_save_transcript_config<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn api_get_transcript_api_key<R: Runtime>(
+pub async fn api_has_transcript_api_key<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     provider: String,
     _auth_token: Option<String>,
-) -> Result<String, String> {
-    log_info!(
-        "api_get_transcript_api_key called (native) for provider '{}'",
-        &provider
-    );
+) -> Result<bool, String> {
+    log_info!("api_has_transcript_api_key called");
     let ctx = crate::context::current();
     match SettingsRepository::get_transcript_api_key(state.db_manager.pool(), &ctx, &provider).await
     {
-        Ok(key) => {
-            log_info!(
-                "Successfully retrieved transcript API key for provider '{}'.",
-                &provider
-            );
-            Ok(key.unwrap_or_default())
-        }
+        Ok(key) => Ok(key.is_some()),
         Err(e) => {
-            log_error!(
-                "Failed to get transcript API key for provider '{}': {}",
-                &provider,
+            log_error!("Failed to inspect transcript API key presence");
+            Err(format!(
+                "Failed to inspect transcript API key presence: {}",
                 e
-            );
-            Err(e.to_string())
+            ))
         }
     }
 }
@@ -570,32 +622,49 @@ pub async fn api_delete_meeting<R: Runtime>(
     auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
     log_info!(
-        "api_delete_meeting called for meeting_id(native): {}, auth_token: {}",
-        meeting_id,
+        "api_delete_meeting called (native), auth_token_present: {}",
         auth_token.is_some()
     );
 
-    let pool = state.db_manager.pool();
     let ctx = crate::context::current();
+    ctx.require(crate::context::Role::Member)
+        .map_err(|_| "Not authorized to delete meetings".to_string())?;
+    // The deletion trust root is compiled from the platform-owned default, never
+    // from renderer-controlled or legacy persisted preferences.
+    let allowed_recording_roots =
+        vec![crate::audio::recording_preferences::get_default_recordings_folder()];
 
-    match MeetingsRepository::delete_meeting(pool, &ctx, &meeting_id).await {
-        Ok(true) => {
-            log_info!("Successfully deleted meeting {}", meeting_id);
+    match state
+        .db_manager
+        .delete_meeting_verified(&ctx, &meeting_id, allowed_recording_roots)
+        .await
+    {
+        Ok(outcome) => {
+            log_info!(
+                "Verified local meeting deletion completed (already_absent={}, managed_files_removed={}, retained_user_entries={})",
+                outcome.already_absent,
+                outcome.artifacts.managed_files_removed,
+                outcome.artifacts.retained_user_entries
+            );
             Ok(serde_json::json!({
                 "status": "success",
-                "message": "Meeting deleted successfully"
+                "message": "Mityu-managed local meeting data deleted successfully",
+                "already_absent": outcome.already_absent,
+                "managed_files_removed": outcome.artifacts.managed_files_removed,
+                "retained_user_entries": outcome.artifacts.retained_user_entries,
+                "scope": "sqlite_fts_wal_and_mityu_managed_recording_artifacts",
+                "storage_limitations": "SSD wear-leveling, copy-on-write snapshots, backups, exports, and other external copies are outside application-controlled deletion."
             }))
         }
-        Ok(false) => {
-            log_warn!("Meeting not found or already deleted: {}", meeting_id);
-            Err(format!(
-                "Meeting not found or could not be deleted: {}",
-                meeting_id
-            ))
-        }
-        Err(e) => {
-            log_error!("Error deleting meeting {}: {}", meeting_id, e);
-            Err(format!("Failed to delete meeting: {}", e))
+        Err(_error) => {
+            // The anyhow chain can contain a user-local recording path. Keep
+            // diagnostic logs content-free because users may export them when
+            // requesting support.
+            log_error!("Verified local meeting deletion failed; no success was reported");
+            Err(
+                "Meeting deletion did not complete; no success was reported. Check that the recording folder is under the configured Mityu recording location, close any application using its files, and retry."
+                    .to_string(),
+            )
         }
     }
 }
@@ -608,8 +677,7 @@ pub async fn api_get_meeting<R: Runtime>(
     auth_token: Option<String>,
 ) -> Result<MeetingDetails, String> {
     log_info!(
-        "api_get_meeting called(native) for meeting_id: {}, auth_token: {}",
-        meeting_id,
+        "api_get_meeting called (native), auth_token_present: {}",
         auth_token.is_some()
     );
 
@@ -618,15 +686,15 @@ pub async fn api_get_meeting<R: Runtime>(
 
     match MeetingsRepository::get_meeting(pool, &ctx, &meeting_id).await {
         Ok(Some(meeting)) => {
-            log_info!("Successfully retrieved meeting {}", meeting_id);
+            log_info!("Successfully retrieved a workspace-scoped meeting");
             Ok(meeting)
         }
         Ok(None) => {
-            log_warn!("Meeting not found: {}", meeting_id);
-            Err(format!("Meeting not found: {}", meeting_id))
+            log_warn!("Workspace-scoped meeting was not found");
+            Err("Meeting not found".to_string())
         }
         Err(e) => {
-            log_error!("Error retrieving meeting {}: {}", meeting_id, e);
+            log_error!("Error retrieving workspace-scoped meeting: {}", e);
             Err(format!("Failed to retrieve meeting: {}", e))
         }
     }
@@ -639,17 +707,14 @@ pub async fn api_get_meeting_metadata<R: Runtime>(
     meeting_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<MeetingMetadata, String> {
-    log_info!(
-        "api_get_meeting_metadata called for meeting_id: {}",
-        meeting_id
-    );
+    log_info!("api_get_meeting_metadata called");
 
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
 
     match MeetingsRepository::get_meeting_metadata(pool, &ctx, &meeting_id).await {
         Ok(Some(meeting)) => {
-            log_info!("Successfully retrieved meeting metadata {}", meeting_id);
+            log_info!("Successfully retrieved workspace-scoped meeting metadata");
             Ok(MeetingMetadata {
                 id: meeting.id,
                 title: meeting.title,
@@ -659,11 +724,11 @@ pub async fn api_get_meeting_metadata<R: Runtime>(
             })
         }
         Ok(None) => {
-            log_warn!("Meeting not found: {}", meeting_id);
-            Err(format!("Meeting not found: {}", meeting_id))
+            log_warn!("Workspace-scoped meeting metadata was not found");
+            Err("Meeting not found".to_string())
         }
         Err(e) => {
-            log_error!("Error retrieving meeting metadata {}: {}", meeting_id, e);
+            log_error!("Error retrieving workspace-scoped meeting metadata: {}", e);
             Err(format!("Failed to retrieve meeting metadata: {}", e))
         }
     }
@@ -679,8 +744,7 @@ pub async fn api_get_meeting_transcripts<R: Runtime>(
     state: tauri::State<'_, AppState>,
 ) -> Result<PaginatedTranscriptsResponse, String> {
     log_info!(
-        "api_get_meeting_transcripts called for meeting_id: {}, limit: {}, offset: {}",
-        meeting_id,
+        "api_get_meeting_transcripts called (limit={}, offset={})",
         limit,
         offset
     );
@@ -699,9 +763,8 @@ pub async fn api_get_meeting_transcripts<R: Runtime>(
     {
         Ok((transcripts, total_count)) => {
             log_info!(
-                "Successfully retrieved {} transcripts for meeting {} (total: {})",
+                "Successfully retrieved {} transcript segments (total={})",
                 transcripts.len(),
-                meeting_id,
                 total_count
             );
 
@@ -727,11 +790,7 @@ pub async fn api_get_meeting_transcripts<R: Runtime>(
             })
         }
         Err(e) => {
-            log_error!(
-                "Error retrieving transcripts for meeting {}: {}",
-                meeting_id,
-                e
-            );
+            log_error!("Error retrieving workspace-scoped transcripts: {}", e);
             Err(format!("Failed to retrieve transcripts: {}", e))
         }
     }
@@ -746,8 +805,7 @@ pub async fn api_save_meeting_title<R: Runtime>(
     auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
     log_info!(
-        "api_save_meeting_title called for meeting_id: {}, auth_token: {}",
-        meeting_id,
+        "api_save_meeting_title called, auth_token_present: {}",
         auth_token.is_some()
     );
     let pool = state.db_manager.pool();
@@ -758,8 +816,8 @@ pub async fn api_save_meeting_title<R: Runtime>(
             Ok(serde_json::json!({"message": "Meeting title saved successfully"}))
         }
         Ok(false) => {
-            log_error!("No meeting found with id {}", meeting_id);
-            Err(format!("No meeting found with id {}", meeting_id))
+            log_error!("No workspace-scoped meeting found for title update");
+            Err("Meeting not found".to_string())
         }
         Err(e) => {
             log_error!("Failed to update meeting {}", e);
@@ -778,20 +836,11 @@ pub async fn api_save_transcript<R: Runtime>(
     auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
     log_info!(
-        "api_save_transcript called for meeting: {}, transcripts: {}, folder_path: {:?}, auth_token: {}",
-        meeting_title,
+        "api_save_transcript called (segments={}, folder_present={}, auth_token_present={})",
         transcripts.len(),
-        folder_path,
+        folder_path.is_some(),
         auth_token.is_some()
     );
-
-    // Log first transcript for debugging
-    if let Some(first) = transcripts.first() {
-        log_debug!(
-            "First transcript data: {}",
-            serde_json::to_string_pretty(first).unwrap_or_default()
-        );
-    }
 
     // Convert serde_json::Value to TranscriptSegment
     let transcripts_to_save: Vec<TranscriptSegment> = transcripts
@@ -806,14 +855,7 @@ pub async fn api_save_transcript<R: Runtime>(
             )
         })?;
 
-    // Log parsed segments count and first segment details
-    if let Some(first_seg) = transcripts_to_save.first() {
-        log_debug!("First parsed segment: text='{}', audio_start_time={:?}, audio_end_time={:?}, duration={:?}",
-                   first_seg.text.chars().take(50).collect::<String>(),
-                   first_seg.audio_start_time,
-                   first_seg.audio_end_time,
-                   first_seg.duration);
-    }
+    log_debug!("Parsed {} transcript segment(s)", transcripts_to_save.len());
 
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
@@ -846,21 +888,27 @@ pub async fn api_save_transcript<R: Runtime>(
         }
     }
 
+    // Bind the database row only to a folder created by the Rust recording
+    // pipeline. The renderer-provided path is a legacy wire field and is never a
+    // filesystem authority.
+    let trusted_folder_path =
+        crate::audio::recording_commands::take_last_completed_meeting_folder();
+    if folder_path.is_some() && trusted_folder_path.is_none() {
+        log_warn!("Ignored an unverified renderer-provided recording folder");
+    }
+
     // Now, call the repository with the correctly typed data.
     match TranscriptsRepository::save_transcript(
         pool,
         &ctx,
         &meeting_title,
         &transcripts_to_save,
-        folder_path,
+        trusted_folder_path,
     )
     .await
     {
         Ok(meeting_id) => {
-            log_info!(
-                "Successfully saved transcript and created meeting with id: {}",
-                meeting_id
-            );
+            log_info!("Successfully saved transcript and created meeting");
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Transcript saved successfully",
@@ -868,11 +916,7 @@ pub async fn api_save_transcript<R: Runtime>(
             }))
         }
         Err(e) => {
-            log_error!(
-                "Error saving transcript for meeting '{}': {}",
-                meeting_title,
-                e
-            );
+            log_error!("Error saving workspace-scoped transcript: {}", e);
             Err(format!("Failed to save transcript: {}", e))
         }
     }
@@ -885,7 +929,7 @@ pub async fn open_meeting_folder<R: Runtime>(
     state: tauri::State<'_, AppState>,
     meeting_id: String,
 ) -> Result<(), String> {
-    log_info!("open_meeting_folder called for meeting_id: {}", meeting_id);
+    log_info!("open_meeting_folder called");
 
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
@@ -899,20 +943,26 @@ pub async fn open_meeting_folder<R: Runtime>(
     match meeting {
         Some(m) => {
             if let Some(folder_path) = m.folder_path {
-                log_info!("Opening meeting folder: {}", folder_path);
+                log_info!("Opening the configured meeting folder");
 
-                // Verify folder exists
-                let path = std::path::Path::new(&folder_path);
-                if !path.exists() {
-                    log_warn!("Folder path does not exist: {}", folder_path);
-                    return Err(format!("Recording folder not found: {}", folder_path));
-                }
+                let allowed_roots =
+                    [crate::audio::recording_preferences::get_default_recordings_folder()];
+                let canonical_folder =
+                    crate::database::deletion::validate_managed_recording_folder(
+                        std::path::Path::new(&folder_path),
+                        &allowed_roots,
+                    )
+                    .map_err(|_| {
+                        log_warn!("Rejected an untrusted meeting recording folder");
+                        "Recording folder is unavailable or outside Mityu's managed storage"
+                            .to_string()
+                    })?;
 
                 // Open folder based on OS
                 #[cfg(target_os = "macos")]
                 {
                     std::process::Command::new("open")
-                        .arg(&folder_path)
+                        .arg(&canonical_folder)
                         .spawn()
                         .map_err(|e| format!("Failed to open folder: {}", e))?;
                 }
@@ -920,7 +970,7 @@ pub async fn open_meeting_folder<R: Runtime>(
                 #[cfg(target_os = "windows")]
                 {
                     std::process::Command::new("explorer")
-                        .arg(&folder_path)
+                        .arg(&canonical_folder)
                         .spawn()
                         .map_err(|e| format!("Failed to open folder: {}", e))?;
                 }
@@ -928,48 +978,115 @@ pub async fn open_meeting_folder<R: Runtime>(
                 #[cfg(target_os = "linux")]
                 {
                     std::process::Command::new("xdg-open")
-                        .arg(&folder_path)
+                        .arg(&canonical_folder)
                         .spawn()
                         .map_err(|e| format!("Failed to open folder: {}", e))?;
                 }
 
-                log_info!("Successfully opened folder: {}", folder_path);
+                log_info!("Successfully opened the configured meeting folder");
                 Ok(())
             } else {
-                log_warn!("Meeting {} has no folder_path set", meeting_id);
+                log_warn!("Meeting has no recording folder configured");
                 Err("Recording folder path not available for this meeting".to_string())
             }
         }
         None => {
-            log_warn!("Meeting not found: {}", meeting_id);
+            log_warn!("Workspace-scoped meeting was not found");
             Err("Meeting not found".to_string())
         }
     }
 }
 
+fn validate_external_url(url: &str) -> Result<url::Url, String> {
+    const ALLOWED_HOSTS: &[&str] = &[
+        "bluedev.dev",
+        "www.bluedev.dev",
+        "buy.polar.sh",
+        "ffmpeg.org",
+        "www.ffmpeg.org",
+        "github.com",
+        "huggingface.co",
+        "ai.google.dev",
+        "ollama.com",
+    ];
+
+    if url
+        .chars()
+        .any(|character| matches!(character, '&' | '|' | ';' | '<' | '>' | '`'))
+    {
+        return Err("External link contains unsupported characters".to_string());
+    }
+    let parsed = url::Url::parse(url.trim())
+        .map_err(|_| "External link must be a valid HTTPS URL".to_string())?;
+    if parsed.scheme() != "https"
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err("External link is not permitted".to_string());
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "External link host is required".to_string())?;
+    if !ALLOWED_HOSTS
+        .iter()
+        .any(|allowed| host.eq_ignore_ascii_case(allowed))
+    {
+        return Err("External link host is not permitted".to_string());
+    }
+    Ok(parsed)
+}
+
 #[tauri::command]
 pub async fn open_external_url(url: String) -> Result<(), String> {
     use std::process::Command;
+    let url = validate_external_url(&url)?;
 
     let result = if cfg!(target_os = "windows") {
-        Command::new("cmd").args(&["/C", "start", &url]).output()
+        Command::new("explorer.exe").arg(url.as_str()).spawn()
     } else if cfg!(target_os = "macos") {
-        Command::new("open").arg(&url).output()
+        Command::new("open").arg(url.as_str()).spawn()
     } else {
         // Linux and other Unix-like systems
-        Command::new("xdg-open").arg(&url).output()
+        Command::new("xdg-open").arg(url.as_str()).spawn()
     };
 
     match result {
         Ok(_) => Ok(()),
-        Err(e) => Err(format!("Failed to open URL: {}", e)),
+        Err(_) => Err("Failed to open the external link".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod external_url_tests {
+    use super::validate_external_url;
+
+    #[test]
+    fn external_links_require_https_and_an_allowlisted_host() {
+        assert!(validate_external_url("https://ollama.com/download").is_ok());
+        assert!(validate_external_url("https://github.com/aydogandagidir/mityu").is_ok());
+        assert!(validate_external_url("https://ai.google.dev/gemma/terms").is_ok());
+        assert!(validate_external_url("http://ollama.com/download").is_err());
+        assert!(validate_external_url("https://evil.example/download").is_err());
+        assert!(validate_external_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn external_links_reject_shell_and_secret_channels() {
+        assert!(validate_external_url("https://ollama.com/download&calc.exe").is_err());
+        assert!(validate_external_url("https://ollama.com/download|calc.exe").is_err());
+        assert!(validate_external_url("https://user:pass@ollama.com/download").is_err());
+        assert!(validate_external_url("https://ollama.com/download?token=secret").is_err());
+        assert!(validate_external_url("custom:payload").is_err());
     }
 }
 
 // ===== CUSTOM OPENAI API COMMANDS =====
 
 /// Saves the custom OpenAI configuration
-/// This configuration is stored as JSON and includes endpoint, apiKey, model, and optional parameters
+/// Non-secret configuration is stored as JSON; apiKey lives only in the OS keychain.
 #[tauri::command]
 pub async fn api_save_custom_openai_config<R: Runtime>(
     _app: AppHandle<R>,
@@ -981,11 +1098,7 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
     temperature: Option<f32>,
     top_p: Option<f32>,
 ) -> Result<serde_json::Value, String> {
-    log_info!(
-        "api_save_custom_openai_config called: endpoint='{}', model='{}'",
-        &endpoint,
-        &model
-    );
+    log_info!("api_save_custom_openai_config called");
 
     // Validate required fields
     if endpoint.trim().is_empty() {
@@ -995,10 +1108,7 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
         return Err("Model name is required".to_string());
     }
 
-    // Validate endpoint URL format
-    if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
-        return Err("Endpoint must start with http:// or https://".to_string());
-    }
+    let endpoint = crate::summary::validate_custom_openai_endpoint(&endpoint)?;
 
     // Validate optional numeric parameters
     if let Some(temp) = temperature {
@@ -1018,7 +1128,7 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
     }
 
     let config = CustomOpenAIConfig {
-        endpoint: endpoint.trim().to_string(),
+        endpoint,
         api_key: api_key.filter(|k| !k.trim().is_empty()),
         model: model.trim().to_string(),
         max_tokens,
@@ -1031,10 +1141,7 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
 
     match SettingsRepository::save_custom_openai_config(pool, &ctx, &config).await {
         Ok(()) => {
-            log_info!(
-                "✅ Successfully saved custom OpenAI config for endpoint: {}",
-                config.endpoint
-            );
+            log_info!("Successfully saved custom OpenAI config");
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Custom OpenAI configuration saved successfully"
@@ -1052,7 +1159,7 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
 pub async fn api_get_custom_openai_config<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
-) -> Result<Option<CustomOpenAIConfig>, String> {
+) -> Result<Option<CustomOpenAIConfigView>, String> {
     log_info!("api_get_custom_openai_config called");
 
     let pool = state.db_manager.pool();
@@ -1060,16 +1167,20 @@ pub async fn api_get_custom_openai_config<R: Runtime>(
 
     match SettingsRepository::get_custom_openai_config(pool, &ctx).await {
         Ok(config) => {
-            if let Some(ref c) = config {
-                log_info!(
-                    "✅ Found custom OpenAI config: endpoint='{}', model='{}'",
-                    c.endpoint,
-                    c.model
-                );
+            if config.is_some() {
+                log_info!("Found custom OpenAI config");
             } else {
                 log_info!("No custom OpenAI config found");
             }
-            Ok(config)
+            Ok(config.map(|config| CustomOpenAIConfigView {
+                endpoint: config.endpoint,
+                has_api_key: config.api_key.is_some(),
+                api_key: None,
+                model: config.model,
+                max_tokens: config.max_tokens,
+                temperature: config.temperature,
+                top_p: config.top_p,
+            }))
         }
         Err(e) => {
             log_error!("❌ Failed to get custom OpenAI config: {}", e);
@@ -1146,20 +1257,14 @@ pub async fn api_set_redaction_config<R: Runtime>(
 #[tauri::command]
 pub async fn api_test_custom_openai_connection<R: Runtime>(
     _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
     endpoint: String,
     api_key: Option<String>,
     model: String,
 ) -> Result<serde_json::Value, String> {
-    log_info!(
-        "api_test_custom_openai_connection called: endpoint='{}', model='{}'",
-        &endpoint,
-        &model
-    );
+    log_info!("api_test_custom_openai_connection called");
 
-    // Validate endpoint URL format
-    if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
-        return Err("Endpoint must start with http:// or https://".to_string());
-    }
+    let endpoint = crate::summary::validate_custom_openai_endpoint(&endpoint)?;
 
     // Build the URL - append /chat/completions to the base endpoint
     let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
@@ -1178,6 +1283,7 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -1186,8 +1292,19 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
         .header("Content-Type", "application/json")
         .json(&test_request);
 
-    // Add authorization if API key provided
-    if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
+    // A newly entered key may be tested once. Otherwise use the credential
+    // store internally; a persisted secret is never returned to the WebView.
+    let api_key = match api_key.filter(|key| !key.trim().is_empty()) {
+        Some(key) => Some(key),
+        None => SettingsRepository::get_api_key(
+            state.db_manager.pool(),
+            &crate::context::current(),
+            "custom-openai",
+        )
+        .await
+        .map_err(|_| "Could not access the stored custom endpoint credential".to_string())?,
+    };
+    if let Some(key) = api_key {
         request = request.header("Authorization", format!("Bearer {}", key));
     }
 
@@ -1230,42 +1347,31 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
 
                         // Response was 200 but doesn't match OpenAI format
                         log_warn!(
-                            "⚠️ Endpoint returned 200 but response doesn't match OpenAI format: {}",
-                            response_text
+                            "Endpoint returned success but not the expected OpenAI response shape"
                         );
                         Err("Endpoint is reachable but doesn't appear to be OpenAI-compatible. Response is missing 'choices' array or 'message.content' / 'message.reasoning_content' field.".to_string())
                     }
-                    Err(e) => {
-                        log_warn!(
-                            "⚠️ Endpoint returned 200 but response is not valid JSON: {}",
-                            e
-                        );
-                        Err(format!(
-                            "Endpoint is reachable but returned invalid JSON: {}. Response: {}",
-                            e, response_text
-                        ))
+                    Err(_error) => {
+                        log_warn!("Endpoint returned success but invalid JSON");
+                        Err("Endpoint is reachable but returned invalid JSON".to_string())
                     }
                 }
             } else {
                 log_warn!(
-                    "⚠️ Custom OpenAI connection test failed with status {}: {}",
-                    status,
-                    response_text
+                    "Custom OpenAI connection test failed with status {}",
+                    status
                 );
-                Err(format!(
-                    "Connection failed with status {}: {}",
-                    status, response_text
-                ))
+                Err(format!("Connection failed with status {}", status))
             }
         }
         Err(e) => {
-            log_error!("❌ Custom OpenAI connection test failed: {}", e);
+            log_error!("Custom OpenAI connection test failed");
             if e.is_timeout() {
                 Err("Connection timed out. Please check the endpoint URL.".to_string())
             } else if e.is_connect() {
                 Err("Could not connect to endpoint. Please verify the URL is correct and the server is running.".to_string())
             } else {
-                Err(format!("Connection failed: {}", e))
+                Err("Connection failed".to_string())
             }
         }
     }

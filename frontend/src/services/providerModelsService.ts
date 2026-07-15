@@ -2,12 +2,12 @@
  * Provider Models Service
  *
  * Typed wrappers over the Tauri commands that list/manage LLM provider models
- * and read stored provider credentials.
+ * while persisted provider credentials remain inside the Rust core.
  * Pure 1-to-1 wrappers over invoke() - no behavior changes vs. a direct invoke call.
  *
  * These command names and their result shapes were previously duplicated across
  * components, contexts and hooks (`get_ollama_models` alone had five call sites,
- * `api_get_api_key` six), and `OllamaModel` was declared twice - once privately in
+ * provider credential checks), and `OllamaModel` was declared twice - once privately in
  * ModelSettingsModal and once exported from ConfigContext. This module is the
  * single definition of both the commands and their result types.
  *
@@ -76,29 +76,25 @@ export async function getOpenRouterModels(): Promise<OpenRouterModel[]> {
 }
 
 /** List models available to the given OpenAI API key. */
-export async function getOpenAIModels(apiKey: string): Promise<OpenAIModel[]> {
+export async function getOpenAIModels(apiKey: string | null = null): Promise<OpenAIModel[]> {
   return invoke<OpenAIModel[]>('get_openai_models', { apiKey });
 }
 
 /** List models available to the given Anthropic API key. */
-export async function getAnthropicModels(apiKey: string): Promise<AnthropicModel[]> {
+export async function getAnthropicModels(apiKey: string | null = null): Promise<AnthropicModel[]> {
   return invoke<AnthropicModel[]>('get_anthropic_models', { apiKey });
 }
 
 /** List models available to the given Groq API key. */
-export async function getGroqModels(apiKey: string): Promise<GroqModel[]> {
+export async function getGroqModels(apiKey: string | null = null): Promise<GroqModel[]> {
   return invoke<GroqModel[]>('get_groq_models', { apiKey });
 }
 
 /**
- * Read the stored API key for a provider.
- *
- * The key itself lives in the OS keychain (ADR-0011); this returns it for the
- * settings UI to display/reuse. Rejects when no key is stored - existing callers
- * either `catch` and fall back to `null`, or let it propagate.
+ * Check whether a provider credential exists without exposing the secret.
  */
-export async function getApiKey(provider: string): Promise<string> {
-  return invoke<string>('api_get_api_key', { provider });
+export async function hasApiKey(provider: string): Promise<boolean> {
+  return invoke<boolean>('api_has_api_key', { provider });
 }
 
 /** Whether summaries are auto-generated when a recording finishes. */

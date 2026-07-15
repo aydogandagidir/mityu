@@ -27,6 +27,8 @@ Hand this repo to Claude Code and run these prompts **in order**. Each step has 
 
 **Stop when:** the validation report exists AND the go/no-go threshold is met. **If not met, STOP feature work** and narrow scope (meeting-room only) per the protocol. This is a human-reviewed gate — do not self-approve past a failing WER.
 
+**v1.0.4-only owner exception (ADR-0027):** the protocol and thresholds are unchanged, but A5 is recorded as `DEFERRED / NOT EVALUATED` and is not a publication blocker for this patch. This is not a PASS and does not unlock field/accuracy claims, C8, or any C8-dependent phase.
+
 ## Step 5 — Introduce the seams (still single-tenant, local-first)
 > "Implement docs/CONTRACTS.md: WorkspaceContext/AuthContext, the tenant-scoped Repository layer, and the dormant sync module skeleton. Add the `workspace_id` migration per docs/DATA_MODEL.md and /db-migration. Prove the app still works fully offline. Invoke multitenancy-guardian to review."
 
@@ -35,4 +37,4 @@ Hand this repo to Claude Code and run these prompts **in order**. Each step has 
 ## Step 6 onward — Work the backlog
 > "Open docs/BACKLOG.md. Take the next unblocked task in order. Use the slash command it names (/feature, /add-tauri-command, etc.). Satisfy its acceptance criteria and the CLAUDE.md Definition of Done. Run /tenant-check and (before any release) /security-review. Update docs + add ADRs when architecture/schema changes."
 
-**Rule for the whole run:** never skip a gate; never break the local-first or tenant invariants; treat audio and DB schema changes as high-risk (separate changes). When a task is ambiguous, state the assumption inline and proceed on the smallest safe interpretation.
+**Rule for the whole run:** never silently skip a gate or claim PASS without its evidence. A product-owner exception must be explicit, ADR-scoped, time/version-bounded, and must preserve downstream dependencies. Never break the local-first or tenant invariants; treat audio and DB schema changes as high-risk (separate changes). When a task is ambiguous, state the assumption inline and proceed on the smallest safe interpretation.

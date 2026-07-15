@@ -46,9 +46,7 @@ export default function AnalyticsConsentSwitch() {
       setTimeout(() => setIsCopied(false), 2000);
 
       // Track that user copied their ID
-      await Analytics.track('user_id_copied', {
-        user_id: userId
-      });
+      await Analytics.track('user_id_copied');
     } catch (error) {
       console.error('Failed to copy user ID:', error);
     }
@@ -77,6 +75,12 @@ export default function AnalyticsConsentSwitch() {
     setIsProcessing(true);
 
     try {
+      // Withdrawal takes effect before any persistence work and never emits a
+      // final remote event after consent has been withdrawn.
+      if (!enabled) {
+        await Analytics.disable();
+      }
+
       const store = await load('analytics.json', {
         autoSave: false,
         defaults: {
@@ -118,20 +122,14 @@ export default function AnalyticsConsentSwitch() {
 
         console.log('Analytics re-enabled successfully');
       } else {
-        // Track that user disabled analytics BEFORE disabling
-        try {
-          await invoke('track_analytics_disabled');
-        } catch (error) {
-          console.error('Failed to track analytics disabled:', error);
-        }
-
-        await Analytics.disable();
         console.log('Analytics disabled successfully');
       }
     } catch (error) {
       console.error('Failed to toggle analytics:', error);
       // Revert the optimistic update on error
-      setIsAnalyticsOptedIn(!enabled);
+      if (enabled) {
+        setIsAnalyticsOptedIn(false);
+      }
       // You could also show a toast notification here to inform the user
     } finally {
       setIsProcessing(false);

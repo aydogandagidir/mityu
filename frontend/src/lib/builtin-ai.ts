@@ -7,6 +7,8 @@ export interface BuiltInModelInfo {
   size_mb: number;
   context_size: number;
   description: string;
+  license_name: string;
+  license_url: string;
   gguf_file: string;
 }
 

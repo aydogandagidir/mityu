@@ -9,11 +9,34 @@ use crate::context::AuthContext;
 use crate::database::models::{MeetingModel, Transcript};
 use chrono::Utc;
 use sqlx::{Connection, Error as SqlxError, SqliteConnection, SqlitePool};
-use tracing::{error, info};
+use tracing::info;
 
 pub struct MeetingsRepository;
 
 impl MeetingsRepository {
+    /// Return whether `folder_path` is referenced by another active meeting in
+    /// the caller's workspace. Cross-workspace collision safety is enforced by
+    /// the recording folder's trusted `metadata.json.workspace_id` marker; this
+    /// repository never reads a foreign workspace, even for an existence check.
+    pub async fn recording_folder_has_other_same_workspace_reference(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        meeting_id: &str,
+        folder_path: &str,
+    ) -> Result<bool, SqlxError> {
+        let exists: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM meetings \
+             WHERE workspace_id = ? AND folder_path = ? AND deleted_at IS NULL \
+             AND id <> ?)",
+        )
+        .bind(ctx.tenant_id.as_str())
+        .bind(folder_path)
+        .bind(meeting_id)
+        .fetch_one(pool)
+        .await?;
+        Ok(exists == 1)
+    }
+
     pub async fn get_meetings(
         pool: &SqlitePool,
         ctx: &AuthContext,
@@ -32,35 +55,18 @@ impl MeetingsRepository {
         ctx: &AuthContext,
         meeting_id: &str,
     ) -> Result<bool, SqlxError> {
-        if meeting_id.trim().is_empty() {
-            return Err(SqlxError::Protocol(
-                "meeting_id cannot be empty".to_string(),
-            ));
+        let deleted = crate::database::deletion::delete_database_records(pool, ctx, meeting_id)
+            .await
+            .map_err(|error| SqlxError::Protocol(format!("verified deletion failed: {error:#}")))?;
+        if deleted {
+            crate::database::deletion::complete_privacy_maintenance(pool)
+                .await
+                .map_err(|error| {
+                    SqlxError::Protocol(format!("privacy maintenance remains pending: {error:#}"))
+                })?;
+            info!("Meeting records deleted and local privacy maintenance verified");
         }
-
-        let mut conn = pool.acquire().await?;
-        let mut transaction = conn.begin().await?;
-
-        match delete_meeting_with_transaction(&mut transaction, ctx, meeting_id).await {
-            Ok(success) => {
-                if success {
-                    transaction.commit().await?;
-                    info!(
-                        "Successfully deleted meeting {} and all associated data",
-                        meeting_id
-                    );
-                    Ok(true)
-                } else {
-                    transaction.rollback().await?;
-                    Ok(false)
-                }
-            }
-            Err(e) => {
-                let _ = transaction.rollback().await;
-                error!("Failed to delete meeting {}: {}", meeting_id, e);
-                Err(e)
-            }
-        }
+        Ok(deleted)
     }
 
     pub async fn get_meeting(
@@ -278,7 +284,7 @@ impl MeetingsRepository {
     }
 }
 
-async fn delete_meeting_with_transaction(
+pub(crate) async fn delete_meeting_with_connection(
     transaction: &mut SqliteConnection,
     ctx: &AuthContext,
     meeting_id: &str,
@@ -292,33 +298,50 @@ async fn delete_meeting_with_transaction(
             .await?;
 
     if meeting_exists.is_none() {
-        error!("Meeting {} not found for deletion", meeting_id);
         return Ok(false);
     }
 
-    // Delete from related tables in proper order
-    // 1. Delete from transcript_chunks
+    // This connection has foreign-key actions disabled by `delete_database_records`
+    // and is close-on-drop. Delete every caller-owned child explicitly so malformed
+    // foreign-workspace rows are never read and never cascaded away.
+    sqlx::query("DELETE FROM action_items WHERE meeting_id = ? AND workspace_id = ?")
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .execute(&mut *transaction)
+        .await?;
+
+    sqlx::query("DELETE FROM summaries WHERE meeting_id = ? AND workspace_id = ?")
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .execute(&mut *transaction)
+        .await?;
+
+    sqlx::query("DELETE FROM meeting_notes WHERE meeting_id = ? AND workspace_id = ?")
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .execute(&mut *transaction)
+        .await?;
+
     sqlx::query("DELETE FROM transcript_chunks WHERE meeting_id = ? AND workspace_id = ?")
         .bind(meeting_id)
         .bind(ctx.tenant_id.as_str())
         .execute(&mut *transaction)
         .await?;
 
-    // 2. Delete from summary_processes
     sqlx::query("DELETE FROM summary_processes WHERE meeting_id = ? AND workspace_id = ?")
         .bind(meeting_id)
         .bind(ctx.tenant_id.as_str())
         .execute(&mut *transaction)
         .await?;
 
-    // 3. Delete from transcripts
     sqlx::query("DELETE FROM transcripts WHERE meeting_id = ? AND workspace_id = ?")
         .bind(meeting_id)
         .bind(ctx.tenant_id.as_str())
         .execute(&mut *transaction)
         .await?;
 
-    // 4. Finally, delete the meeting
+    // Finally delete only the caller-owned parent. With cascades disabled on
+    // this disposable connection, foreign malformed children remain untouched.
     let result = sqlx::query("DELETE FROM meetings WHERE id = ? AND workspace_id = ?")
         .bind(meeting_id)
         .bind(ctx.tenant_id.as_str())

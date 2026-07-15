@@ -545,10 +545,10 @@ function ModelCard({
         if (isAvailable) onSelect();
       }}
     >
-      {/* Recommended Badge */}
+      {/* Default Badge */}
       {isRecommended && (
         <div className="absolute -top-2 -right-2 bg-primary text-white text-xs px-2 py-0.5 rounded-full font-medium">
-          Recommended
+          Default
         </div>
       )}
 
@@ -590,7 +590,7 @@ function ModelCard({
               </span>
               <span className="flex items-center space-x-1">
                 <span>🎯</span>
-                <span>{model.accuracy} accuracy</span>
+                <span>Capacity tier: {model.accuracy}</span>
               </span>
               <span className="flex items-center space-x-1">
                 <span>⚡</span>

@@ -15,6 +15,7 @@ mod prep;
 mod report;
 mod wav;
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -29,6 +30,7 @@ use crate::engines::{
 use crate::report::{write_reports, Row, RunMeta};
 
 pub const BUCKETS: [&str; 4] = ["quiet", "field", "multi", "jargon"];
+const MIN_GATE_CLIPS_PER_BUCKET: usize = 5;
 
 #[derive(Parser)]
 #[command(
@@ -78,7 +80,7 @@ enum Cmd {
             default_value = "whisper_large_v3,whisper_large_v3_vocab,whisper_large_v3_turbo,whisper_large_v3_turbo_vocab,parakeet,parakeet_vocab"
         )]
         configs: Vec<String>,
-        /// Erken sinyal: kova başına ilk N klip
+        /// Kova başına en fazla ilk N klip (Phase-0 gate için N >= 5 olmalı)
         #[arg(long)]
         quick: Option<usize>,
         /// YALNIZ whisper_large_v3(_vocab) konfigleri için model: katalog adı (varsayılan large-v3) veya ggml-*.bin yolu
@@ -198,6 +200,66 @@ fn collect_clips(eval_dir: &Path, filter: RefFilter, quick: Option<usize>) -> Re
         }
     }
     Ok(clips)
+}
+
+/// Phase-0 is a fail-closed product gate: every required environment must be
+/// represented by at least five human-reviewed reference pairs. A `.ref.txt`
+/// file is the workflow's explicit human-approval artifact; drafts never count.
+fn validate_bucket_coverage(clips: &[Clip]) -> Result<()> {
+    let mut counts: BTreeMap<&str, usize> = BUCKETS.into_iter().map(|b| (b, 0)).collect();
+    for clip in clips {
+        if let Some(count) = counts.get_mut(clip.bucket.as_str()) {
+            *count += 1;
+        }
+    }
+
+    let missing = counts
+        .iter()
+        .filter(|(_, count)| **count < MIN_GATE_CLIPS_PER_BUCKET)
+        .map(|(bucket, count)| {
+            format!("{bucket}: {count}/{MIN_GATE_CLIPS_PER_BUCKET} geçerli çift")
+        })
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        bail!(
+            "Phase-0 gate veri seti eksik; `run` fail-closed durduruldu. Her kovada en az \
+             {MIN_GATE_CLIPS_PER_BUCKET} adet 16 kHz mono s16 WAV + insan tarafından düzeltilip \
+             onaylanmış .ref.txt çifti zorunlu. Eksikler: {}\nAkış: kayıtları \
+             eval/raw/<kova>/ altına koy → `eval-harness prep` → `eval-harness draft` → \
+             taslakları insan olarak düzeltip .ref.txt yap → `eval-harness run`",
+            missing.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn validate_gate_inputs(clips: &[Clip]) -> Result<()> {
+    validate_bucket_coverage(clips)?;
+
+    let mut invalid = Vec::new();
+    for clip in clips {
+        match std::fs::read_to_string(&clip.ref_path) {
+            Ok(reference) if !reference.trim().is_empty() => {}
+            Ok(_) => invalid.push(format!(
+                "{}/{}: .ref.txt boş (insan-onaylı referans gerekli)",
+                clip.bucket, clip.id
+            )),
+            Err(error) => invalid.push(format!(
+                "{}/{}: .ref.txt okunamadı: {error}",
+                clip.bucket, clip.id
+            )),
+        }
+        if let Err(error) = wav::read_wav_16k_mono_s16(&clip.wav) {
+            invalid.push(format!("{}/{}: {error:#}", clip.bucket, clip.id));
+        }
+    }
+    if !invalid.is_empty() {
+        bail!(
+            "Phase-0 gate girdileri geçersiz; model yüklenmeden durduruldu:\n{}",
+            invalid.join("\n")
+        );
+    }
+    Ok(())
 }
 
 fn parse_configs(names: &[String]) -> Result<Vec<RunConfig>> {
@@ -360,7 +422,11 @@ fn run_notes(
                 .to_string(),
         );
     }
-    notes.push("Diyarizasyon Phase 0'da nitel değerlendirilir (harness kapsamı dışı)".to_string());
+    notes.push(
+        "Diyarizasyon otomatik puanlanmaz; report.md'deki multi-speaker insan inceleme \
+         alanında nitel olarak kaydedilir"
+            .to_string(),
+    );
     notes
 }
 
@@ -457,13 +523,7 @@ async fn cmd_run(
     let eval_dir = root.join("eval");
     let cfgs = parse_configs(config_names)?;
     let clips = collect_clips(&eval_dir, RefFilter::HasRef, quick)?;
-    if clips.is_empty() {
-        bail!(
-            "Değerlendirilecek klip yok: eval/<kova>/<id>.wav + <id>.ref.txt çiftleri gerekli.\n\
-             Akış: kayıtları eval/raw/<kova>/ altına koy → `eval-harness prep` → `eval-harness draft` \
-             → taslakları düzeltip .ref.txt yap → `eval-harness run`"
-        );
-    }
+    validate_gate_inputs(&clips)?;
 
     let jargon = load_jargon(&eval_dir)?;
     if jargon.is_empty() {
@@ -617,5 +677,57 @@ async fn main() -> Result<()> {
             )
             .await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clip(bucket: &str, index: usize) -> Clip {
+        Clip {
+            bucket: bucket.to_string(),
+            id: format!("{bucket}-{index}"),
+            wav: PathBuf::from(format!("{bucket}-{index}.wav")),
+            ref_path: PathBuf::from(format!("{bucket}-{index}.ref.txt")),
+            lang: None,
+        }
+    }
+
+    fn complete_gate_set() -> Vec<Clip> {
+        BUCKETS
+            .iter()
+            .flat_map(|bucket| (0..MIN_GATE_CLIPS_PER_BUCKET).map(move |index| clip(bucket, index)))
+            .collect()
+    }
+
+    #[test]
+    fn gate_coverage_accepts_five_pairs_in_every_bucket() {
+        validate_bucket_coverage(&complete_gate_set()).expect("complete gate set");
+    }
+
+    #[test]
+    fn gate_coverage_fails_closed_when_a_bucket_has_fewer_than_five_pairs() {
+        let mut clips = complete_gate_set();
+        clips.retain(|clip| !(clip.bucket == "field" && clip.id == "field-4"));
+
+        let error = validate_bucket_coverage(&clips).expect_err("incomplete field bucket");
+        let message = error.to_string();
+        assert!(message.contains("field: 4/5"));
+        assert!(message.contains("fail-closed"));
+    }
+
+    #[test]
+    fn gate_coverage_requires_all_four_named_buckets() {
+        let clips: Vec<Clip> = (0..MIN_GATE_CLIPS_PER_BUCKET)
+            .map(|index| clip("quiet", index))
+            .collect();
+
+        let message = validate_bucket_coverage(&clips)
+            .expect_err("three buckets are absent")
+            .to_string();
+        assert!(message.contains("field: 0/5"));
+        assert!(message.contains("multi: 0/5"));
+        assert!(message.contains("jargon: 0/5"));
     }
 }

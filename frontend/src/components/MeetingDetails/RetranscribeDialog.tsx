@@ -173,7 +173,7 @@ export function RetranscribeDialog({
         'retranscription-error',
         async (event) => {
           if (event.payload.meeting_id === meetingId) {
-            await Analytics.trackError('enhance_transcript_failed', event.payload.error);
+            await Analytics.trackError('enhance_transcript_failed');
 
             setIsProcessing(false);
             setError(event.payload.error);
@@ -226,7 +226,7 @@ export function RetranscribeDialog({
       const errorMsg = typeof err === 'string' ? err : (err?.message || String(err));
       setError(errorMsg);
 
-      await Analytics.trackError('enhance_transcript_failed', errorMsg);
+      await Analytics.trackError('enhance_transcript_failed');
     }
   };
 

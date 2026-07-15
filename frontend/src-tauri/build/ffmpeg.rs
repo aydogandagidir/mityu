@@ -32,7 +32,7 @@ pub fn ensure_ffmpeg_binary() {
             "cargo:warning=🔍 Found cached FFmpeg binary: {}",
             binary_name
         );
-        if verify_ffmpeg_binary(&binary_path) {
+        if verify_ffmpeg_binary(&binary_path, &target) {
             println!(
                 "cargo:warning=✅ FFmpeg binary already cached and verified: {}",
                 binary_name
@@ -63,7 +63,7 @@ pub fn ensure_ffmpeg_binary() {
             );
 
             // Verify downloaded binary works
-            if !verify_ffmpeg_binary(&binary_path) {
+            if !verify_ffmpeg_binary(&binary_path, &target) {
                 panic!("⚠️  Downloaded FFmpeg binary verification failed!");
             }
         }
@@ -78,6 +78,7 @@ fn download_and_extract_ffmpeg(
     target: &str,
     output_path: &std::path::PathBuf,
 ) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
     use std::io::Write;
 
     println!(
@@ -113,7 +114,7 @@ fn download_and_extract_ffmpeg(
 
     // Download to temp file
     let temp_dir = std::env::temp_dir();
-    let archive_filename = url.split('/').last().unwrap_or("ffmpeg-archive");
+    let archive_filename = url.split('/').next_back().unwrap_or("ffmpeg-archive");
     let archive_path = temp_dir.join(format!("ffmpeg-build-{}-{}", target, archive_filename));
 
     {
@@ -123,6 +124,24 @@ fn download_and_extract_ffmpeg(
         let content = response
             .bytes()
             .map_err(|e| format!("Failed to read response: {}", e))?;
+
+        if let Some(expected_sha256) = expected_ffmpeg_archive_sha256(target) {
+            let actual_sha256 = format!("{:x}", Sha256::digest(&content));
+            if actual_sha256 != expected_sha256 {
+                return Err(format!(
+                    "FFmpeg archive SHA-256 mismatch for {target}: expected {expected_sha256}, got {actual_sha256}"
+                ));
+            }
+            println!(
+                "cargo:warning=FFmpeg archive SHA-256 verified for {}",
+                target
+            );
+        } else {
+            println!(
+                "cargo:warning=FFmpeg archive has no approved checksum for {}; this target is not production-release eligible",
+                target
+            );
+        }
 
         file.write_all(&content)
             .map_err(|e| format!("Failed to write archive: {}", e))?;
@@ -140,6 +159,22 @@ fn download_and_extract_ffmpeg(
     println!("cargo:warning=✨ Extraction complete");
 
     Ok(())
+}
+
+/// SHA-256 digests published by GitHub for Mityu's pinned LGPL FFmpeg assets.
+/// macOS deliberately has no approved digest because its current upstream
+/// archive has not passed the license/provenance gate and is excluded from the
+/// v1.0.4 production release matrix.
+fn expected_ffmpeg_archive_sha256(target: &str) -> Option<&'static str> {
+    if target.contains("windows") {
+        Some("e2757eb478954028a18be862cc5927f585524f0f000d69e36fe35283aba157db")
+    } else if target.contains("linux") && (target.contains("aarch64") || target.contains("arm")) {
+        Some("4830e419054f198d5b38f77a33310366d2825673f0dce1d82c8541fa4144749c")
+    } else if target.contains("linux") {
+        Some("90236926a76974e230f85917e4962e39307a23140e661ccd1ee85f3cda0145f2")
+    } else {
+        None
+    }
 }
 
 /// Get FFmpeg download URL for specific target triple
@@ -239,8 +274,6 @@ fn extract_zip(
     archive_path: &std::path::Path,
     extract_dir: &std::path::Path,
 ) -> Result<(), String> {
-    use std::io::Read;
-
     let file =
         std::fs::File::open(archive_path).map_err(|e| format!("Failed to open ZIP: {}", e))?;
 
@@ -368,13 +401,80 @@ fn find_ffmpeg_in_extracted_dir(
     ))
 }
 
-/// Verify FFmpeg binary is functional (runs -version successfully)
-fn verify_ffmpeg_binary(path: &std::path::PathBuf) -> bool {
+/// Verify FFmpeg is functional and does not violate Mityu's LGPL-only policy.
+/// This also invalidates stale local caches that predate the pinned archive.
+fn verify_ffmpeg_binary(path: &std::path::Path, target: &str) -> bool {
+    use sha2::{Digest, Sha256};
+
+    // The production Windows executable extracted from the pinned archive is
+    // pinned independently as well. This prevents a pre-populated local cache
+    // from bypassing archive verification with a merely clean-looking banner.
+    if target.contains("x86_64-pc-windows-msvc") {
+        const EXPECTED_WINDOWS_BINARY_SHA256: &str =
+            "dd757098407e2ac4920647a2f66f41a6e1006dcf373b0825023948ae1b96912a";
+        let actual_sha256 = match std::fs::read(path) {
+            Ok(bytes) => format!("{:x}", Sha256::digest(bytes)),
+            Err(_) => return false,
+        };
+
+        if actual_sha256 != EXPECTED_WINDOWS_BINARY_SHA256 {
+            println!(
+                "cargo:warning=Rejected FFmpeg binary for {}: executable SHA-256 mismatch",
+                target
+            );
+            return false;
+        }
+    }
+
     match std::process::Command::new(path).arg("-version").output() {
         Ok(output) => {
             if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if let Some(version_line) = stdout.lines().next() {
+                let banner = format!(
+                    "{}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let normalized = banner.to_ascii_lowercase();
+                let forbidden_markers = [
+                    "gyan.dev",
+                    "--enable-gpl",
+                    "--enable-nonfree",
+                    "--enable-libx264",
+                    "--enable-libx265",
+                    "--enable-libxvid",
+                    "--enable-libxavs2",
+                ];
+
+                if forbidden_markers
+                    .iter()
+                    .any(|marker| normalized.contains(marker))
+                {
+                    println!(
+                        "cargo:warning=Rejected FFmpeg binary for {}: GPL/nonfree build marker detected",
+                        target
+                    );
+                    return false;
+                }
+
+                if !normalized.contains("ffmpeg version ") {
+                    println!(
+                        "cargo:warning=Rejected FFmpeg binary for {}: missing version banner",
+                        target
+                    );
+                    return false;
+                }
+
+                if (target.contains("windows") || target.contains("linux"))
+                    && !normalized.contains("configuration:")
+                {
+                    println!(
+                        "cargo:warning=Rejected FFmpeg binary for {}: missing build configuration",
+                        target
+                    );
+                    return false;
+                }
+
+                if let Some(version_line) = banner.lines().find(|line| !line.trim().is_empty()) {
                     println!(
                         "cargo:warning=✅ FFmpeg verification passed: {}",
                         version_line

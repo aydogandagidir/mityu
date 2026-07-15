@@ -6,6 +6,7 @@
 use anyhow::Result;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -38,6 +39,7 @@ static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 // Global recording manager and transcription task to keep them alive during recording
 static RECORDING_MANAGER: Mutex<Option<RecordingManager>> = Mutex::new(None);
 static TRANSCRIPTION_TASK: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+static LAST_COMPLETED_MEETING_FOLDER: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 // Listener ID for proper cleanup - prevents microphone from staying active after recording stops
 static TRANSCRIPT_LISTENER_ID: Mutex<Option<tauri::EventId>> = Mutex::new(None);
@@ -72,9 +74,14 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     app: AppHandle<R>,
     meeting_name: Option<String>,
 ) -> Result<(), String> {
+    *LAST_COMPLETED_MEETING_FOLDER.lock().unwrap() = None;
     info!(
-        "Starting recording with default devices, meeting: {:?}",
+        "Starting recording with default devices (meeting_title_present={}, meeting_title_chars={})",
+        meeting_name.is_some(),
         meeting_name
+            .as_deref()
+            .map(|name| name.chars().count())
+            .unwrap_or(0)
     );
 
     let engine_lifecycle_guard = super::common::acquire_engine_lifecycle_lock().await;
@@ -141,11 +148,8 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                     info!("✅ Using preferred microphone: '{}'", device.name);
                     Some(Arc::new(device))
                 }
-                Err(e) => {
-                    warn!(
-                        "⚠️ Preferred microphone '{}' not available: {}",
-                        pref_name, e
-                    );
+                Err(_e) => {
+                    warn!("⚠️ Preferred microphone is unavailable; using system default");
                     warn!("   Falling back to system default microphone...");
                     match default_input_device() {
                         Ok(device) => {
@@ -194,11 +198,8 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                     info!("✅ Using preferred system audio: '{}'", device.name);
                     Some(Arc::new(device))
                 }
-                Err(e) => {
-                    warn!(
-                        "⚠️ Preferred system audio '{}' not available: {}",
-                        pref_name, e
-                    );
+                Err(_e) => {
+                    warn!("⚠️ Preferred system audio is unavailable; using system default");
                     warn!("   Falling back to system default...");
                     match default_output_device() {
                         Ok(device) => {
@@ -337,9 +338,16 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     system_device_name: Option<String>,
     meeting_name: Option<String>,
 ) -> Result<(), String> {
+    *LAST_COMPLETED_MEETING_FOLDER.lock().unwrap() = None;
     info!(
-        "Starting recording with specific devices: mic={:?}, system={:?}, meeting={:?}",
-        mic_device_name, system_device_name, meeting_name
+        "Starting recording with specific devices (microphone_selected={}, system_audio_selected={}, meeting_title_present={}, meeting_title_chars={})",
+        mic_device_name.is_some(),
+        system_device_name.is_some(),
+        meeting_name.is_some(),
+        meeting_name
+            .as_deref()
+            .map(|name| name.chars().count())
+            .unwrap_or(0)
     );
 
     let engine_lifecycle_guard = super::common::acquire_engine_lifecycle_lock().await;
@@ -887,14 +895,18 @@ pub async fn stop_recording<R: Runtime>(
     // Step 4.5: Prepare metadata for frontend (NO database save)
     // NOTE: We do NOT save to database here. The frontend will save after all transcripts are displayed.
     // This ensures the user sees all transcripts streaming in before the database save happens.
+    *LAST_COMPLETED_MEETING_FOLDER.lock().unwrap() = meeting_folder.clone();
     let (folder_path_str, meeting_name_str) = match (&meeting_folder, &meeting_name) {
         (Some(path), Some(name)) => (Some(path.to_string_lossy().to_string()), Some(name.clone())),
         _ => (None, None),
     };
 
-    info!("📤 Preparing recording metadata for frontend save");
-    info!("   folder_path: {:?}", folder_path_str);
-    info!("   meeting_name: {:?}", meeting_name_str);
+    info!("Preparing recording metadata for frontend save");
+    info!(
+        "Recording metadata present: folder={}, meeting_name={}",
+        folder_path_str.is_some(),
+        meeting_name_str.is_some()
+    );
 
     // Database save removed - frontend will handle this after receiving all transcripts
     info!("ℹ️ Skipping database save in Rust - frontend will save after all transcripts received");
@@ -1061,6 +1073,17 @@ pub async fn get_meeting_folder_path() -> Result<Option<String>, String> {
     } else {
         Ok(None)
     }
+}
+
+/// Consume the folder created by the Rust recording pipeline for the most
+/// recently completed recording. This is intentionally not a Tauri command:
+/// persistence code uses it to avoid trusting a renderer-supplied path.
+pub(crate) fn take_last_completed_meeting_folder() -> Option<String> {
+    LAST_COMPLETED_MEETING_FOLDER
+        .lock()
+        .ok()
+        .and_then(|mut folder| folder.take())
+        .map(|path| path.to_string_lossy().to_string())
 }
 
 /// Get accumulated transcript segments from current recording session

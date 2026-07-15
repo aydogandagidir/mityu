@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getApiKey } from '@/services/providerModelsService';
 import { configService } from '@/services/configService';
 import { toast } from 'sonner';
 import { ModelConfig, ModelSettingsModal } from '@/components/ModelSettingsModal';
@@ -30,15 +29,6 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
     try {
       const data = await configService.getModelConfig() as any;
       if (data && data.provider !== null) {
-        // Fetch API key if not included and provider requires it
-        if (data.provider !== 'ollama' && data.provider !== 'builtin-ai' && !data.apiKey) {
-          try {
-            const apiKeyData = await getApiKey(data.provider);
-            data.apiKey = apiKeyData;
-          } catch (err) {
-            console.error('Failed to fetch API key:', err);
-          }
-        }
         // Fetch Custom OpenAI config if that's the active provider
         if (data.provider === 'custom-openai') {
           try {
@@ -47,7 +37,8 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
               data.customOpenAIDisplayName = customConfig.displayName || null;
               data.customOpenAIEndpoint = customConfig.endpoint || null;
               data.customOpenAIModel = customConfig.model || null;
-              data.customOpenAIApiKey = customConfig.apiKey || null;
+              data.customOpenAIApiKey = null;
+              data.customOpenAIHasApiKey = customConfig.hasApiKey || false;
               data.maxTokens = customConfig.maxTokens || null;
               data.temperature = customConfig.temperature || null;
               data.topP = customConfig.topP || null;
@@ -83,7 +74,7 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
     const setupListener = async () => {
       const { listen } = await import('@tauri-apps/api/event');
       const unlisten = await listen<ModelConfig>('model-config-updated', (event) => {
-        console.log('SummaryModelSettings received model-config-updated event:', event.payload);
+        console.log('SummaryModelSettings received model-config-updated event');
         setModelConfig(event.payload);
       });
 
