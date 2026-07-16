@@ -47,6 +47,13 @@ on:
         required: false
         type: boolean
         default: false
+      release-notes:
+        # Becomes latest.json `notes` — the changelog an older version shows in
+        # its update dialog. Empty falls back to a link to the release page, so a
+        # release never ships an empty in-app changelog.
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -623,7 +630,31 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: frontend/src-tauri/binaries/ffmpeg-*
-          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('frontend/src-tauri/build.rs', 'frontend/src-tauri/build/ffmpeg.rs') }}    
+          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('frontend/src-tauri/build.rs', 'frontend/src-tauri/build/ffmpeg.rs') }}
+
+      # latest.json `notes` is what an OLDER version shows in its update dialog.
+      # tauri-action leaves it "" unless releaseBody is passed, which silently ships
+      # an empty changelog. Never emit "": fall back to the release page.
+      - name: Resolve updater release notes
+        id: updater-notes
+        shell: bash
+        env:
+          PROVIDED_NOTES: ${{ inputs.release-notes }}
+          VERSION: ${{ steps.get-version.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${PROVIDED_NOTES//[[:space:]]/}" ]]; then
+            body="$PROVIDED_NOTES"
+          else
+            body="Mityu ${VERSION} — see https://github.com/${REPOSITORY}/releases/tag/v${VERSION} for what's new."
+          fi
+          {
+            echo "body<<__MITYU_NOTES_EOF__"
+            echo "$body"
+            echo "__MITYU_NOTES_EOF__"
+          } >> "$GITHUB_OUTPUT"
+          echo "Updater notes resolved (${#body} chars)."
 
       - name: Build with Tauri
         id: tauri-build
@@ -659,6 +690,10 @@ jobs:
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
           args: ${{ inputs.build-args }} ${{ steps.build-features.outputs.features }}
+          # tauri-action copies this into latest.json `notes`, which is the text an
+          # older version renders in its update dialog. Resolved in a prior step so
+          # multi-line notes survive and no expression escaping is needed.
+          releaseBody: ${{ steps.updater-notes.outputs.body }}
           # release.yml verifies and publishes the NSIS updater target. Keep the
           # action-generated latest.json on that exact installer/signature pair.
           updaterJsonPreferNsis: ${{ inputs.production-release }}

@@ -2,6 +2,11 @@ name: "Release"
 
 on:
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "What's new (shown in the in-app update dialog of older versions). Leave empty to link to the release page instead."
+        required: false
+        type: string
 
 # Prevent duplicate releases
 concurrency:
@@ -170,6 +175,9 @@ jobs:
       build-args: ""
       sign-binaries: false  # v1.0.4: updater-signed only, Windows Authenticode deferred (ADR-0029)
       production-release: true
+      # Ends up as latest.json `notes` = the changelog older versions show in
+      # their update dialog. Empty here means build.yml falls back to a link.
+      release-notes: ${{ inputs.release_notes }}
       asset-prefix: "mityu"
       upload-artifacts: false  # tauri-action uploads directly to release
       release-id: ${{ needs.create-release.outputs.release-id }}
@@ -291,6 +299,22 @@ jobs:
             "Mityu_${VERSION}_x64-setup.exe" \
             "Mityu_${VERSION}_x64-setup.exe.sig" \
             frontend/src-tauri/tauri.conf.json
+
+      # Any failure above makes cleanup-failed-draft delete the draft, which takes
+      # ~40 minutes of build AND the evidence with it (exactly what happened on the
+      # first v1.0.4 attempt). Keep the small artifacts so the next attempt starts
+      # from a diagnosis instead of another full rebuild. The installers are not
+      # uploaded: they are large and re-derivable.
+      - name: Preserve verification evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-summary-evidence-v${{ needs.create-release.outputs.version }}
+          path: |
+            latest.json
+            Mityu_*.sig
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Release Summary
         run: |
