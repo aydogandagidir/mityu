@@ -32,7 +32,15 @@ CI used to pass `MEETILY_RSA_PUBLIC_KEY` + `SUPABASE_URL` / `SUPABASE_ANON_KEY` 
 
 ## 2a. Landing rate-limit secret (BLOCKING for KV-enabled deployment)
 
-Provision `DOWNLOAD_RATE_LIMIT_HMAC_SECRET` as an encrypted Vercel secret in every Preview/Production environment that has Upstash/Vercel KV credentials. It must be cryptographically random and at least 32 UTF-8 bytes; never expose it with a `NEXT_PUBLIC_` name or reuse a signing/API/user password. Missing/partial KV configuration fails closed before any KV write. After provisioning, deploy a fresh preview and run the landing 5-test suite plus the browser request-body/rate-limit smoke before production promotion. See `landing/README.md`.
+Provision `DOWNLOAD_RATE_LIMIT_HMAC_SECRET` as an encrypted Vercel secret in every Preview/Production environment that has Upstash/Vercel KV credentials. It must be cryptographically random and at least 32 UTF-8 bytes; never expose it with a `NEXT_PUBLIC_` name or reuse a signing/API/user password. Missing/partial KV configuration fails closed before any KV write. After provisioning, deploy a fresh preview and run the landing test suite plus the browser request-body/rate-limit smoke before production promotion. See `landing/README.md`.
+
+## 2b. Public download endpoint — versioned by construction (no per-release edit)
+
+`landing/api/download.js` resolves the current release **at request time** from `latest.json` (the updater manifest CI publishes with every release) and streams the installer under its real, versioned name — `Mityu_<x.y.z>_x64-setup.exe`. A visitor always sees which version they downloaded, and nothing here needs editing per release.
+
+- **The unversioned `Mityu-Setup.exe` alias is no longer required.** It was hand-copied into v1.0.1–v1.0.4; forgetting it silently broke this endpoint (502) the moment a release without it became Latest. Releases from v1.0.5 on are not expected to carry it. Keep the alias on the existing published releases so old links keep resolving.
+- The endpoint only proxies assets under `https://github.com/aydogandagidir/mityu/releases/download/` and only file names matching `Mityu_<x.y.z>_x64-setup.exe`. Anything else fails closed (502) — it is not a general-purpose proxy.
+- Covered by `landing/tests/download.test.mjs` (`npm test` in `landing/`): versioned naming, automatic pick-up of a new release, foreign-origin refusal, and every fail-closed path.
 
 ## 3. Third-party binaries & models (supply-chain)
 
