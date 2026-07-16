@@ -114,6 +114,10 @@ jobs:
             exit 1
           fi
 
+          # NOTE: this guard only sees DRAFT releases because this job holds
+          # `contents: write`. Lowering it to `read` would silently hide drafts
+          # (the list endpoint omits them for read-only tokens) and turn this
+          # duplicate check into a no-op instead of an error. Do not downgrade.
           EXISTING_RELEASE_IDS=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq ".[] | select(.tag_name == \"v${VERSION}\") | .id")
           if [[ -n "$EXISTING_RELEASE_IDS" ]]; then
             echo "ERROR: A GitHub release or draft already exists for v${VERSION}."
@@ -176,9 +180,13 @@ jobs:
     needs: [create-release, build-windows]
     runs-on: ubuntu-latest
     permissions:
-      # Listing and downloading an unpublished draft's assets requires an
-      # authenticated repository token, but no mutation permission.
-      contents: read
+      # `contents: write` is REQUIRED here, not optional: an unpublished draft
+      # release is invisible to a read-only GITHUB_TOKEN, so listing/downloading
+      # its assets 403s ("Resource not accessible by integration"). GitHub has no
+      # finer-grained `releases` scope — releases are governed by `contents`.
+      # This job still performs no mutation; the write scope is unused capability.
+      # (Regression fix: ae09449 flipped this to `read` and run 29470672916 failed.)
+      contents: write
     steps:
       - name: Checkout the exact release commit
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
