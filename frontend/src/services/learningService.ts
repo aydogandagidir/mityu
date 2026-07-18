@@ -1,5 +1,5 @@
 /**
- * Typed bindings for the learned-rule surface (ADR-0024 §9).
+ * Typed bindings for the learned-rule surface (ADR-0030 §9).
  *
  * Every method is a 1-to-1 wrapper around one Tauri command — no logic lives
  * here. The status machine, the birth policy and the scope filter are all Rust
@@ -84,7 +84,7 @@ export interface RuleEvidenceResponse {
  * years apart, and matching each struct's own wire shape beats inventing a third.)
  */
 export interface LearningConfig {
-  /** Master switch: capture, mine, inject. Off ⇒ the app behaves as it did pre-ADR-0024. */
+  /** Master switch: capture, mine, inject. Off ⇒ the app behaves as it did pre-ADR-0030. */
   enabled: boolean;
   /**
    * Whether a well-supported mined rule goes straight into force instead of

@@ -1,12 +1,27 @@
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
 use sqlx::{Result, Sqlite, SqlitePool, Transaction};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 use tauri::Manager;
+use tokio::sync::Mutex;
+
+use crate::context::AuthContext;
+use crate::database::deletion::ArtifactEraseReport;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct VerifiedMeetingDeletion {
+    pub already_absent: bool,
+    pub artifacts: ArtifactEraseReport,
+}
 
 #[derive(Clone)]
 pub struct DatabaseManager {
     pool: SqlitePool,
+    /// VACUUM and WAL truncation are whole-database operations. Serialize them
+    /// so concurrent delete commands cannot make each other's verification busy.
+    deletion_lock: Arc<Mutex<()>>,
     /// Records which branch of the ADR-0014 at-rest encryption decision actually ran
     /// for this open, so the UI can warn on a plaintext fallback (follow-up to
     /// ADR-0014). `true` = the pool was opened with the SQLCipher key (data encrypted
@@ -142,7 +157,11 @@ impl DatabaseManager {
             .filename(tauri_db_path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .foreign_keys(true);
+            .foreign_keys(true)
+            .busy_timeout(Duration::from_secs(15))
+            // SQLite core secure-delete does not cover FTS shadow tables; the
+            // persistent FTS5 option is installed by migration 20260714010000.
+            .pragma("secure_delete", "ON");
         if let Some(k) = &key_hex {
             options = options.pragma("key", crate::secrets::db::pragma_key_value(k));
         }
@@ -165,26 +184,35 @@ impl DatabaseManager {
         // store (CLAUDE.md §0.7/§3, docs/SECURITY_PRIVACY.md "Secrets"). Runs on
         // every init path (fresh, legacy-import, recovery) and fully offline.
         // NON-FATAL: a locked/unavailable keychain must never block opening the DB
-        // or offline operation (local-first invariant) — unmigrated columns are
-        // retried lazily on next read.
-        match crate::database::repositories::setting::SettingsRepository::migrate_plaintext_keys_to_keychain(&pool)
-            .await
-        {
-            Ok(0) => {}
-            Ok(n) => log::info!(
-                "Migrated {} legacy plaintext API key(s) into the OS credential store",
-                n
-            ),
-            Err(e) => log::warn!(
-                "Non-fatal: could not migrate plaintext API keys into the OS credential store ({}); will retry lazily on next read",
-                e
-            ),
+        // or offline operation (local-first invariant). Legacy plaintext is still
+        // scrubbed in that case and the affected provider requires user re-entry.
+        let startup_ctx = crate::context::current();
+        let removed_plaintext = crate::database::repositories::setting::SettingsRepository::migrate_plaintext_keys_to_keychain(
+            &pool,
+            &startup_ctx,
+        )
+        .await?;
+        if removed_plaintext > 0 {
+            log::info!(
+                "Removed {} legacy plaintext API key(s) from SQLite",
+                removed_plaintext
+            );
         }
 
-        Ok(DatabaseManager {
+        let manager = DatabaseManager {
             pool,
+            deletion_lock: Arc::new(Mutex::new(())),
             at_rest_encrypted,
-        })
+        };
+
+        // New v1.0.4 databases and upgrades receive one historical FTS/free-page
+        // compaction. A failure is non-fatal for local-first startup; the durable,
+        // content-free marker stays pending and every later delete retries it.
+        if let Err(error) = manager.resume_pending_privacy_maintenance().await {
+            log::warn!("Local privacy maintenance remains pending and will be retried: {error:#}");
+        }
+
+        Ok(manager)
     }
 
     // NOTE: So for the first time users they needs to start the application
@@ -321,6 +349,82 @@ impl DatabaseManager {
     /// it does not re-check the file on disk.
     pub fn is_at_rest_encrypted(&self) -> bool {
         self.at_rest_encrypted
+    }
+
+    async fn resume_pending_privacy_maintenance(&self) -> anyhow::Result<()> {
+        if crate::database::deletion::privacy_maintenance_required(&self.pool).await? {
+            crate::database::deletion::complete_privacy_maintenance(&self.pool).await?;
+        }
+        Ok(())
+    }
+
+    /// Delete all Mityu-managed local copies for a meeting, then prove the
+    /// SQLite/FTS/free-page/WAL maintenance cycle before reporting success.
+    /// Unknown user-added files in the meeting directory are retained and
+    /// counted; storage-level forensic erasure is explicitly out of scope.
+    pub async fn delete_meeting_verified(
+        &self,
+        ctx: &AuthContext,
+        meeting_id: &str,
+        allowed_recording_roots: Vec<PathBuf>,
+    ) -> anyhow::Result<VerifiedMeetingDeletion> {
+        let _guard = self.deletion_lock.lock().await;
+
+        // A previous crash may have committed logical deletion before VACUUM.
+        // Finish that cycle before accepting another delete request.
+        self.resume_pending_privacy_maintenance().await?;
+
+        let meeting =
+            crate::database::repositories::meeting::MeetingsRepository::get_meeting_metadata(
+                &self.pool, ctx, meeting_id,
+            )
+            .await?;
+        let Some(meeting) = meeting else {
+            // Idempotent and non-enumerating: an absent or foreign-tenant id has
+            // the same externally visible result and reveals no row existence.
+            return Ok(VerifiedMeetingDeletion {
+                already_absent: true,
+                artifacts: ArtifactEraseReport::default(),
+            });
+        };
+
+        let mut artifacts = ArtifactEraseReport::default();
+        if let Some(folder_path) = meeting.folder_path.filter(|path| !path.trim().is_empty()) {
+            crate::database::deletion::ensure_folder_not_shared(
+                &self.pool,
+                ctx,
+                meeting_id,
+                &folder_path,
+            )
+            .await?;
+
+            let target = PathBuf::from(folder_path);
+            let erase_ctx = ctx.clone();
+            artifacts = tokio::task::spawn_blocking(move || {
+                crate::database::deletion::erase_recording_folder(
+                    &target,
+                    &allowed_recording_roots,
+                    &erase_ctx,
+                )
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("recording cleanup task failed: {error}"))??;
+        }
+
+        let deleted =
+            crate::database::deletion::delete_database_records(&self.pool, ctx, meeting_id).await?;
+        if !deleted {
+            return Ok(VerifiedMeetingDeletion {
+                already_absent: true,
+                artifacts,
+            });
+        }
+
+        crate::database::deletion::complete_privacy_maintenance(&self.pool).await?;
+        Ok(VerifiedMeetingDeletion {
+            already_absent: false,
+            artifacts,
+        })
     }
 
     pub async fn with_transaction<T, F, Fut>(&self, f: F) -> Result<T>

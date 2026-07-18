@@ -34,7 +34,14 @@ import {
   fetchAllTranscripts,
   buildTimestampMap,
 } from '@/lib/transcriptTimestamps';
-import { buildExportDoc, type ExportDoc, type ExportMeta } from '@/lib/exportModel';
+import {
+  assertSummaryApprovedForExport,
+  buildExportDoc,
+  ExportApprovalError,
+  ExportSourceLinkError,
+  type ExportDoc,
+  type ExportMeta,
+} from '@/lib/exportModel';
 import { renderExportMarkdown } from '@/lib/exportMarkdown';
 import { renderExportDocx } from '@/lib/exportDocx';
 import { renderExportPdf } from '@/lib/exportPdf';
@@ -109,6 +116,34 @@ function downloadBlob(
   URL.revokeObjectURL(url);
 }
 
+/** Resolve every transcript timestamp or fail closed with a content-free error. */
+export async function resolveExportTimestamps(
+  meetingId: string,
+  fetcher: typeof fetchAllTranscripts = fetchAllTranscripts,
+): Promise<Map<string, string>> {
+  try {
+    return buildTimestampMap(await fetcher(meetingId));
+  } catch {
+    throw new ExportSourceLinkError();
+  }
+}
+
+/**
+ * Build an export document only after proving whole-summary approval. Approval
+ * is checked before transcript I/O so a draft with approved child items cannot
+ * probe the export pipeline or produce a file.
+ */
+export async function prepareExportDoc(
+  meetingId: string,
+  draftResponse: SummaryDraftResponse | null,
+  meta: ExportMeta,
+  fetcher: typeof fetchAllTranscripts = fetchAllTranscripts,
+): Promise<ExportDoc> {
+  assertSummaryApprovedForExport(draftResponse);
+  const segmentTimestamps = await resolveExportTimestamps(meetingId, fetcher);
+  return buildExportDoc(draftResponse, segmentTimestamps, meta);
+}
+
 export function useExportOperations({
   meetingId,
   draftResponse,
@@ -119,7 +154,7 @@ export function useExportOperations({
 
   /**
    * The single, format-agnostic export path shared by all three formats: resolve
-   * timestamps (best-effort) → build the approved-only doc → guard the empty
+   * every source timestamp (fail-closed) → build the approved-only doc → guard the empty
    * case → render with the format's renderer → blob-download → content-free
    * analytics. `render` is the ONLY per-format input (may be sync or async).
    */
@@ -130,24 +165,7 @@ export function useExportOperations({
     ): Promise<void> => {
       setIsExporting(true);
       try {
-        // 1) Resolve source timestamps from ALL rows (fetch-all, not paginated
-        //    state) so every source_chunk_id can map to its [MM:SS].
-        let segmentTimestamps: Map<string, string>;
-        try {
-          const transcripts = await fetchAllTranscripts(meetingId);
-          segmentTimestamps = buildTimestampMap(transcripts);
-        } catch (err) {
-          // Timestamps are best-effort: if the transcript read fails we still
-          // export (blocks/items just render without a [MM:SS]) rather than
-          // block the user. Log the technical detail; keep the UI message friendly.
-          console.error(
-            '[useExportOperations] Failed to fetch transcripts for timestamps:',
-            err,
-          );
-          segmentTimestamps = new Map();
-        }
-
-        // 2) Build the format-agnostic doc (approved-only filtering happens here).
+        // 1) Capture provenance metadata without trusting it as proof of review.
         const meta: ExportMeta = {
           meetingId,
           title: meetingTitle?.trim() || 'Meeting Summary',
@@ -157,7 +175,9 @@ export function useExportOperations({
           approvedBy: draftResponse?.approved_by ?? undefined,
           model: draftResponse?.model ?? undefined,
         };
-        const doc = buildExportDoc(draftResponse, segmentTimestamps, meta);
+        // 2) Prove whole-summary approval, resolve every source from ALL
+        // transcript rows, and build the format-agnostic approved-only doc.
+        const doc = await prepareExportDoc(meetingId, draftResponse, meta);
 
         // Guard: nothing approved to emit (should be unreachable because the
         // control is gated on an approved summary, but keep it friendly).
@@ -175,12 +195,26 @@ export function useExportOperations({
         toast.success(`Summary exported to ${successLabel}`);
 
         // 4) Content-free analytics (opt-in gate lives inside Analytics).
-        await Analytics.trackExport({ format, meetingId });
+        await Analytics.trackExport({ format });
       } catch (err) {
-        console.error(`[useExportOperations] ${format} export failed:`, err);
-        toast.error("Couldn't export the summary", {
-          description: 'Please try again in a moment.',
-        });
+        if (err instanceof ExportApprovalError) {
+          console.error('[useExportOperations] Export blocked by approval validation');
+          toast.error('Export blocked: approve the whole summary first', {
+            description:
+              'Approved blocks or action items alone are not enough. Approve the summary, then try again.',
+          });
+        } else if (err instanceof ExportSourceLinkError) {
+          console.error('[useExportOperations] Export blocked by source-link validation');
+          toast.error('Export blocked: source link missing', {
+            description:
+              'Every approved AI item must resolve to a transcript timestamp. Refresh the meeting and try again.',
+          });
+        } else {
+          console.error(`[useExportOperations] ${format} export failed`);
+          toast.error("Couldn't export the summary", {
+            description: 'Please try again in a moment.',
+          });
+        }
       } finally {
         setIsExporting(false);
       }

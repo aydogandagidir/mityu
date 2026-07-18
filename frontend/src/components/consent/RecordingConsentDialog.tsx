@@ -69,6 +69,7 @@ export function RecordingConsentDialog({ open, onConfirm, onCancel }: RecordingC
           <DialogDescription className="pt-1">
             Mityu captures your microphone and system audio and transcribes it
             locally on this device. Nothing is uploaded to start a recording.
+            The raw audio remains on this device until you delete the meeting.
           </DialogDescription>
         </DialogHeader>
 

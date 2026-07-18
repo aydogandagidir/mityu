@@ -6,6 +6,7 @@
 use anyhow::Result;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -34,13 +35,46 @@ pub use super::transcription::TranscriptUpdate;
 
 // Simple recording state tracking
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
+static STOP_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 // Global recording manager and transcription task to keep them alive during recording
 static RECORDING_MANAGER: Mutex<Option<RecordingManager>> = Mutex::new(None);
 static TRANSCRIPTION_TASK: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
+#[derive(Debug)]
+struct PendingCompletedRecording {
+    completion_token: String,
+    folder: Option<PathBuf>,
+    tenant_id: String,
+    user_id: String,
+    reserved: bool,
+    persisted: bool,
+    meeting_id: Option<String>,
+}
+
+// The renderer receives only the opaque token. The filesystem path stored here
+// remains the authority and can be reserved by exactly one matching save.
+const MAX_PENDING_COMPLETED_RECORDINGS: usize = 32;
+static PENDING_COMPLETED_RECORDINGS: Mutex<Vec<PendingCompletedRecording>> = Mutex::new(Vec::new());
+
 // Listener ID for proper cleanup - prevents microphone from staying active after recording stops
 static TRANSCRIPT_LISTENER_ID: Mutex<Option<tauri::EventId>> = Mutex::new(None);
+
+struct RecordingStopGuard<'a> {
+    flag: &'a AtomicBool,
+}
+
+impl Drop for RecordingStopGuard<'_> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::SeqCst);
+    }
+}
+
+fn try_begin_recording_stop(flag: &AtomicBool) -> Option<RecordingStopGuard<'_>> {
+    flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .ok()
+        .map(|_| RecordingStopGuard { flag })
+}
 
 // ============================================================================
 // PUBLIC TYPES
@@ -58,6 +92,14 @@ pub struct TranscriptionStatus {
     pub last_activity_ms: u64,
 }
 
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PendingRecordingPostProcessing {
+    pub completion_token: String,
+    pub persisted: bool,
+    pub meeting_id: Option<String>,
+}
+
 // ============================================================================
 // RECORDING COMMANDS
 // ============================================================================
@@ -73,8 +115,12 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     meeting_name: Option<String>,
 ) -> Result<(), String> {
     info!(
-        "Starting recording with default devices, meeting: {:?}",
+        "Starting recording with default devices (meeting_title_present={}, meeting_title_chars={})",
+        meeting_name.is_some(),
         meeting_name
+            .as_deref()
+            .map(|name| name.chars().count())
+            .unwrap_or(0)
     );
 
     let engine_lifecycle_guard = super::common::acquire_engine_lifecycle_lock().await;
@@ -82,8 +128,14 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // Check if already recording
     let current_recording_state = IS_RECORDING.load(Ordering::SeqCst);
     info!("🔍 IS_RECORDING state check: {}", current_recording_state);
-    if current_recording_state {
+    if current_recording_state || STOP_IN_PROGRESS.load(Ordering::SeqCst) {
         return Err("Recording already in progress".to_string());
+    }
+    if is_recording_post_processing_pending() {
+        return Err(
+            "The previous recording is still being saved. Wait for post-processing to finish before starting another recording."
+                .to_string(),
+        );
     }
 
     // Validate that transcription models are available before starting recording
@@ -141,11 +193,8 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                     info!("✅ Using preferred microphone: '{}'", device.name);
                     Some(Arc::new(device))
                 }
-                Err(e) => {
-                    warn!(
-                        "⚠️ Preferred microphone '{}' not available: {}",
-                        pref_name, e
-                    );
+                Err(_e) => {
+                    warn!("⚠️ Preferred microphone is unavailable; using system default");
                     warn!("   Falling back to system default microphone...");
                     match default_input_device() {
                         Ok(device) => {
@@ -194,11 +243,8 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                     info!("✅ Using preferred system audio: '{}'", device.name);
                     Some(Arc::new(device))
                 }
-                Err(e) => {
-                    warn!(
-                        "⚠️ Preferred system audio '{}' not available: {}",
-                        pref_name, e
-                    );
+                Err(_e) => {
+                    warn!("⚠️ Preferred system audio is unavailable; using system default");
                     warn!("   Falling back to system default...");
                     match default_output_device() {
                         Ok(device) => {
@@ -338,8 +384,14 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     meeting_name: Option<String>,
 ) -> Result<(), String> {
     info!(
-        "Starting recording with specific devices: mic={:?}, system={:?}, meeting={:?}",
-        mic_device_name, system_device_name, meeting_name
+        "Starting recording with specific devices (microphone_selected={}, system_audio_selected={}, meeting_title_present={}, meeting_title_chars={})",
+        mic_device_name.is_some(),
+        system_device_name.is_some(),
+        meeting_name.is_some(),
+        meeting_name
+            .as_deref()
+            .map(|name| name.chars().count())
+            .unwrap_or(0)
     );
 
     let engine_lifecycle_guard = super::common::acquire_engine_lifecycle_lock().await;
@@ -347,8 +399,14 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // Check if already recording
     let current_recording_state = IS_RECORDING.load(Ordering::SeqCst);
     info!("🔍 IS_RECORDING state check: {}", current_recording_state);
-    if current_recording_state {
+    if current_recording_state || STOP_IN_PROGRESS.load(Ordering::SeqCst) {
         return Err("Recording already in progress".to_string());
+    }
+    if is_recording_post_processing_pending() {
+        return Err(
+            "The previous recording is still being saved. Wait for post-processing to finish before starting another recording."
+                .to_string(),
+        );
     }
 
     // Validate that transcription models are available before starting recording
@@ -506,15 +564,22 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
 pub async fn stop_recording<R: Runtime>(
     app: AppHandle<R>,
     _args: RecordingArgs,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     info!(
         "🛑 Starting optimized recording shutdown - ensuring ALL transcript chunks are preserved"
     );
 
+    // UI and tray can request stop at nearly the same time. Only the caller
+    // owning this guard may take the manager or emit final completion metadata.
+    let Some(_stop_guard) = try_begin_recording_stop(&STOP_IN_PROGRESS) else {
+        info!("Recording shutdown is already in progress");
+        return Ok(false);
+    };
+
     // Check if recording is active
     if !IS_RECORDING.load(Ordering::SeqCst) {
         info!("Recording was not active");
-        return Ok(());
+        return Ok(false);
     }
 
     // Emit shutdown progress to frontend
@@ -887,14 +952,20 @@ pub async fn stop_recording<R: Runtime>(
     // Step 4.5: Prepare metadata for frontend (NO database save)
     // NOTE: We do NOT save to database here. The frontend will save after all transcripts are displayed.
     // This ensures the user sees all transcripts streaming in before the database save happens.
+    let completion_context = crate::context::current();
+    let completion_token =
+        install_pending_completed_recording(meeting_folder.clone(), &completion_context);
     let (folder_path_str, meeting_name_str) = match (&meeting_folder, &meeting_name) {
         (Some(path), Some(name)) => (Some(path.to_string_lossy().to_string()), Some(name.clone())),
         _ => (None, None),
     };
 
-    info!("📤 Preparing recording metadata for frontend save");
-    info!("   folder_path: {:?}", folder_path_str);
-    info!("   meeting_name: {:?}", meeting_name_str);
+    info!("Preparing recording metadata for frontend save");
+    info!(
+        "Recording metadata present: folder={}, meeting_name={}",
+        folder_path_str.is_some(),
+        meeting_name_str.is_some()
+    );
 
     // Database save removed - frontend will handle this after receiving all transcripts
     info!("ℹ️ Skipping database save in Rust - frontend will save after all transcripts received");
@@ -909,13 +980,15 @@ pub async fn stop_recording<R: Runtime>(
         }),
     );
 
-    // Emit final stop event with folder_path and meeting_name for frontend to save
+    // Emit final stop metadata. Only the opaque completion token can reserve the
+    // Rust-owned folder; the path remains a legacy display/correlation value.
     app.emit(
         "recording-stopped",
         serde_json::json!({
             "message": "Recording stopped - frontend will save after all transcripts received",
             "folder_path": folder_path_str,
-            "meeting_name": meeting_name_str
+            "meeting_name": meeting_name_str,
+            "completion_token": completion_token
         }),
     )
     .map_err(|e| e.to_string())?;
@@ -924,7 +997,7 @@ pub async fn stop_recording<R: Runtime>(
     crate::tray::update_tray_menu(&app);
 
     info!("🎉 Recording stopped successfully with ZERO transcript chunks lost");
-    Ok(())
+    Ok(true)
 }
 
 /// Check if recording is active
@@ -1061,6 +1134,313 @@ pub async fn get_meeting_folder_path() -> Result<Option<String>, String> {
     } else {
         Ok(None)
     }
+}
+
+fn install_pending_completed_recording(
+    folder: Option<PathBuf>,
+    ctx: &crate::context::AuthContext,
+) -> Option<String> {
+    let pending = PendingCompletedRecording {
+        completion_token: uuid::Uuid::new_v4().to_string(),
+        folder,
+        tenant_id: ctx.tenant_id.as_str().to_owned(),
+        user_id: ctx.user_id.as_str().to_owned(),
+        reserved: false,
+        persisted: false,
+        meeting_id: None,
+    };
+    let completion_token = pending.completion_token.clone();
+
+    let mut pending_recordings = PENDING_COMPLETED_RECORDINGS.lock().ok()?;
+    if pending_recordings.len() >= MAX_PENDING_COMPLETED_RECORDINGS {
+        if let Some(oldest_available) = pending_recordings
+            .iter()
+            .position(|pending_recording| !pending_recording.reserved)
+        {
+            pending_recordings.remove(oldest_available);
+            warn!("Dropped the oldest unclaimed recording completion after reaching the bounded pending-save limit");
+        } else {
+            warn!("Could not issue a recording completion token because all bounded pending saves are reserved");
+            return None;
+        }
+    }
+    pending_recordings.push(pending);
+    Some(completion_token)
+}
+
+pub(crate) fn is_recording_post_processing_pending() -> bool {
+    PENDING_COMPLETED_RECORDINGS
+        .lock()
+        .map(|pending_recordings| pending_recordings_block_start(&pending_recordings))
+        .unwrap_or(true)
+}
+
+fn pending_recordings_block_start(pending_recordings: &[PendingCompletedRecording]) -> bool {
+    !pending_recordings.is_empty()
+}
+
+fn reserve_pending_completed_recording(
+    pending_recordings: &mut [PendingCompletedRecording],
+    presented_token: Option<&str>,
+    tenant_id: &str,
+    user_id: &str,
+) -> Option<(String, Option<PathBuf>)> {
+    let presented_token = presented_token.filter(|token| !token.trim().is_empty())?;
+    let pending_recording = pending_recordings.iter_mut().find(|pending_recording| {
+        !pending_recording.reserved
+            && !pending_recording.persisted
+            && pending_recording.completion_token == presented_token
+            && pending_recording.tenant_id == tenant_id
+            && pending_recording.user_id == user_id
+    })?;
+
+    pending_recording.reserved = true;
+    Some((
+        pending_recording.completion_token.clone(),
+        pending_recording.folder.clone(),
+    ))
+}
+
+fn mark_pending_completed_recording_persisted(
+    pending_recordings: &mut Vec<PendingCompletedRecording>,
+    completion_token: &str,
+    meeting_id: &str,
+) {
+    let Some(position) = pending_recordings.iter().position(|pending_recording| {
+        pending_recording.reserved && pending_recording.completion_token == completion_token
+    }) else {
+        return;
+    };
+
+    pending_recordings[position].persisted = true;
+    pending_recordings[position].meeting_id = Some(meeting_id.to_string());
+}
+
+fn release_pending_completed_recording(
+    pending_recordings: &mut [PendingCompletedRecording],
+    completion_token: &str,
+) {
+    let Some(pending_recording) = pending_recordings.iter_mut().find(|pending_recording| {
+        pending_recording.reserved
+            && !pending_recording.persisted
+            && pending_recording.completion_token == completion_token
+    }) else {
+        return;
+    };
+
+    pending_recording.reserved = false;
+}
+
+fn acknowledge_pending_completed_recording(
+    pending_recordings: &mut Vec<PendingCompletedRecording>,
+    completion_token: &str,
+    tenant_id: &str,
+    user_id: &str,
+) -> bool {
+    let Some(position) = pending_recordings.iter().position(|pending_recording| {
+        pending_recording.reserved
+            && pending_recording.persisted
+            && pending_recording.completion_token == completion_token
+            && pending_recording.tenant_id == tenant_id
+            && pending_recording.user_id == user_id
+    }) else {
+        return false;
+    };
+
+    pending_recordings.remove(position);
+    true
+}
+
+fn mark_reserved_completed_recording_persisted(completion_token: &str, meeting_id: &str) {
+    if let Ok(mut pending_recordings) = PENDING_COMPLETED_RECORDINGS.lock() {
+        mark_pending_completed_recording_persisted(
+            &mut pending_recordings,
+            completion_token,
+            meeting_id,
+        );
+    }
+}
+
+fn release_reserved_completed_recording(completion_token: &str) {
+    if let Ok(mut pending_recordings) = PENDING_COMPLETED_RECORDINGS.lock() {
+        release_pending_completed_recording(&mut pending_recordings, completion_token);
+    }
+}
+
+/// A one-save reservation over a Rust-owned recording folder. Dropping an
+/// uncommitted reservation releases it for retry. `commit` marks the database
+/// write complete but keeps native start blocked until the frontend explicitly
+/// acknowledges that all post-processing for the same token has finished.
+pub(crate) struct CompletedRecordingFolderReservation {
+    completion_token: String,
+    folder_path: Option<String>,
+    committed: bool,
+}
+
+impl CompletedRecordingFolderReservation {
+    pub(crate) fn folder_path(&self) -> Option<&str> {
+        self.folder_path.as_deref()
+    }
+
+    pub(crate) fn commit(mut self, meeting_id: &str) {
+        mark_reserved_completed_recording_persisted(&self.completion_token, meeting_id);
+        self.committed = true;
+    }
+}
+
+impl Drop for CompletedRecordingFolderReservation {
+    fn drop(&mut self) {
+        if !self.committed {
+            release_reserved_completed_recording(&self.completion_token);
+        }
+    }
+}
+
+/// Reserve the folder created by the Rust recording pipeline for the matching
+/// completion token. Missing, stale, wrong, or duplicate tokens return `None`
+/// without consuming the pending folder. This is intentionally not a Tauri
+/// command: persistence code uses it so renderer-provided paths are never a
+/// filesystem authority.
+pub(crate) fn reserve_last_completed_recording_folder(
+    ctx: &crate::context::AuthContext,
+    completion_token: Option<&str>,
+) -> Option<CompletedRecordingFolderReservation> {
+    let mut pending_recordings = PENDING_COMPLETED_RECORDINGS.lock().ok()?;
+    let (completion_token, folder) = reserve_pending_completed_recording(
+        &mut pending_recordings,
+        completion_token,
+        ctx.tenant_id.as_str(),
+        ctx.user_id.as_str(),
+    )?;
+    Some(CompletedRecordingFolderReservation {
+        completion_token,
+        folder_path: folder.map(|path| path.to_string_lossy().to_string()),
+        committed: false,
+    })
+}
+
+/// Release the native new-recording gate only after the same context and token
+/// have both persisted the meeting and completed frontend post-processing.
+pub(crate) fn acknowledge_completed_recording_post_processing(
+    ctx: &crate::context::AuthContext,
+    completion_token: &str,
+) -> bool {
+    let Ok(mut pending_recordings) = PENDING_COMPLETED_RECORDINGS.lock() else {
+        return false;
+    };
+    acknowledge_pending_completed_recording(
+        &mut pending_recordings,
+        completion_token,
+        ctx.tenant_id.as_str(),
+        ctx.user_id.as_str(),
+    )
+}
+
+pub(crate) fn has_pending_recording_post_processing_for_context(
+    ctx: &crate::context::AuthContext,
+) -> bool {
+    PENDING_COMPLETED_RECORDINGS
+        .lock()
+        .map(|pending_recordings| {
+            pending_recordings.iter().any(|pending_recording| {
+                pending_recording.tenant_id == ctx.tenant_id.as_str()
+                    && pending_recording.user_id == ctx.user_id.as_str()
+            })
+        })
+        .unwrap_or(true)
+}
+
+pub(crate) fn pending_recording_post_processing_for_context(
+    ctx: &crate::context::AuthContext,
+) -> Option<PendingRecordingPostProcessing> {
+    let pending_recordings = PENDING_COMPLETED_RECORDINGS.lock().ok()?;
+    pending_recording_post_processing(
+        &pending_recordings,
+        ctx.tenant_id.as_str(),
+        ctx.user_id.as_str(),
+    )
+}
+
+fn pending_recording_post_processing(
+    pending_recordings: &[PendingCompletedRecording],
+    tenant_id: &str,
+    user_id: &str,
+) -> Option<PendingRecordingPostProcessing> {
+    pending_recordings
+        .iter()
+        .find(|pending_recording| {
+            pending_recording.tenant_id == tenant_id && pending_recording.user_id == user_id
+        })
+        .map(|pending_recording| PendingRecordingPostProcessing {
+            completion_token: pending_recording.completion_token.clone(),
+            persisted: pending_recording.persisted,
+            meeting_id: pending_recording.meeting_id.clone(),
+        })
+}
+
+pub(crate) fn abandon_recording_post_processing(
+    ctx: &crate::context::AuthContext,
+    completion_token: &str,
+) -> bool {
+    let Ok(mut pending_recordings) = PENDING_COMPLETED_RECORDINGS.lock() else {
+        return false;
+    };
+    abandon_pending_recording_post_processing(
+        &mut pending_recordings,
+        completion_token,
+        ctx.tenant_id.as_str(),
+        ctx.user_id.as_str(),
+    )
+}
+
+fn abandon_pending_recording_post_processing(
+    pending_recordings: &mut Vec<PendingCompletedRecording>,
+    completion_token: &str,
+    tenant_id: &str,
+    user_id: &str,
+) -> bool {
+    let Some(position) = pending_recordings.iter().position(|pending_recording| {
+        pending_recording.completion_token == completion_token
+            && pending_recording.tenant_id == tenant_id
+            && pending_recording.user_id == user_id
+    }) else {
+        return false;
+    };
+    pending_recordings.remove(position);
+    true
+}
+
+/// Return the meeting already committed for this token so renderer retries are
+/// idempotent even if the first local IPC response was interrupted.
+pub(crate) fn persisted_meeting_id_for_completion(
+    ctx: &crate::context::AuthContext,
+    completion_token: &str,
+) -> Option<String> {
+    let pending_recordings = PENDING_COMPLETED_RECORDINGS.lock().ok()?;
+    persisted_meeting_id(
+        &pending_recordings,
+        completion_token,
+        ctx.tenant_id.as_str(),
+        ctx.user_id.as_str(),
+    )
+}
+
+fn persisted_meeting_id(
+    pending_recordings: &[PendingCompletedRecording],
+    completion_token: &str,
+    tenant_id: &str,
+    user_id: &str,
+) -> Option<String> {
+    pending_recordings
+        .iter()
+        .find(|pending_recording| {
+            pending_recording.reserved
+                && pending_recording.persisted
+                && pending_recording.completion_token == completion_token
+                && pending_recording.tenant_id == tenant_id
+                && pending_recording.user_id == user_id
+        })
+        .and_then(|pending_recording| pending_recording.meeting_id.clone())
 }
 
 /// Get accumulated transcript segments from current recording session
@@ -1252,5 +1632,235 @@ pub async fn attempt_device_reconnect(
             error!("Manual reconnection error: {}", e);
             Err(e.to_string())
         }
+    }
+}
+
+#[cfg(test)]
+mod completed_recording_save_tests {
+    use super::*;
+
+    fn pending(token: &str) -> Vec<PendingCompletedRecording> {
+        vec![PendingCompletedRecording {
+            completion_token: token.to_string(),
+            folder: Some(PathBuf::from("trusted-recording-folder")),
+            tenant_id: "workspace-a".to_string(),
+            user_id: "user-a".to_string(),
+            reserved: false,
+            persisted: false,
+            meeting_id: None,
+        }]
+    }
+
+    fn reserve(
+        state: &mut [PendingCompletedRecording],
+        token: Option<&str>,
+    ) -> Option<(String, Option<PathBuf>)> {
+        reserve_pending_completed_recording(state, token, "workspace-a", "user-a")
+    }
+
+    #[test]
+    fn recovery_or_manual_save_without_token_cannot_reserve_or_consume_folder() {
+        let mut state = pending("completion-token");
+
+        assert!(reserve(&mut state, None).is_none());
+        assert_eq!(state.len(), 1);
+        assert!(!state[0].reserved);
+    }
+
+    #[test]
+    fn wrong_or_blank_token_leaves_pending_folder_available() {
+        let mut state = pending("completion-token");
+
+        assert!(reserve(&mut state, Some("wrong-token")).is_none());
+        assert!(reserve(&mut state, Some("   ")).is_none());
+        assert_eq!(state.len(), 1);
+        assert!(!state[0].reserved);
+    }
+
+    #[test]
+    fn matching_token_is_single_reservation_until_post_processing_acknowledges() {
+        let mut state = pending("completion-token");
+
+        let (token, folder) = reserve(&mut state, Some("completion-token")).unwrap();
+        assert_eq!(folder, Some(PathBuf::from("trusted-recording-folder")));
+        assert!(state[0].reserved);
+        assert!(reserve(&mut state, Some("completion-token")).is_none());
+
+        mark_pending_completed_recording_persisted(&mut state, &token, "meeting-a");
+        assert_eq!(state.len(), 1);
+        assert!(state[0].reserved);
+        assert!(state[0].persisted);
+        assert_eq!(state[0].meeting_id.as_deref(), Some("meeting-a"));
+        assert_eq!(
+            persisted_meeting_id(&state, &token, "workspace-a", "user-a").as_deref(),
+            Some("meeting-a")
+        );
+        assert!(persisted_meeting_id(&state, &token, "workspace-b", "user-a").is_none());
+        assert!(pending_recordings_block_start(&state));
+        assert!(reserve(&mut state, Some("completion-token")).is_none());
+
+        assert!(acknowledge_pending_completed_recording(
+            &mut state,
+            &token,
+            "workspace-a",
+            "user-a"
+        ));
+        assert!(state.is_empty());
+        assert!(!pending_recordings_block_start(&state));
+    }
+
+    #[test]
+    fn failed_database_save_releases_same_token_for_retry() {
+        let mut state = pending("completion-token");
+
+        let (token, _) = reserve(&mut state, Some("completion-token")).unwrap();
+        release_pending_completed_recording(&mut state, &token);
+
+        assert!(!state[0].reserved);
+        assert!(!state[0].persisted);
+        assert!(reserve(&mut state, Some("completion-token")).is_some());
+    }
+
+    #[test]
+    fn stale_reservation_cannot_finish_a_new_pending_recording() {
+        let mut state = pending("old-token");
+        let (old_token, _) = reserve(&mut state, Some("old-token")).unwrap();
+        state.extend(pending("new-token"));
+
+        mark_pending_completed_recording_persisted(&mut state, &old_token, "meeting-old");
+        assert!(acknowledge_pending_completed_recording(
+            &mut state,
+            &old_token,
+            "workspace-a",
+            "user-a"
+        ));
+
+        assert_eq!(state.len(), 1);
+        assert_eq!(state[0].completion_token, "new-token");
+        assert!(!state[0].reserved);
+    }
+
+    #[test]
+    fn acknowledgement_is_context_bound_and_requires_persistence() {
+        let mut state = pending("completion-token");
+
+        assert!(!acknowledge_pending_completed_recording(
+            &mut state,
+            "completion-token",
+            "workspace-a",
+            "user-a"
+        ));
+        let (token, _) = reserve(&mut state, Some("completion-token")).unwrap();
+        mark_pending_completed_recording_persisted(&mut state, &token, "meeting-a");
+
+        assert!(!acknowledge_pending_completed_recording(
+            &mut state,
+            &token,
+            "workspace-b",
+            "user-a"
+        ));
+        assert!(!acknowledge_pending_completed_recording(
+            &mut state,
+            &token,
+            "workspace-a",
+            "user-b"
+        ));
+        assert_eq!(state.len(), 1);
+    }
+
+    #[test]
+    fn interrupted_completion_can_be_queried_and_abandoned_only_in_same_context() {
+        let mut state = pending("completion-token");
+
+        assert_eq!(
+            pending_recording_post_processing(&state, "workspace-a", "user-a"),
+            Some(PendingRecordingPostProcessing {
+                completion_token: "completion-token".to_string(),
+                persisted: false,
+                meeting_id: None,
+            })
+        );
+        assert!(pending_recording_post_processing(&state, "workspace-b", "user-a").is_none());
+        assert!(!abandon_pending_recording_post_processing(
+            &mut state,
+            "completion-token",
+            "workspace-b",
+            "user-a"
+        ));
+        assert!(abandon_pending_recording_post_processing(
+            &mut state,
+            "completion-token",
+            "workspace-a",
+            "user-a"
+        ));
+        assert!(state.is_empty());
+    }
+
+    #[test]
+    fn text_only_recording_still_receives_a_completion_gate() {
+        let mut state = pending("completion-token");
+        state[0].folder = None;
+
+        let (_, folder) = reserve(&mut state, Some("completion-token")).unwrap();
+
+        assert!(folder.is_none());
+        assert!(pending_recordings_block_start(&state));
+    }
+
+    #[test]
+    fn tenant_or_user_mismatch_cannot_reserve_pending_folder() {
+        let mut state = pending("completion-token");
+
+        assert!(reserve_pending_completed_recording(
+            &mut state,
+            Some("completion-token"),
+            "workspace-b",
+            "user-a"
+        )
+        .is_none());
+        assert!(reserve_pending_completed_recording(
+            &mut state,
+            Some("completion-token"),
+            "workspace-a",
+            "user-b"
+        )
+        .is_none());
+        assert!(!state[0].reserved);
+    }
+
+    #[test]
+    fn independent_pending_recordings_are_not_overwritten_by_a_later_stop() {
+        let mut state = pending("first-token");
+        state.extend(pending("second-token"));
+
+        let (second_token, second_folder) = reserve(&mut state, Some("second-token")).unwrap();
+        assert_eq!(
+            second_folder,
+            Some(PathBuf::from("trusted-recording-folder"))
+        );
+        mark_pending_completed_recording_persisted(&mut state, &second_token, "meeting-second");
+        assert!(acknowledge_pending_completed_recording(
+            &mut state,
+            &second_token,
+            "workspace-a",
+            "user-a"
+        ));
+
+        assert_eq!(state.len(), 1);
+        assert_eq!(state[0].completion_token, "first-token");
+        assert!(!state[0].reserved);
+    }
+
+    #[test]
+    fn duplicate_stop_cannot_claim_shutdown_until_owner_finishes() {
+        let flag = AtomicBool::new(false);
+        let owner = try_begin_recording_stop(&flag).expect("first stop must own shutdown");
+
+        assert!(try_begin_recording_stop(&flag).is_none());
+        assert!(flag.load(Ordering::SeqCst));
+
+        drop(owner);
+
+        assert!(try_begin_recording_stop(&flag).is_some());
     }
 }

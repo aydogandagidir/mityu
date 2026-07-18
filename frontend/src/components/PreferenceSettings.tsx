@@ -257,6 +257,9 @@ export function PreferenceSettings() {
           <p className="text-xs text-accent-foreground">
             <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
           </p>
+          <p className="mt-2 text-xs text-accent-foreground">
+            Meeting deletion covers Mityu-managed database/search, recording, and recovery-cache data. Physical traces or separate copies may remain on SSD wear-leveling, copy-on-write filesystems, snapshots, backups, exports, or WebView/browser storage; Mityu cannot erase those external layers.
+          </p>
         </div>
       </div>
 

@@ -6,7 +6,6 @@
  */
 
 import { useState, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { indexedDBService, MeetingMetadata, StoredTranscript } from '@/services/indexedDBService';
 import { storageService } from '@/services/storageService';
 import { applyPinnedSummaryLanguageToMeeting } from '@/lib/summary-language-preferences';
@@ -55,32 +54,12 @@ export function useTranscriptRecovery(): UseTranscriptRecoveryReturn {
         return isWithinRetention && isOldEnough;
       });
 
-      // Verify audio checkpoint availability for each meeting
-      const meetingsWithAudioStatus = await Promise.all(
-        recentMeetings.map(async (meeting) => {
-          if (meeting.folderPath) {
-            try {
-              const hasAudio = await invoke<boolean>('has_audio_checkpoints', {
-                meetingFolder: meeting.folderPath
-              });
-
-              // If no audio files, clear folderPath to show "No audio" in UI
-              return {
-                ...meeting,
-                folderPath: hasAudio ? meeting.folderPath : undefined
-              };
-            } catch (error) {
-              console.warn('Failed to check audio for meeting:', error);
-              // On error, assume no audio to be safe
-              return { ...meeting, folderPath: undefined };
-            }
-          }
-          return meeting;
-        })
-      );
-
-
-      setRecoverableMeetings(meetingsWithAudioStatus);
+      // v1.0.4 recovers transcript text only. Legacy checkpoint commands took
+      // renderer-controlled paths and are intentionally not exposed to IPC.
+      setRecoverableMeetings(recentMeetings.map(meeting => ({
+        ...meeting,
+        folderPath: undefined,
+      })));
     } catch (error) {
       console.error('Failed to check for recoverable transcripts:', error);
       setRecoverableMeetings([]);
@@ -122,44 +101,14 @@ export function useTranscriptRecovery(): UseTranscriptRecoveryReturn {
         throw new Error('No transcripts found for this meeting');
       }
 
-      // 3. Check for folder path
-      let folderPath = metadata.folderPath;
-
-
-      if (!folderPath) {
-        // Try to get from backend (might exist if only app crashed, not system)
-        try {
-          folderPath = await invoke<string>('get_meeting_folder_path');
-        } catch (error) {
-          folderPath = undefined;
-        }
-      }
-
-      // 4. Attempt audio recovery if folder path exists
-      let audioRecoveryStatus: AudioRecoveryStatus | null = null;
-      if (folderPath) {
-        try {
-          audioRecoveryStatus = await invoke<AudioRecoveryStatus>(
-            'recover_audio_from_checkpoints',
-            { meetingFolder: folderPath, sampleRate: 48000 }
-          );
-        } catch (error) {
-          console.error('Audio recovery failed:', error);
-          audioRecoveryStatus = {
-            status: 'failed',
-            chunk_count: 0,
-            estimated_duration_seconds: 0,
-            message: error instanceof Error ? error.message : 'Unknown error'
-          };
-        }
-      } else {
-        audioRecoveryStatus = {
-          status: 'none',
-          chunk_count: 0,
-          estimated_duration_seconds: 0,
-          message: 'No folder path available'
-        };
-      }
+      // 3. Recover transcript text only. Audio checkpoint recovery will return
+      // behind opaque Rust-issued session identifiers in a later release.
+      const audioRecoveryStatus: AudioRecoveryStatus = {
+        status: 'none',
+        chunk_count: 0,
+        estimated_duration_seconds: 0,
+        message: 'Audio checkpoint recovery is disabled in v1.0.4',
+      };
 
       // 5. Convert StoredTranscripts to the format expected by storageService
       const formattedTranscripts = transcripts.map((t, index) => ({
@@ -179,7 +128,8 @@ export function useTranscriptRecovery(): UseTranscriptRecoveryReturn {
       const saveResponse = await storageService.saveMeeting(
         metadata.title,
         formattedTranscripts,
-        folderPath ?? null
+        null,
+        null,
       );
 
       const savedMeetingId = saveResponse.meeting_id;
@@ -193,21 +143,19 @@ export function useTranscriptRecovery(): UseTranscriptRecoveryReturn {
         });
       }
 
-      // 7. Mark as saved in IndexedDB
-      await indexedDBService.markMeetingSaved(meetingId);
-
-
-      // 8. Clean up checkpoint files
-      if (folderPath) {
-        try {
-          await invoke('cleanup_checkpoints', { meetingFolder: folderPath });
-        } catch (error) {
-          // Non-fatal - don't fail recovery if cleanup fails
-          console.warn('Checkpoint cleanup failed (non-fatal):', error);
-        }
+      // 7. Remove the plaintext recovery copy now that SQLite owns the meeting.
+      // If deletion is interrupted, markMeetingSaved leaves a legacy saved flag
+      // so the next startup purge can safely retry without offering a duplicate.
+      try {
+        await indexedDBService.markMeetingSaved(meetingId);
+      } catch (error) {
+        console.warn('Saved recovery-copy cleanup will be retried at startup:', error);
+        toast.warning('Recovery cache cleanup pending', {
+          description: 'The meeting was saved. Mityu will retry removing its recovery copy at next startup.',
+        });
       }
 
-      // 9. Remove from recoverable list
+      // 8. Remove from recoverable list
       setRecoverableMeetings(prev => prev.filter(m => m.meetingId !== meetingId));
 
       return {

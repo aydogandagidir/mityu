@@ -17,7 +17,7 @@ use crate::database::repositories::correction_event::{
 };
 use crate::database::repositories::summary_draft::{
     block_status_from_db, block_status_to_db, block_transition_allowed, ensure_sources_resolve,
-    resolve_source_chunk_ids, SummaryDraftError,
+    SummaryDraftError,
 };
 use crate::summary::draft::{ActionItemDraft, BlockStatus};
 use chrono::Utc;
@@ -25,6 +25,10 @@ use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use std::collections::HashSet;
 use tracing::{info, warn};
+
+/// Default and maximum page sizes for the read-only Approved Action Center.
+pub const DEFAULT_ACTION_CENTER_PAGE_SIZE: u32 = 100;
+pub const MAX_ACTION_CENTER_PAGE_SIZE: u32 = 200;
 
 /// One persisted action item, hydrated from an `action_items` row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -52,6 +56,35 @@ pub struct ActionItemRow {
     pub rev: i64,
 }
 
+/// One human-approved action item with the active meeting/source metadata that
+/// makes it safe to show in the cross-meeting Action Center.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovedActionItemRow {
+    pub id: String,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub meeting_created_at: String,
+    pub text: String,
+    pub assignee: Option<String>,
+    pub due: Option<String>,
+    /// HITL review state, deliberately named separately from future work state.
+    pub review_status: BlockStatus,
+    pub source_chunk_id: String,
+    pub source_timestamp: String,
+    pub audio_start_time: Option<f64>,
+}
+
+/// Bounded Action Center page. `has_more`/`next_offset` prevent a hard cap from
+/// silently hiding approved items.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovedActionItemsPage {
+    pub items: Vec<ApprovedActionItemRow>,
+    pub has_more: bool,
+    pub next_offset: Option<u32>,
+}
+
 pub struct ActionItemsRepository;
 
 impl ActionItemsRepository {
@@ -76,8 +109,8 @@ impl ActionItemsRepository {
     /// mints fresh uuids per batch; re-inserting a previously used id is a
     /// primary-key error, not silent data loss).
     ///
-    /// Statuses are persisted exactly as given — the §4 wire default is
-    /// `draft`, and nothing here can mint an approval (HITL: approval is only
+    /// Incoming statuses are ignored and every generated item is persisted as
+    /// `draft`. Nothing here can mint an approval (HITL: approval is only
     /// [`Self::set_status`] with an explicit human action).
     pub async fn insert_drafts(
         pool: &SqlitePool,
@@ -85,12 +118,14 @@ impl ActionItemsRepository {
         meeting_id: &str,
         items: &[ActionItemDraft],
     ) -> Result<usize, SummaryDraftError> {
-        let meeting_exists: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM meetings WHERE id = ? AND workspace_id = ?")
-                .bind(meeting_id)
-                .bind(ctx.tenant_id.as_str())
-                .fetch_optional(pool)
-                .await?;
+        let meeting_exists: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM meetings \
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL",
+        )
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await?;
         if meeting_exists.is_none() {
             info!(
                 meeting_id = %meeting_id,
@@ -108,6 +143,18 @@ impl ActionItemsRepository {
         let now = Utc::now();
         let mut transaction = pool.begin().await?;
 
+        let non_draft_inputs = items
+            .iter()
+            .filter(|item| item.status != BlockStatus::Draft)
+            .count();
+        if non_draft_inputs > 0 {
+            warn!(
+                meeting_id = %meeting_id,
+                forced_to_draft = non_draft_inputs,
+                "insert_drafts ignored non-draft generation status"
+            );
+        }
+
         // Regeneration keeps human-touched (approved/edited) rows; only
         // never-reviewed or rejected machine output is replaced (soft delete).
         sqlx::query(
@@ -124,6 +171,57 @@ impl ActionItemsRepository {
         .execute(&mut *transaction)
         .await?;
 
+        // The initial gates fail fast before opening a transaction. Re-check
+        // after the UPDATE has upgraded this SQLite transaction to a writer so
+        // retranscription/soft-delete cannot invalidate evidence between this
+        // check and the inserts below.
+        let meeting_still_active: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM meetings \
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL",
+        )
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if meeting_still_active.is_none() {
+            warn!(
+                meeting_id = %meeting_id,
+                "insert_drafts refused after acquiring write transaction: meeting inactive"
+            );
+            return Err(SummaryDraftError::MeetingNotFound);
+        }
+
+        let mut unresolvable_after_lock = 0usize;
+        for source_chunk_id in &required {
+            let source_active: Option<(i64,)> = sqlx::query_as(
+                "SELECT 1 FROM transcripts t \
+                 INNER JOIN meetings m \
+                    ON m.id = t.meeting_id AND m.workspace_id = t.workspace_id \
+                 WHERE t.id = ? AND t.meeting_id = ? \
+                   AND t.workspace_id = ? AND m.workspace_id = ? \
+                   AND t.deleted_at IS NULL AND m.deleted_at IS NULL",
+            )
+            .bind(source_chunk_id)
+            .bind(meeting_id)
+            .bind(ctx.tenant_id.as_str())
+            .bind(ctx.tenant_id.as_str())
+            .fetch_optional(&mut *transaction)
+            .await?;
+            if source_active.is_none() {
+                unresolvable_after_lock += 1;
+            }
+        }
+        if unresolvable_after_lock > 0 {
+            warn!(
+                meeting_id = %meeting_id,
+                unresolvable = unresolvable_after_lock,
+                "insert_drafts refused after acquiring write transaction: source inactive"
+            );
+            return Err(SummaryDraftError::UnresolvableSources {
+                count: unresolvable_after_lock,
+            });
+        }
+
         for (position, item) in items.iter().enumerate() {
             sqlx::query(
                 "INSERT INTO action_items \
@@ -137,7 +235,7 @@ impl ActionItemsRepository {
             .bind(&item.text)
             .bind(&item.assignee)
             .bind(&item.due)
-            .bind(block_status_to_db(item.status))
+            .bind(block_status_to_db(BlockStatus::Draft))
             .bind(&item.source_chunk_id)
             .bind(position as i64)
             .bind(now)
@@ -242,22 +340,94 @@ impl ActionItemsRepository {
             .collect()
     }
 
-    /// Applies the shared status machine ([`block_transition_allowed`]) to one
-    /// item. Approving RE-validates that the item's `source_chunk_id` resolves
-    /// NOW ([`resolve_source_chunk_ids`] — ADR-0019). `Ok(false)` (with a
-    /// content-free `tracing` reason) when the item is not visible in this
-    /// workspace, the transition is illegal, or approve-time evidence no
-    /// longer resolves.
-    /// `reason` is the human's optional rationale, recorded on the correction
-    /// event (ADR-0024 §3) and never a gate — see
-    /// [`SummariesRepository::set_block_status`](super::summary_draft::SummariesRepository::set_block_status).
+    /// Lists only explicitly human-approved items whose meeting and evidence
+    /// anchor are still active in the caller's workspace.
     ///
+    /// `edited` is deliberately excluded: it is a human-touched draft awaiting
+    /// re-approval, not an approved work item. The existing `status` column is
+    /// the HITL review axis, not a work-progress axis. Ordering is deterministic
+    /// and does not interpret the free-text `due` field as a date.
+    pub async fn list_approved_with_sources(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        limit: u32,
+        offset: u32,
+    ) -> Result<ApprovedActionItemsPage, SummaryDraftError> {
+        let page_size = limit.clamp(1, MAX_ACTION_CENTER_PAGE_SIZE);
+        let fetch_limit = i64::from(page_size) + 1;
+
+        let rows = sqlx::query(
+            "SELECT a.id, a.meeting_id, m.title AS meeting_title, \
+                    m.created_at AS meeting_created_at, a.text, a.assignee, a.due, \
+                    a.source_chunk_id, t.timestamp AS source_timestamp, t.audio_start_time \
+             FROM action_items a \
+             INNER JOIN meetings m \
+                ON m.id = a.meeting_id AND m.workspace_id = a.workspace_id \
+             INNER JOIN transcripts t \
+                ON t.id = a.source_chunk_id \
+               AND t.meeting_id = a.meeting_id \
+               AND t.workspace_id = a.workspace_id \
+             WHERE a.workspace_id = ? AND m.workspace_id = ? AND t.workspace_id = ? \
+               AND a.status = 'approved' \
+               AND a.deleted_at IS NULL \
+               AND m.deleted_at IS NULL \
+               AND t.deleted_at IS NULL \
+             ORDER BY m.created_at DESC, a.position ASC, a.id ASC \
+             LIMIT ? OFFSET ?",
+        )
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .bind(fetch_limit)
+        .bind(i64::from(offset))
+        .fetch_all(pool)
+        .await?;
+
+        let has_more = rows.len() > page_size as usize;
+        let items = rows
+            .into_iter()
+            .take(page_size as usize)
+            .map(|row| ApprovedActionItemRow {
+                id: row.get("id"),
+                meeting_id: row.get("meeting_id"),
+                meeting_title: row.get("meeting_title"),
+                meeting_created_at: row.get("meeting_created_at"),
+                text: row.get("text"),
+                assignee: row.get("assignee"),
+                due: row.get("due"),
+                review_status: BlockStatus::Approved,
+                source_chunk_id: row.get("source_chunk_id"),
+                source_timestamp: row.get("source_timestamp"),
+                audio_start_time: row.get("audio_start_time"),
+            })
+            .collect();
+
+        Ok(ApprovedActionItemsPage {
+            items,
+            has_more,
+            next_offset: has_more.then(|| offset.saturating_add(page_size)),
+        })
+    }
+
+    /// Applies the shared status machine ([`block_transition_allowed`]) to one
+    /// item. Approval uses one compare-and-swap UPDATE whose `EXISTS` predicate
+    /// re-validates an active same-meeting source at write time (ADR-0019).
+    /// `Ok(false)` when the item is not visible in this workspace, the
+    /// transition is illegal, the row changed concurrently, or approve-time
+    /// evidence no longer resolves.
+    ///
+    /// Every human verdict also appends ONE `correction_events` row inside the
+    /// SAME transaction as the compare-and-swap write (ADR-0030 §2): its
+    /// `original_text` is the MODEL's text (`original_text` once an edit has
+    /// happened, else the current text), never a prior human revision. `reason`
+    /// is the human's optional rationale, recorded on the event (ADR-0030 §3) and
+    /// never a gate — see
+    /// [`SummariesRepository::set_block_status`](super::summary_draft::SummariesRepository::set_block_status).
     /// `model`/`template_id` come from the meeting's `summaries` row via LEFT
     /// JOIN: action items carry no generation context of their own, but they are
-    /// produced by the same `run_structured_generation` pass as the summary, so
-    /// that row IS their context — and the miner needs it to scope a rule to a
-    /// template instead of attributing one model's habits to another. The join is
-    /// LEFT because a soft-deleted or absent summary must not hide the item.
+    /// produced by the same `run_structured_generation` pass, and the miner needs
+    /// it to scope a rule to a template. The join is LEFT so a soft-deleted or
+    /// absent summary must not hide the item.
     pub async fn set_status(
         pool: &SqlitePool,
         ctx: &AuthContext,
@@ -266,7 +436,7 @@ impl ActionItemsRepository {
         reason: Option<&str>,
     ) -> Result<bool, SummaryDraftError> {
         let row = sqlx::query(
-            "SELECT ai.meeting_id AS meeting_id, ai.status AS status, \
+            "SELECT ai.meeting_id AS meeting_id, ai.status AS status, ai.rev AS rev, \
                     ai.source_chunk_id AS source_chunk_id, ai.text AS text, \
                     ai.original_text AS original_text, \
                     s.model AS model, s.template_id AS template_id \
@@ -287,8 +457,8 @@ impl ActionItemsRepository {
             );
             return Ok(false);
         };
-
         let current = block_status_from_db(&row.get::<String, _>("status"))?;
+        let current_rev: i64 = row.get("rev");
         if !block_transition_allowed(current, new) {
             info!(
                 item_id = %item_id,
@@ -303,22 +473,8 @@ impl ActionItemsRepository {
         let meeting_id: String = row.get("meeting_id");
         let source_chunk_id: String = row.get("source_chunk_id");
 
-        if new == BlockStatus::Approved {
-            let required = HashSet::from([source_chunk_id.clone()]);
-            let resolved = resolve_source_chunk_ids(pool, ctx, &meeting_id, &required).await?;
-            if resolved.len() != required.len() {
-                warn!(
-                    item_id = %item_id,
-                    meeting_id = %meeting_id,
-                    reason_code = "unresolvable_source",
-                    "set_status refused: cited segment no longer resolves"
-                );
-                return Ok(false);
-            }
-        }
-
         // What the MODEL wrote: `original_text` once an edit has happened,
-        // otherwise the text itself (ADR-0024 §2 — always model→human).
+        // otherwise the text itself (ADR-0030 §2 — always model→human).
         let current_text: String = row.get("text");
         let original_text: Option<String> = row.get("original_text");
         let model_text = original_text.unwrap_or_else(|| current_text.clone());
@@ -350,20 +506,68 @@ impl ActionItemsRepository {
             source_chunk_id: Some(source_chunk_id.as_str()),
         };
 
-        // One transaction: the verdict and the record of it land together, or not
-        // at all (ADR-0024 §2).
+        // One transaction: theirs' compare-and-swap verdict and ours' record of it
+        // land together, or not at all (ADR-0030 §2). Approval keeps theirs'
+        // `EXISTS` predicate, which re-validates an active same-meeting source at
+        // write time (ADR-0019) instead of a separate pre-check.
         let mut transaction = pool.begin().await?;
-        sqlx::query(
-            "UPDATE action_items SET status = ?, updated_at = ?, updated_by = ?, \
-             rev = rev + 1 WHERE id = ? AND workspace_id = ?",
-        )
-        .bind(block_status_to_db(new))
-        .bind(Utc::now())
-        .bind(ctx.user_id.as_str())
-        .bind(item_id)
-        .bind(ctx.tenant_id.as_str())
-        .execute(&mut *transaction)
-        .await?;
+        let result = if new == BlockStatus::Approved {
+            sqlx::query(
+                "UPDATE action_items SET status = ?, updated_at = ?, updated_by = ?, \
+                 rev = rev + 1 \
+                 WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL \
+                   AND status = ? AND rev = ? \
+                   AND EXISTS ( \
+                       SELECT 1 FROM transcripts t \
+                       INNER JOIN meetings m \
+                          ON m.id = t.meeting_id AND m.workspace_id = t.workspace_id \
+                       WHERE t.id = action_items.source_chunk_id \
+                         AND t.meeting_id = action_items.meeting_id \
+                         AND t.workspace_id = action_items.workspace_id \
+                         AND t.workspace_id = ? AND m.workspace_id = ? \
+                         AND t.deleted_at IS NULL AND m.deleted_at IS NULL \
+                   )",
+            )
+            .bind(block_status_to_db(new))
+            .bind(Utc::now())
+            .bind(ctx.user_id.as_str())
+            .bind(item_id)
+            .bind(ctx.tenant_id.as_str())
+            .bind(block_status_to_db(current))
+            .bind(current_rev)
+            .bind(ctx.tenant_id.as_str())
+            .bind(ctx.tenant_id.as_str())
+            .execute(&mut *transaction)
+            .await?
+        } else {
+            sqlx::query(
+                "UPDATE action_items SET status = ?, updated_at = ?, updated_by = ?, \
+                 rev = rev + 1 \
+                 WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL \
+                   AND status = ? AND rev = ?",
+            )
+            .bind(block_status_to_db(new))
+            .bind(Utc::now())
+            .bind(ctx.user_id.as_str())
+            .bind(item_id)
+            .bind(ctx.tenant_id.as_str())
+            .bind(block_status_to_db(current))
+            .bind(current_rev)
+            .execute(&mut *transaction)
+            .await?
+        };
+
+        if result.rows_affected() != 1 {
+            warn!(
+                item_id = %item_id,
+                reason_code = "concurrent_change_or_unresolvable_source",
+                "set_status refused at atomic write gate"
+            );
+            return Ok(false);
+        }
+
+        // The verdict landed in this transaction; record it in the same one so the
+        // learning signal can never diverge from the state it describes.
         CorrectionEventsRepository::append_tx(&mut transaction, ctx, &event).await?;
         transaction.commit().await?;
         Ok(true)
@@ -377,8 +581,9 @@ impl ActionItemsRepository {
     /// becomes [`BlockStatus::Edited`].
     ///
     /// `Ok(false)` when: nothing to change (all three patches are `None`), the
-    /// item is not visible in this workspace, or the item is rejected (no
-    /// `rejected → edited` arc — restore to draft first).
+    /// item is not visible in this workspace, the item is rejected (no
+    /// `rejected → edited` arc — restore to draft first), or the row changed
+    /// concurrently before the compare-and-swap write.
     pub async fn edit(
         pool: &SqlitePool,
         ctx: &AuthContext,
@@ -399,7 +604,7 @@ impl ActionItemsRepository {
         let row = sqlx::query(
             "SELECT ai.meeting_id AS meeting_id, ai.text AS text, ai.assignee AS assignee, \
                     ai.due AS due, ai.status AS status, ai.original_text AS original_text, \
-                    ai.source_chunk_id AS source_chunk_id, \
+                    ai.rev AS rev, ai.source_chunk_id AS source_chunk_id, \
                     s.model AS model, s.template_id AS template_id \
              FROM action_items ai \
              LEFT JOIN summaries s \
@@ -420,6 +625,7 @@ impl ActionItemsRepository {
         };
 
         let current = block_status_from_db(&row.get::<String, _>("status"))?;
+        let current_rev: i64 = row.get("rev");
         if current == BlockStatus::Rejected {
             info!(
                 item_id = %item_id,
@@ -432,7 +638,7 @@ impl ActionItemsRepository {
         let current_text: String = row.get("text");
         let original_text: Option<String> = row.get("original_text");
         // What the MODEL wrote — captured before `original_text` is consumed
-        // below (ADR-0024 §2: the delta is always model→human, never
+        // below (ADR-0030 §2: the delta is always model→human, never
         // human→human, or a re-edit would understate the burden).
         let model_text = original_text
             .clone()
@@ -462,7 +668,7 @@ impl ActionItemsRepository {
         // model's extraction, but it produces no model→human TEXT delta: recorded
         // as an edit it would enter the burden metric (E1) as a zero-cost one and
         // dilute it. Capturing structured-field corrections needs its own event
-        // shape — owed, and recorded in ADR-0024 rather than faked here.
+        // shape — owed, and recorded in ADR-0030 rather than faked here.
         let event = (new_text != current_text).then(|| NewCorrectionEvent {
             meeting_id: &meeting_id,
             subject_kind: CorrectionSubject::ActionItem,
@@ -478,11 +684,14 @@ impl ActionItemsRepository {
             source_chunk_id: source_chunk_id.as_deref(),
         });
 
+        // One transaction: theirs' compare-and-swap edit and ours' correction
+        // record (only for a real text change) land together (ADR-0030 §2).
         let mut transaction = pool.begin().await?;
-        sqlx::query(
+        let result = sqlx::query(
             "UPDATE action_items SET text = ?, assignee = ?, due = ?, original_text = ?, \
              status = 'edited', updated_at = ?, updated_by = ?, rev = rev + 1 \
-             WHERE id = ? AND workspace_id = ?",
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL \
+               AND status = ? AND rev = ?",
         )
         .bind(&new_text)
         .bind(&new_assignee)
@@ -492,8 +701,18 @@ impl ActionItemsRepository {
         .bind(ctx.user_id.as_str())
         .bind(item_id)
         .bind(ctx.tenant_id.as_str())
+        .bind(block_status_to_db(current))
+        .bind(current_rev)
         .execute(&mut *transaction)
         .await?;
+        if result.rows_affected() != 1 {
+            warn!(
+                item_id = %item_id,
+                reason_code = "concurrent_change",
+                "edit refused at atomic write gate"
+            );
+            return Ok(false);
+        }
         if let Some(event) = &event {
             CorrectionEventsRepository::append_tx(&mut transaction, ctx, event).await?;
         }

@@ -28,6 +28,9 @@ pub struct TranscriptSegment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeetingMetadata {
     pub version: String,
+    /// Trusted workspace ownership marker. Artifact deletion validates this
+    /// before touching any managed file in the recording folder.
+    pub workspace_id: String,
     pub meeting_id: Option<String>,
     pub meeting_name: Option<String>,
     pub created_at: String,
@@ -38,6 +41,24 @@ pub struct MeetingMetadata {
     pub transcript_file: String,
     pub sample_rate: u32,
     pub status: String, // "recording", "completed", "error"
+}
+
+/// Encode the trusted workspace id byte-for-byte into one filesystem component.
+/// Hex encoding is collision-free and cannot introduce separators, traversal,
+/// Windows reserved punctuation, or case-folding aliases.
+fn workspace_folder_component(workspace_id: &str) -> Result<String> {
+    if workspace_id.is_empty() {
+        anyhow::bail!("workspace id cannot be empty");
+    }
+
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity("workspace-".len() + workspace_id.len() * 2);
+    encoded.push_str("workspace-");
+    for byte in workspace_id.as_bytes() {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    Ok(encoded)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,19 +272,26 @@ impl RecordingSaver {
         meeting_name: &str,
         create_checkpoints: bool,
     ) -> Result<()> {
-        // Load preferences to get base recordings folder
+        // Resolve identity in the Rust core. The renderer never supplies a
+        // workspace id, and every new recording lives below its own namespace.
+        let ctx = crate::context::current();
+
+        // Load preferences to get base recordings folder.
         let base_folder = super::recording_preferences::get_default_recordings_folder();
+        let workspace_folder =
+            base_folder.join(workspace_folder_component(ctx.tenant_id.as_str())?);
 
         // Create meeting folder structure (with or without .checkpoints/ subdirectory)
-        let meeting_folder = create_meeting_folder(&base_folder, meeting_name, create_checkpoints)?;
+        let meeting_folder =
+            create_meeting_folder(&workspace_folder, meeting_name, create_checkpoints)?;
 
         // Only initialize incremental saver if checkpoints are needed (auto_save is true)
         if create_checkpoints {
             let incremental_saver = IncrementalAudioSaver::new(meeting_folder.clone(), 48000)?;
             self.incremental_saver = Some(Arc::new(AsyncMutex::new(incremental_saver)));
             info!(
-                "✅ Incremental audio saver initialized for meeting: {}",
-                meeting_name
+                "✅ Incremental audio saver initialized (meeting_title_chars={})",
+                meeting_name.chars().count()
             );
         } else {
             info!("⚠️  Skipped incremental audio saver (auto-save disabled)");
@@ -272,6 +300,7 @@ impl RecordingSaver {
         // Create initial metadata
         let metadata = MeetingMetadata {
             version: "1.0".to_string(),
+            workspace_id: ctx.tenant_id.as_str().to_string(),
             meeting_id: None, // Will be set by backend
             meeting_name: Some(meeting_name.to_string()),
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -346,31 +375,19 @@ impl RecordingSaver {
 
         // Write to temp file with error handling
         std::fs::write(&temp_path, &json_string).map_err(|e| {
-            error!(
-                "Failed to write transcript temp file to {}: {}",
-                temp_path.display(),
-                e
-            );
+            error!("Failed to write transcript temp file: {}", e);
             anyhow::anyhow!("Failed to write temp file: {}", e)
         })?;
 
         // Verify temp file was written correctly
         if !temp_path.exists() {
-            error!(
-                "Temp transcript file does not exist after write: {}",
-                temp_path.display()
-            );
+            error!("Temp transcript file does not exist after write");
             return Err(anyhow::anyhow!("Temp file verification failed"));
         }
 
         // Atomic rename
         std::fs::rename(&temp_path, &transcript_path).map_err(|e| {
-            error!(
-                "Failed to rename transcript file from {} to {}: {}",
-                temp_path.display(),
-                transcript_path.display(),
-                e
-            );
+            error!("Failed to finalize transcript file: {}", e);
             anyhow::anyhow!("Failed to rename transcript file: {}", e)
         })?;
 
@@ -451,10 +468,7 @@ impl RecordingSaver {
             // Verify transcripts were written correctly
             let transcript_path = folder.join("transcripts.json");
             if !transcript_path.exists() {
-                error!(
-                    "❌ Transcript file was not created at: {}",
-                    transcript_path.display()
-                );
+                error!("❌ Transcript file was not created");
                 return Err("Transcript file verification failed".to_string());
             }
             info!(
@@ -534,5 +548,52 @@ impl RecordingSaver {
 impl Default for RecordingSaver {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_folder_component_is_exact_and_path_safe() {
+        assert_eq!(
+            workspace_folder_component("local").expect("local namespace"),
+            "workspace-6c6f63616c"
+        );
+
+        let hostile = workspace_folder_component("../tenant\\name").expect("encoded namespace");
+        assert!(hostile.starts_with("workspace-"));
+        assert!(!hostile.contains('/'));
+        assert!(!hostile.contains('\\'));
+        assert!(!hostile.contains(".."));
+        assert_ne!(
+            workspace_folder_component("tenant/A").expect("first namespace"),
+            workspace_folder_component("tenant\\A").expect("second namespace")
+        );
+    }
+
+    #[test]
+    fn meeting_metadata_serializes_trusted_workspace_marker() {
+        let metadata = MeetingMetadata {
+            version: "1.0".to_string(),
+            workspace_id: "local".to_string(),
+            meeting_id: None,
+            meeting_name: Some("Test".to_string()),
+            created_at: "2026-07-15T00:00:00Z".to_string(),
+            completed_at: None,
+            duration_seconds: None,
+            devices: DeviceInfo {
+                microphone: None,
+                system_audio: None,
+            },
+            audio_file: "audio.mp4".to_string(),
+            transcript_file: "transcripts.json".to_string(),
+            sample_rate: 48_000,
+            status: "recording".to_string(),
+        };
+
+        let json = serde_json::to_value(metadata).expect("serialize metadata");
+        assert_eq!(json["workspace_id"], "local");
     }
 }

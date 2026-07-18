@@ -16,7 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Get version from tauri.conf.json
         id: get-version
@@ -61,5 +63,5 @@ jobs:
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "1. Run **Build and Test - DevTest** for unsigned builds" >> $GITHUB_STEP_SUMMARY
-          echo "2. Run **Build and Test** for signed builds on all platforms" >> $GITHUB_STEP_SUMMARY
-          echo "3. Run **Release** to create a production release" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run the unsigned platform workflow needed for hardware/package smoke tests" >> $GITHUB_STEP_SUMMARY
+          echo "3. After every gate passes, run **Release** from main for protected production signing" >> $GITHUB_STEP_SUMMARY

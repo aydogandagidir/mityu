@@ -1,4 +1,4 @@
-//! Tenant-scoped repository for `learned_rules` (ADR-0024 §4).
+//! Tenant-scoped repository for `learned_rules` (ADR-0030 §4).
 //!
 //! The supplier the injection seam has been waiting for:
 //! [`LearnedRulesRepository::list_active`] is what
@@ -26,7 +26,7 @@
 //!
 //! Unlike `correction_events`, rules hold NO transcript text — a rule is an
 //! abstraction the human approved ("call it 'takip'"). That is precisely why
-//! deleting a meeting does not take its rules with it (ADR-0024 §10), and why
+//! deleting a meeting does not take its rules with it (ADR-0030 §10), and why
 //! rule text is safe to keep after the corrections behind it are erased.
 
 use crate::context::AuthContext;
@@ -74,7 +74,7 @@ pub struct NewLearnedRule {
     /// How many correction events back it (0 for user-authored).
     pub support_count: i64,
     /// The correction events that produced it. May dangle later, once their
-    /// meeting is deleted (ADR-0024 §10).
+    /// meeting is deleted (ADR-0030 §10).
     pub evidence: Vec<String>,
     /// The miner's stable identity for this rule, or `None` for a user-authored
     /// one — nothing mined it, so nothing can re-propose it. See
@@ -243,7 +243,7 @@ impl LearnedRulesRepository {
     /// `Ok(None)` when the rule is not visible in this workspace. An empty vec is
     /// a real answer (a user-authored rule has no evidence); the ids themselves
     /// MAY no longer resolve, and callers must degrade to "kanıt silindi" rather
-    /// than error (ADR-0024 §10).
+    /// than error (ADR-0030 §10).
     pub async fn evidence_ids(
         pool: &SqlitePool,
         ctx: &AuthContext,

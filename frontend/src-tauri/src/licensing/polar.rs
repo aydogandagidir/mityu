@@ -2,7 +2,7 @@
 //!
 //! Only Polar's **public** customer-portal endpoints are used — they need no API
 //! secret, so nothing sensitive is baked into the binary. Requests carry ids
-//! only (license key, organization id, activation id, hostname label) — never
+//! only (license key, organization id, activation id, pseudonymous device label) — never
 //! meeting content, never telemetry (constitution §10).
 //!
 //! The HTTP surface sits behind the small [`LicenseApi`] trait so the state
@@ -55,11 +55,36 @@ pub fn is_configured() -> bool {
     org_id().is_some()
 }
 
-/// The `label` sent with an activation: the machine's hostname (no PII beyond
-/// the machine name — it is what Polar's self-service portal shows the customer
-/// so they can tell their devices apart).
+/// The `label` sent with an activation. It is a random, pseudonymous identifier
+/// rather than the machine hostname. We persist it in the OS credential store
+/// when possible so the Polar portal still shows a stable device label without
+/// disclosing a user-chosen computer name.
 pub fn device_label() -> String {
-    sysinfo::System::host_name().unwrap_or_else(|| "mityu-device".to_string())
+    use crate::secrets::licensing::{self, DEVICE_LABEL_ENTRY};
+
+    if let Ok(Some(existing)) = licensing::get(DEVICE_LABEL_ENTRY) {
+        if is_valid_device_label(&existing) {
+            return existing;
+        }
+    }
+
+    let label = format!("mityu-{}", uuid::Uuid::new_v4().simple());
+    if let Err(error) = licensing::set(DEVICE_LABEL_ENTRY, &label) {
+        // A locked keychain must not make activation impossible. The generated
+        // label is still non-identifying; it is simply not reusable next time.
+        tracing::warn!(
+            error = %format!("{error:#}"),
+            "licensing: could not persist the pseudonymous device label"
+        );
+    }
+    label
+}
+
+fn is_valid_device_label(label: &str) -> bool {
+    let Some(id) = label.strip_prefix("mityu-") else {
+        return false;
+    };
+    id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// Outcome of `POST /v1/customer-portal/license-keys/activate`.
@@ -174,6 +199,9 @@ impl PolarApi {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(10))
+            // License keys live in POST bodies. Never replay them to a redirect
+            // target, even if Polar or an intermediary returns 307/308.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .context("licensing: failed to build the HTTP client for the Polar API")?;
         Ok(Self {
@@ -321,8 +349,12 @@ mod tests {
     }
 
     #[test]
-    fn device_label_is_never_empty() {
-        assert!(!device_label().is_empty());
+    fn device_label_format_is_pseudonymous_and_bounded() {
+        crate::secrets::test_store::install();
+        let label = device_label();
+        assert!(is_valid_device_label(&label));
+        assert_eq!(device_label(), label, "the stored label must be stable");
+        assert!(!label.contains(' '));
     }
 
     #[test]

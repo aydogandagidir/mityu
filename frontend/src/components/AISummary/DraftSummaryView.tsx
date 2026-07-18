@@ -71,6 +71,7 @@ import {
 } from '@/services/summaryDraftService';
 import { useExportOperations } from '@/hooks/meeting-details/useExportOperations';
 import { TOUR_ANCHORS } from '@/lib/tour';
+import { areBlockReviewControlsLocked } from './draftSummaryReviewState';
 
 interface DraftSummaryViewProps {
   /** The meeting whose draft is under review. */
@@ -238,6 +239,8 @@ function useHitlAction() {
 interface BlockRowProps {
   block: DraftBlock;
   isPending: boolean;
+  /** Whole-review lock: approved/in-flight summaries cannot be mutated. */
+  reviewLocked: boolean;
   onApprove: () => void;
   /**
    * `reason` is the user's optional rationale. It may be empty or absent — the
@@ -266,6 +269,7 @@ function blockTextClass(type: DraftBlock['type']): string {
 function BlockRow({
   block,
   isPending,
+  reviewLocked,
   onApprove,
   onReject,
   onRestore,
@@ -336,6 +340,7 @@ function BlockRow({
             <textarea
               value={draftContent}
               onChange={(e) => setDraftContent(e.target.value)}
+              disabled={reviewLocked}
               rows={Math.max(2, Math.ceil(draftContent.length / 60))}
               className="w-full px-3 py-2 border border-blue-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-y"
               autoFocus
@@ -414,7 +419,7 @@ function BlockRow({
                 variant="green"
                 size="sm"
                 onClick={saveEdit}
-                disabled={isSaving}
+                disabled={isSaving || reviewLocked}
                 title="Save edit"
               >
                 {isSaving ? (
@@ -467,7 +472,7 @@ function BlockRow({
               variant="outline"
               size="sm"
               onClick={onRestore}
-              disabled={isPending}
+              disabled={isPending || reviewLocked}
               title="Restore to draft"
             >
               {isPending ? (
@@ -483,7 +488,7 @@ function BlockRow({
                 variant={block.status === 'approved' ? 'green' : 'outline'}
                 size="sm"
                 onClick={onApprove}
-                disabled={isPending || block.status === 'approved'}
+                disabled={isPending || reviewLocked || block.status === 'approved'}
                 title="Approve block"
                 aria-label="Approve block"
               >
@@ -497,7 +502,7 @@ function BlockRow({
                 variant="outline"
                 size="sm"
                 onClick={startEdit}
-                disabled={isPending}
+                disabled={isPending || reviewLocked}
                 title="Edit block"
                 aria-label="Edit block"
               >
@@ -507,7 +512,7 @@ function BlockRow({
                 variant="outline"
                 size="sm"
                 onClick={startReject}
-                disabled={isPending}
+                disabled={isPending || reviewLocked}
                 title="Reject block"
                 aria-label="Reject block"
               >
@@ -854,16 +859,30 @@ export function DraftSummaryView({
   const allNonRejectedApproved =
     nonRejected.length > 0 && nonRejected.every((b) => b.status === 'approved');
   const isSummaryApproved = summaryStatus === 'approved';
+  const isBlockMutationPending = blockAction.pendingId !== null;
+  const blockReviewLocked = areBlockReviewControlsLocked(
+    summaryStatus,
+    isApprovingSummary,
+    isBlockMutationPending,
+  );
 
   const approveGateReason = useMemo(() => {
     if (isSummaryApproved) return 'This summary has already been approved.';
+    if (isBlockMutationPending)
+      return 'Wait for the current block review change to finish.';
     if (allBlocks.length === 0) return 'There are no blocks to approve.';
     if (nonRejected.length === 0)
       return 'Every block is rejected. Restore and approve at least one block first.';
     if (!allNonRejectedApproved)
       return 'Approve (or reject) every block before approving the whole summary.';
     return null;
-  }, [isSummaryApproved, allBlocks.length, nonRejected.length, allNonRejectedApproved]);
+  }, [
+    isSummaryApproved,
+    isBlockMutationPending,
+    allBlocks.length,
+    nonRejected.length,
+    allNonRejectedApproved,
+  ]);
 
   // --- Export (C4.1) -------------------------------------------------------
   // The export reads the LIVE in-component review state (blocks/items the user
@@ -1008,6 +1027,9 @@ export function DraftSummaryView({
     try {
       const ok = await summaryDraftService.approveSummary(meetingId);
       if (ok) {
+        // Keep both lifecycle copies aligned with the authoritative successful
+        // command; export independently verifies both before emitting a file.
+        setDraft((prev) => (prev ? { ...prev, status: 'approved' } : prev));
         setSummaryStatus('approved');
         toast.success('Summary approved');
         onSummaryApproved?.();
@@ -1078,7 +1100,10 @@ export function DraftSummaryView({
       size="sm"
       onClick={approveWholeSummary}
       disabled={
-        isApprovingSummary || isSummaryApproved || approveGateReason !== null
+        isApprovingSummary ||
+        isBlockMutationPending ||
+        isSummaryApproved ||
+        approveGateReason !== null
       }
     >
       {isApprovingSummary ? (
@@ -1215,6 +1240,7 @@ export function DraftSummaryView({
                   key={block.id}
                   block={block}
                   isPending={blockAction.pendingId === block.id}
+                  reviewLocked={blockReviewLocked}
                   onApprove={() => approveBlock(block)}
                   onReject={(reason) => rejectBlock(block, reason)}
                   onRestore={() => restoreBlock(block)}

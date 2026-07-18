@@ -39,7 +39,7 @@ const NEW_VERSION: i64 = 20260706000000;
 /// declaration order in the migration).
 ///
 /// `applied_rules` trails the original C1 set because `20260716000000`
-/// (ADR-0024) appends it with `ALTER TABLE ... ADD COLUMN`, and SQLite puts an
+/// (ADR-0030) appends it with `ALTER TABLE ... ADD COLUMN`, and SQLite puts an
 /// added column last regardless of where it would read best.
 const SUMMARIES_COLS: [&str; 16] = [
     "id",
@@ -211,7 +211,7 @@ async fn assert_new_tables_shape(pool: &SqlitePool) {
     assert_col(t, &cols, "updated_by", "TEXT", false, None, false);
     assert_col(t, &cols, "rev", "INTEGER", true, Some("1"), false);
     assert_col(t, &cols, "deleted_at", "TEXT", false, None, false);
-    // ADR-0024 §5: nullable, no default — NULL means "generated before the
+    // ADR-0030 §5: nullable, no default — NULL means "generated before the
     // learning system, or with no active rules", which must stay distinguishable
     // from an empty snapshot.
     assert_col(t, &cols, "applied_rules", "TEXT", false, None, false);

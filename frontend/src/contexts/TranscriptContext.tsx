@@ -92,6 +92,14 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
         // Initialize IndexedDB
         await indexedDBService.init();
 
+        // This provider is mounted at the root layout, so purge legacy saved
+        // plaintext copies even when the app opens directly on a non-home route.
+        try {
+          await indexedDBService.purgeSavedMeetings();
+        } catch {
+          console.warn('[IndexedDB] Failed to purge legacy saved recovery copies at startup');
+        }
+
         // Listen for recording-started event
         unlistenRecordingStarted = await recordingService.onRecordingStarted(async () => {
           try {
@@ -101,7 +109,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
 
             // Store in sessionStorage as fallback for markMeetingAsSaved
             sessionStorage.setItem('indexeddb_current_meeting_id', meetingId);
-            console.log('[Recording Started] 💾 IndexedDB meeting ID stored:', meetingId);
+            console.log('[Recording Started] IndexedDB recovery record initialized');
 
             // Get meeting name
             const meetingName = await recordingService.getRecordingMeetingName();
@@ -138,8 +146,8 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
             } catch (error) {
               // Non-fatal - will be set on stop if recording completes normally
             }
-          } catch (error) {
-            console.error('Failed to initialize meeting in IndexedDB:', error);
+          } catch {
+            console.error('Failed to initialize meeting in IndexedDB');
           }
         });
 
@@ -155,12 +163,12 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
                 await indexedDBService.saveMeetingMetadata(metadata);
               }
             }
-          } catch (error) {
-            console.error('Failed to update meeting metadata on stop:', error);
+          } catch {
+            console.error('Failed to update meeting metadata on stop');
           }
         });
-      } catch (error) {
-        console.error('Failed to setup recording listeners:', error);
+      } catch {
+        console.error('Failed to set up recording listeners');
       }
     };
 
@@ -291,19 +299,11 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
       try {
         console.log('🔥 Setting up MAIN transcript listener during component initialization...');
         unlistenFn = await transcriptService.onTranscriptUpdate((update) => {
-          const now = Date.now();
-          console.log('🎯 MAIN LISTENER: Received transcript update:', {
-            sequence_id: update.sequence_id,
-            text: update.text.substring(0, 50) + '...',
-            timestamp: update.timestamp,
-            is_partial: update.is_partial,
-            received_at: new Date(now).toISOString(),
-            buffer_size_before: transcriptBuffer.size
-          });
+          console.log('MAIN LISTENER: Received transcript update');
 
           // Check for duplicate sequence_id before processing
           if (transcriptBuffer.has(update.sequence_id)) {
-            console.log('🚫 MAIN LISTENER: Duplicate sequence_id, skipping buffer:', update.sequence_id);
+            console.log('MAIN LISTENER: Duplicate transcript update skipped');
             return;
           }
 
@@ -329,7 +329,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
           // Save to IndexedDB (non-blocking)
           if (currentMeetingId) {
             indexedDBService.saveTranscript(currentMeetingId, update)
-              .catch(err => console.warn('IndexedDB save failed:', err));
+              .catch(() => console.warn('IndexedDB save failed'));
           }
 
           // Clear any existing timer and set a new one
@@ -341,8 +341,8 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
           processingTimer = setTimeout(processBufferedTranscripts, 10);
         });
         console.log('✅ MAIN transcript listener setup complete');
-      } catch (error) {
-        console.error('❌ Failed to setup MAIN transcript listener:', error);
+      } catch {
+        console.error('Failed to set up MAIN transcript listener');
         alert('Failed to setup transcript listener. Check console for details.');
       }
     };
@@ -396,12 +396,12 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
           // Fetch meeting name from backend
           const meetingName = await recordingService.getRecordingMeetingName();
           if (meetingName) {
-            console.log('[Reload Sync] Retrieved meeting name:', meetingName);
+            console.log('[Reload Sync] Retrieved meeting name');
             setMeetingTitle(meetingName);
             console.log('[Reload Sync] ✅ Meeting title synced successfully');
           }
-        } catch (error) {
-          console.error('[Reload Sync] Failed to sync from backend:', error);
+        } catch {
+          console.error('[Reload Sync] Failed to sync from backend');
         }
       }
     };
@@ -411,12 +411,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
 
   // Manual transcript update handler (for RecordingControls component)
   const addTranscript = useCallback((update: TranscriptUpdate) => {
-    console.log('🎯 addTranscript called with:', {
-      sequence_id: update.sequence_id,
-      text: update.text.substring(0, 50) + '...',
-      timestamp: update.timestamp,
-      is_partial: update.is_partial
-    });
+    console.log('addTranscript called');
 
     const newTranscript: Transcript = {
       id: update.sequence_id ? update.sequence_id.toString() : Date.now().toString(),
@@ -439,7 +434,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
         t => t.text === update.text && t.timestamp === update.timestamp
       );
       if (exists) {
-        console.log('🚫 Duplicate transcript detected, skipping:', update.text.substring(0, 30) + '...');
+        console.log('Duplicate transcript detected; skipping');
         return prev;
       }
 
@@ -448,12 +443,6 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
       const sorted = updated.sort((a, b) => (a.sequence_id || 0) - (b.sequence_id || 0));
 
       console.log('✅ Added new transcript. New count:', sorted.length);
-      console.log('📝 Latest transcript:', {
-        id: newTranscript.id,
-        text: newTranscript.text.substring(0, 30) + '...',
-        sequence_id: newTranscript.sequence_id
-      });
-
       return sorted;
     });
   }, []);
@@ -491,26 +480,25 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
     // Don't clear currentMeetingId here - it will be set by recording-started event
   }, []);
 
-  // Mark current meeting as saved in IndexedDB
+  // Remove the plaintext recovery copy after SQLite persistence succeeds.
   const markMeetingAsSaved = useCallback(async () => {
     // Try context state first, fallback to sessionStorage
     const meetingId = currentMeetingId || sessionStorage.getItem('indexeddb_current_meeting_id');
 
     if (!meetingId) {
       console.error('[IndexedDB] ❌ Cannot mark meeting as saved: No meeting ID available!');
-      console.error('[IndexedDB] currentMeetingId:', currentMeetingId);
-      console.error('[IndexedDB] sessionStorage:', sessionStorage.getItem('indexeddb_current_meeting_id'));
       return;
     }
 
     try {
       await indexedDBService.markMeetingSaved(meetingId);
-
-      // Clear both sources
+    } catch {
+      console.error('[IndexedDB] Failed to remove saved recovery copy; startup cleanup will retry');
+    } finally {
+      // SQLite already owns the saved meeting; never retain the recovery ID as
+      // the active recording after the save path has completed.
       setCurrentMeetingId(null);
       sessionStorage.removeItem('indexeddb_current_meeting_id');
-    } catch (error) {
-      console.error('[IndexedDB] ❌ Failed to mark meeting as saved:', error);
     }
   }, [currentMeetingId]);
 

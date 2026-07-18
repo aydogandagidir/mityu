@@ -134,7 +134,7 @@ export function useImportAudio({
         async (event) => {
           if (isCancelledRef.current) return;
 
-          await Analytics.trackError('import_audio_failed', event.payload.error);
+          await Analytics.trackError('import_audio_failed');
 
           setStatus('error');
           setError(event.payload.error);
@@ -238,7 +238,7 @@ export function useImportAudio({
         const errorMsg = typeof err === 'string' ? err : (err?.message || String(err) || 'Failed to start import');
         setError(errorMsg);
 
-        await Analytics.trackError('import_audio_failed', errorMsg);
+        await Analytics.trackError('import_audio_failed');
 
         onErrorRef.current?.(errorMsg);
       }

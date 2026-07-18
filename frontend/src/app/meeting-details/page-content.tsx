@@ -27,6 +27,8 @@ import { TOUR_ANCHORS } from '@/lib/tour';
 export default function PageContent({
   meeting,
   summaryData,
+  initialSegmentId,
+  initialJumpId,
   shouldAutoGenerate = false,
   onAutoGenerateComplete,
   onMeetingUpdated,
@@ -41,6 +43,8 @@ export default function PageContent({
 }: {
   meeting: any;
   summaryData: Summary | null;
+  initialSegmentId?: string | null;
+  initialJumpId?: string | null;
   shouldAutoGenerate?: boolean;
   onAutoGenerateComplete?: () => void;
   onMeetingUpdated?: () => Promise<void>;
@@ -98,6 +102,18 @@ export default function PageContent({
     }
   }, [activeAnchor]);
 
+  // Evidence-search deep links reuse the existing C1.6 jump-to-source path.
+  // Reset the target when the meeting changes so a prior search hit cannot be
+  // retried against a different meeting; on narrow screens always reveal the
+  // transcript tab before the virtualized view scrolls to the source.
+  useEffect(() => {
+    setScrollToSegmentId(initialSegmentId ?? null);
+    if (initialSegmentId) {
+      setMobileTab('transcript');
+      setScrollNonce((nonce) => nonce + 1);
+    }
+  }, [initialSegmentId, initialJumpId, meeting.id]);
+
   // Ref to store the modal open function from SummaryGeneratorButtonGroup
   const openModelSettingsRef = useRef<(() => void) | null>(null);
 
@@ -110,7 +126,7 @@ export default function PageContent({
   const { serverAddress } = useSidebar();
 
   // Get model config + beta features from ConfigContext
-  const { modelConfig, setModelConfig, betaFeatures } = useConfig();
+  const { modelConfig, setModelConfig } = useConfig();
 
   // Custom hooks
   const meetingData = useMeetingData({ meeting, summaryData, onMeetingUpdated });
@@ -132,11 +148,9 @@ export default function PageContent({
     }
   };
 
-  // Route to the structured HITL review surface when the beta flag is on OR the
-  // meeting already has a source-linked draft (so existing structured drafts keep
-  // rendering even if the flag is later turned off). Otherwise the legacy summary
-  // views are used unchanged.
-  const structuredEnabled = betaFeatures.structuredSummaries || meetingData.hasSummaryDraft;
+  // Only evidence-linked rows enter the HITL review surface. Pre-v1.0.4 summaries
+  // remain visible through an explicitly unverified, read-only upgrade view.
+  const structuredEnabled = meetingData.hasSummaryDraft;
 
   // BACKLOG C1.6 — jump from a draft block/action item to its transcript segment.
   const handleJumpToSource = (sourceChunkId: string) => {
@@ -185,19 +199,15 @@ export default function PageContent({
     updateMeetingTitle: meetingData.updateMeetingTitle,
     setAiSummary: meetingData.setAiSummary,
     onOpenModelSettings: handleOpenModelSettings,
-    // C1.6: request structured drafts when the beta flag is on (generation keys
-    // off the flag only), and refresh the draft when one completes so the review
-    // surface populates.
-    structuredSummaries: betaFeatures.structuredSummaries,
+    // Rust enforces structured drafts; this compatibility field stays true while
+    // older clients and generated bindings still carry it.
+    structuredSummaries: true,
     onStructuredGenerated: meetingData.refetchDraft,
   });
 
   const copyOperations = useCopyOperations({
     meeting,
-    transcripts: meetingData.transcripts,
     meetingTitle: meetingData.meetingTitle,
-    aiSummary: meetingData.aiSummary,
-    blockNoteSummaryRef: meetingData.blockNoteSummaryRef,
   });
 
   const meetingOperations = useMeetingOperations({
@@ -357,12 +367,7 @@ export default function PageContent({
           isEditingTitle={meetingData.isEditingTitle}
           onStartEditTitle={() => meetingData.setIsEditingTitle(true)}
           onFinishEditTitle={() => meetingData.setIsEditingTitle(false)}
-          isTitleDirty={meetingData.isTitleDirty}
           summaryRef={meetingData.blockNoteSummaryRef}
-          isSaving={meetingData.isSaving}
-          onSaveAll={meetingData.saveAllChanges}
-          onCopySummary={copyOperations.handleCopySummary}
-          onOpenFolder={meetingOperations.handleOpenMeetingFolder}
           aiSummary={meetingData.aiSummary}
           summaryStatus={summaryGeneration.summaryStatus}
           transcripts={meetingData.transcripts}

@@ -1,9 +1,9 @@
-//! The domain shape of a learned rule (ADR-0024 §4).
+//! The domain shape of a learned rule (ADR-0030 §4).
 //!
 //! A rule is what Mityu learned from a user's corrections, expressed in **plain
 //! language** and stored as data — never as model weights. That choice is legal
 //! before it is technical: KVKK/GDPR erasure is not satisfiable against a
-//! fine-tune, whereas an unwanted rule is one `DELETE` (ADR-0024 §10). It is also
+//! fine-tune, whereas an unwanted rule is one `DELETE` (ADR-0030 §10). It is also
 //! what lets the user read, rewrite and delete every rule, which is both the
 //! product surface (§9) and the EU-AI-Act defence — an opaque "our AI learns you"
 //! is precisely what cannot be defended.
@@ -16,7 +16,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// A stored token was outside the ADR-0024 §4 vocabulary (corrupt or hand-edited
+/// A stored token was outside the ADR-0030 §4 vocabulary (corrupt or hand-edited
 /// row). Tokens are a closed vocabulary, not user content, so echoing one leaks
 /// nothing.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -202,7 +202,7 @@ pub struct LearnedRule {
     pub support_count: i64,
 }
 
-/// The rule status machine (ADR-0024 §4), mirroring the shape of
+/// The rule status machine (ADR-0030 §4), mirroring the shape of
 /// `block_transition_allowed`: `proposed → active | dismissed`,
 /// `active → dismissed`, `dismissed → active`. Everything else — including
 /// self-transitions — is illegal.
@@ -257,7 +257,7 @@ pub fn initial_status(
     }
 }
 
-/// One rule AS IT STOOD when it shaped a summary — the ADR-0024 §5 snapshot,
+/// One rule AS IT STOOD when it shaped a summary — the ADR-0030 §5 snapshot,
 /// stored in `summaries.applied_rules`.
 ///
 /// Two deliberate differences from [`LearnedRule`], both because this is an
@@ -302,7 +302,7 @@ impl AppliedRule {
 ///    one was refused; neither may shape a summary.
 /// 2. **Ordered by id, always.** The order rules appear in changes the prompt,
 ///    and the prompt has to be reproducible: `summaries.applied_rules` snapshots
-///    what shaped a given summary (ADR-0024 §5) and that snapshot is worthless if
+///    what shaped a given summary (ADR-0030 §5) and that snapshot is worthless if
 ///    the same rule set can render two different ways. Row order out of SQLite is
 ///    not a contract; this is.
 pub fn applicable_rules<'a>(
@@ -368,7 +368,7 @@ mod tests {
 
         // LLM: ALWAYS proposed — even with a huge claimed support and
         // auto-activation on. The model's asserted count is not a verified one,
-        // so it can never talk itself into force (ADR-0024 §8, C2 safety).
+        // so it can never talk itself into force (ADR-0030 §8, C2 safety).
         assert_eq!(
             initial_status(RuleOrigin::MinedLlm, 999, &auto),
             RuleStatus::Proposed,

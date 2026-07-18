@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod deletion;
 pub mod encryption;
 pub mod manager;
 pub mod models;

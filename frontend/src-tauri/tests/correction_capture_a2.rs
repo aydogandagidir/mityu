@@ -1,4 +1,4 @@
-//! Integration tests for the append-only correction log (ADR-0024 §2, phase A2).
+//! Integration tests for the append-only correction log (ADR-0030 §2, phase A2).
 //!
 //! What these prove, in one line: **the HITL correction signal is now captured,
 //! is model→human, and survives the regeneration that destroys the inline copy.**
@@ -258,7 +258,7 @@ async fn regeneration_destroys_the_inline_delta_but_not_the_log() {
 
     // Half 1 — the defect is REAL: the inline delta is gone. If this ever starts
     // failing, `upsert_draft` learned to preserve `original_content` and the
-    // motivation recorded in ADR-0024 §2 needs revisiting (the log stays correct
+    // motivation recorded in ADR-0030 §2 needs revisiting (the log stays correct
     // either way).
     let after = SummariesRepository::get_by_meeting(&pool, &ctx, &meeting)
         .await
@@ -469,7 +469,7 @@ async fn action_item_text_edit_records_a_delta_but_an_assignee_only_patch_does_n
 }
 
 // ---------------------------------------------------------------------------
-// Erasure (ADR-0024 §10): deleting the meeting takes its corrections with it, so
+// Erasure (ADR-0030 §10): deleting the meeting takes its corrections with it, so
 // "delete my data" stays a real DELETE — the promise a fine-tune cannot make.
 // Proven here through the app's own sqlx pool, not a hand-rolled connection.
 // ---------------------------------------------------------------------------

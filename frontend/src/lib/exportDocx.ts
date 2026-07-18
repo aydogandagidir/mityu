@@ -14,7 +14,7 @@
  *     heading1 -> HEADING_1, heading2 -> HEADING_2
  *     text     -> paragraph
  *     bullet   -> bulleted paragraph
- *   each line prefixes its "[MM:SS]" sourceTs when the model resolved one.
+ *   each line prefixes its verified source timestamp.
  *   Action Items                                         (HEADING_1)
  *     • text — assignee — due — [MM:SS]                  (one row per item)
  *   Note: N action item(s) not yet approved — not included.  (footer, when >0)
@@ -32,7 +32,12 @@
  * `docx` owns; the logical content is stable).
  */
 
-import type { ExportDoc, ExportItem, ExportActionItem } from './exportModel';
+import {
+  buildVerifiedExportProvenance,
+  type ExportDoc,
+  type ExportItem,
+  type ExportActionItem,
+} from './exportModel';
 
 /** Join the parts of an action-item line with an em-dash, dropping blanks. */
 function actionItemLine(item: ExportActionItem): string {
@@ -44,7 +49,7 @@ function actionItemLine(item: ExportActionItem): string {
   return parts.join(' — ');
 }
 
-/** Prefix an item's text with its `[MM:SS]` when present (heading/text/bullet). */
+/** Prefix an item's text with its verified source timestamp. */
 function itemText(item: ExportItem): string {
   const ts = item.sourceTs ? `${item.sourceTs} ` : '';
   return `${ts}${item.text.trim()}`;
@@ -58,6 +63,8 @@ function itemText(item: ExportItem): string {
  *   `application/vnd.openxmlformats-officedocument.wordprocessingml.document`.
  */
 export async function renderExportDocx(doc: ExportDoc): Promise<Blob> {
+  const machineProvenanceJson = JSON.stringify(buildVerifiedExportProvenance(doc));
+
   // Dynamic import keeps `docx` out of any SSR/prerender evaluation and code-
   // splits it out of the initial bundle; it resolves from the local install
   // (no network) the first time a user exports.
@@ -165,6 +172,13 @@ export async function renderExportDocx(doc: ExportDoc): Promise<Blob> {
     );
   }
 
-  const document = new Document({ sections: [{ children }] });
+  const document = new Document({
+    title: meta.title.trim() || 'Meeting Summary',
+    subject: 'AI-assisted meeting export with human review and source links',
+    creator: 'Mityu',
+    keywords: 'Mityu; AI-generated; human-reviewed; source-linked',
+    description: machineProvenanceJson,
+    sections: [{ children }],
+  });
   return Packer.toBlob(document);
 }

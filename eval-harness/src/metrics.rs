@@ -2,7 +2,7 @@
 //!
 //! Documented decisions (surfaced in the Phase-0 report):
 //! - Normalization now lives in the app core, `app_lib::text` — the learning
-//!   miner (ADR-0024 §8) needs the same folding, and two Turkish lowercases
+//!   miner (ADR-0030 §8) needs the same folding, and two Turkish lowercases
 //!   would be two answers to "are these the same word?". The pipeline and the
 //!   strict/folded rationale are documented there.
 //! - Diacritic folding is NOT applied to the strict metrics. A folded variant is

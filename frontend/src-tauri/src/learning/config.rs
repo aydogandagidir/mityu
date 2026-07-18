@@ -1,4 +1,4 @@
-//! Per-workspace learning policy (ADR-0024 §7), stored as a small JSON blob in
+//! Per-workspace learning policy (ADR-0030 §7), stored as a small JSON blob in
 //! `settings.learningConfig` — the `redactionConfig` pattern of `20260704000000`.
 //!
 //! Every field carries `#[serde(default)]`, so an older or partial blob parses
@@ -26,14 +26,14 @@ fn default_min_support() -> i64 {
 #[serde(rename_all = "camelCase")]
 pub struct LearningConfig {
     /// Master switch: capture corrections, mine them, inject the results.
-    /// Off means the app behaves exactly as it did before ADR-0024.
+    /// Off means the app behaves exactly as it did before ADR-0030.
     #[serde(default = "default_true")]
     pub enabled: bool,
 
     /// Whether a mined rule with enough support goes straight to `Active`
     /// instead of waiting in `Proposed` for a human.
     ///
-    /// **On by default, and that is a deliberate, bounded decision** (ADR-0024
+    /// **On by default, and that is a deliberate, bounded decision** (ADR-0030
     /// §7). It is safe only because three other things are true, and it must be
     /// revisited if any of them stops being true: (1) the output HITL gate still
     /// requires a human to approve every block, so a rule can only change what a

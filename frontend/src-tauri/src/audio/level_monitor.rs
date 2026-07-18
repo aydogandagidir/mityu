@@ -81,10 +81,10 @@ impl AudioLevelMonitor {
                     let mut streams = self.streams.lock().await;
                     streams.push(stream);
                 } else {
-                    warn!("Failed to create audio stream for device: {}", device_name);
+                    warn!("Failed to create an audio-level monitoring stream");
                 }
             } else {
-                warn!("Device not found: {}", device_name);
+                warn!("Selected audio-level monitoring device was unavailable");
             }
         }
 

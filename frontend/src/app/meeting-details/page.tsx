@@ -25,6 +25,8 @@ function MeetingDetailsContent() {
   const searchParams = useSearchParams();
   const meetingId = searchParams.get('id');
   const source = searchParams.get('source'); // Check if navigated from recording
+  const initialSegmentId = searchParams.get('segment');
+  const initialJumpId = searchParams.get('jump');
   const { setCurrentMeeting, refetchMeetings, stopSummaryPolling } = useSidebar();
   const { isAutoSummary } = useConfig(); // Get auto-summary toggle state
   const router = useRouter();
@@ -58,7 +60,7 @@ function MeetingDetailsContent() {
       console.log('🔍 Checked for gemma3:1b:', hasGemma);
       return hasGemma;
     } catch (error) {
-      console.error('❌ Failed to check Ollama models:', error);
+      console.error('Failed to check Ollama models');
       return false;
     }
   }, []);
@@ -87,7 +89,7 @@ function MeetingDetailsContent() {
 
       // If DB already has a model, use it (never override!)
       if (currentConfig && currentConfig.model) {
-        console.log('Using existing model from DB:', currentConfig.model);
+        console.log('Using saved model configuration');
         setShouldAutoGenerate(true);
         setHasCheckedAutoGen(true);
         return;
@@ -112,7 +114,7 @@ function MeetingDetailsContent() {
         console.log('⚠️ No model configured and gemma3:1b not found');
       }
     } catch (error) {
-      console.error('❌ Failed to setup auto-generation:', error);
+      console.error('Failed to set up auto-generation');
     }
 
     setHasCheckedAutoGen(true);
@@ -126,7 +128,7 @@ function MeetingDetailsContent() {
     }
 
     if (metadata) {
-      console.log('Meeting metadata loaded:', metadata);
+      console.log('Meeting metadata loaded');
 
       // Build meeting details from metadata and paginated transcripts
       setMeetingDetails({
@@ -146,7 +148,7 @@ function MeetingDetailsContent() {
   // Handle transcript loading errors
   useEffect(() => {
     if (transcriptError) {
-      console.error('Error loading transcripts:', transcriptError);
+      console.error('Error loading transcripts');
       setError(transcriptError);
     }
   }, [transcriptError]);
@@ -177,24 +179,24 @@ function MeetingDetailsContent() {
   useEffect(() => {
     return () => {
       if (meetingId) {
-        console.log('Cleaning up: Stopping summary polling for meeting:', meetingId);
+        console.log('Cleaning up summary polling');
         stopSummaryPolling(meetingId);
       }
     };
   }, [meetingId, stopSummaryPolling]);
 
   useEffect(() => {
-    console.log('MeetingDetails useEffect triggered - meetingId:', meetingId);
+    console.log('Meeting details loading triggered');
 
     if (!meetingId || meetingId === 'intro-call') {
-      console.warn('No valid meeting ID in URL - meetingId:', meetingId);
+      console.warn('No valid meeting ID in URL');
       setError("No meeting selected");
       setIsLoading(false);
       Analytics.trackPageView('meeting_details');
       return;
     }
 
-    console.log('Valid meeting ID found, fetching details for:', meetingId);
+    console.log('Valid meeting ID found; fetching details');
 
     setMeetingDetails(null);
     setMeetingSummary(null);
@@ -207,12 +209,12 @@ function MeetingDetailsContent() {
           meetingId: meetingId,
         }) as any;
 
-        console.log('FETCH SUMMARY: Raw response:', summary);
+        console.log('Meeting summary response received');
 
         // Check if the summary request failed with 404 or error status, or if no summary exists yet (idle)
         // Note: 'cancelled' and 'failed' statuses can still have data if backup was restored
         if (summary.status === 'idle' || (!summary.data && summary.status === 'error')) {
-          console.warn('Meeting summary not found or no summary generated yet:', summary.error || 'idle');
+          console.warn('Meeting summary not found or not generated yet');
           setMeetingSummary(null);
           return;
         }
@@ -229,7 +231,7 @@ function MeetingDetailsContent() {
           }
         }
 
-        console.log('🔍 FETCH SUMMARY: Parsed data:', parsedData);
+        console.log('Meeting summary parsed');
 
         // Priority 1: BlockNote JSON format
         if (parsedData.summary_json) {
@@ -279,25 +281,25 @@ function MeetingDetailsContent() {
                 };
               } else {
                 // Handle case where blocks is not an array
-                console.warn(`LEGACY FORMAT: Section ${key} has invalid blocks:`, typedSection.blocks);
+                console.warn('Legacy summary section has invalid blocks');
                 formattedSummary[key] = {
                   title: typedSection.title || key,
                   blocks: []
                 };
               }
             } else {
-              console.warn(`LEGACY FORMAT: Skipping invalid section ${key}:`, section);
+              console.warn('Skipping invalid legacy summary section');
             }
           } catch (error) {
-            console.warn(`LEGACY FORMAT: Error processing section ${key}:`, error);
+            console.warn('Error processing legacy summary section');
             // Continue processing other sections
           }
         }
 
-        console.log('LEGACY FORMAT: Formatted summary:', formattedSummary);
+        console.log('Legacy summary formatted');
         setMeetingSummary(formattedSummary);
       } catch (error) {
-        console.error('FETCH SUMMARY: Error fetching meeting summary:', error);
+        console.error('Error fetching meeting summary');
         // Don't set error state for summary fetch failure, set to null to show generate button
         setMeetingSummary(null);
       }
@@ -363,6 +365,8 @@ function MeetingDetailsContent() {
   return <PageContent
     meeting={meetingDetails}
     summaryData={meetingSummary}
+    initialSegmentId={initialSegmentId}
+    initialJumpId={initialJumpId}
     shouldAutoGenerate={shouldAutoGenerate}
     onAutoGenerateComplete={() => setShouldAutoGenerate(false)}
     onMeetingUpdated={async () => {

@@ -93,7 +93,11 @@ pub async fn api_get_template_details<R: Runtime>(
         sections: section_titles,
     };
 
-    info!("Retrieved template details for '{}'", details.name);
+    info!(
+        "Retrieved template details (id={}, name_chars={})",
+        details.id,
+        details.name.chars().count()
+    );
 
     Ok(details)
 }
@@ -116,7 +120,10 @@ pub async fn api_validate_template<R: Runtime>(
 
     match templates::validate_and_parse_template(&template_json) {
         Ok(template) => {
-            info!("Template '{}' validated successfully", template.name);
+            info!(
+                "Template validated successfully (name_chars={})",
+                template.name.chars().count()
+            );
             Ok(template.name)
         }
         Err(e) => {

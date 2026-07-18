@@ -1,5 +1,5 @@
 /**
- * Unit tests for the reject-reason wire contract (ADR-0024 §3).
+ * Unit tests for the reject-reason wire contract (ADR-0030 §3).
  *
  * Run with `pnpm test` (Vitest, `environment: 'node'` — see `vitest.config.ts`);
  * `@tauri-apps/api/core` is mocked, so this pins the PAYLOAD, not the IPC.

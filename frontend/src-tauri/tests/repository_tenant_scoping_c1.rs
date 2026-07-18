@@ -35,7 +35,9 @@ use std::collections::HashSet;
 use app_lib::api::TranscriptSegment;
 use app_lib::context::{AuthContext, RequestId, Role, TenantId, UserId, LOCAL_WORKSPACE_ID};
 use app_lib::database::repositories::{
-    action_item::ActionItemsRepository,
+    action_item::{
+        ActionItemsRepository, DEFAULT_ACTION_CENTER_PAGE_SIZE, MAX_ACTION_CENTER_PAGE_SIZE,
+    },
     summary_draft::{SummariesRepository, SummaryDraftError},
     transcript::TranscriptsRepository,
 };
@@ -987,6 +989,14 @@ async fn retranscription_triggers_downgrade_of_summary_and_items() {
             .await
             .expect("approve a1")
     );
+    let action_center = ActionItemsRepository::list_approved_with_sources(&pool, &local, 100, 0)
+        .await
+        .expect("list approved actions before retranscription");
+    assert_eq!(
+        action_center.items.len(),
+        1,
+        "approved item must enter the Action Center"
+    );
 
     // Retranscription: new segment rows, new ids.
     TranscriptsRepository::replace_meeting_transcripts(
@@ -1025,6 +1035,14 @@ async fn retranscription_triggers_downgrade_of_summary_and_items() {
         items[0].status,
         BlockStatus::Draft,
         "hook must downgrade items"
+    );
+    assert!(
+        ActionItemsRepository::list_approved_with_sources(&pool, &local, 100, 0)
+            .await
+            .expect("list approved actions after retranscription")
+            .items
+            .is_empty(),
+        "retranscription must remove the downgraded item from the Action Center"
     );
 
     // Edit provenance survives a subsequent retranscription: Edited -> Draft
@@ -1203,6 +1221,490 @@ async fn action_item_regeneration_preserves_human_touched_items() {
         items.iter().all(|item| item.id != "b2"),
         "soft-deleted item must vanish from listings"
     );
+
+    pool.close().await;
+}
+
+/// Generation is an untrusted producer: repository persistence must never let
+/// an incoming model payload mint any human-review state.
+#[tokio::test]
+async fn generation_forces_summary_blocks_and_action_items_to_draft() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("action_status_gate.sqlite")).await;
+    let local = AuthContext::local();
+    let meeting = seed_meeting(&pool, &local, "Status gate", &["status-source"]).await;
+
+    let mut approved_block = block(
+        "incoming-approved-block",
+        "status-source",
+        BlockStatus::Approved,
+    );
+    approved_block.original_content = Some("forged edit provenance".to_string());
+    let generated_summary = MeetingNotesDraft {
+        status: SummaryStatus::Approved,
+        ..notes(
+            &meeting,
+            vec![
+                approved_block,
+                block(
+                    "incoming-edited-block",
+                    "status-source",
+                    BlockStatus::Edited,
+                ),
+                block(
+                    "incoming-rejected-block",
+                    "status-source",
+                    BlockStatus::Rejected,
+                ),
+            ],
+        )
+    };
+    SummariesRepository::upsert_draft(&pool, &local, &generated_summary, None, None)
+        .await
+        .expect("insert untrusted summary generation");
+    let summary = SummariesRepository::get_by_meeting(&pool, &local, &meeting)
+        .await
+        .expect("read forced summary draft")
+        .expect("summary exists");
+    assert_eq!(summary.status, SummaryStatus::Draft);
+    assert!(
+        summary
+            .draft
+            .sections
+            .iter()
+            .flat_map(|section| section.blocks.iter())
+            .all(|block| {
+                block.status == BlockStatus::Draft && block.original_content.is_none()
+            }),
+        "repository boundary must clear producer-supplied review state and edit provenance"
+    );
+
+    let mut approved = action("incoming-approved", "status-source");
+    approved.status = BlockStatus::Approved;
+    let mut edited = action("incoming-edited", "status-source");
+    edited.status = BlockStatus::Edited;
+    let mut rejected = action("incoming-rejected", "status-source");
+    rejected.status = BlockStatus::Rejected;
+
+    ActionItemsRepository::insert_drafts(&pool, &local, &meeting, &[approved, edited, rejected])
+        .await
+        .expect("insert untrusted generation batch");
+
+    let items = ActionItemsRepository::list_by_meeting(&pool, &local, &meeting)
+        .await
+        .expect("list forced drafts");
+    assert_eq!(items.len(), 3);
+    assert!(
+        items.iter().all(|item| item.status == BlockStatus::Draft),
+        "repository boundary must force every generated item to draft"
+    );
+    assert!(
+        ActionItemsRepository::list_approved_with_sources(&pool, &local, 100, 0)
+            .await
+            .expect("list approved actions")
+            .items
+            .is_empty(),
+        "untrusted generation must not enter the Action Center"
+    );
+
+    pool.close().await;
+}
+
+/// "Resolvable" means an active source in an active same-workspace meeting,
+/// both at draft insertion and at the atomic human-approval write gate.
+#[tokio::test]
+async fn action_item_write_and_approval_gates_require_active_evidence() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("action_active_source.sqlite")).await;
+    let local = AuthContext::local();
+    let meeting = seed_meeting(&pool, &local, "Active evidence", &["active-source"]).await;
+
+    sqlx::query("UPDATE transcripts SET deleted_at = ? WHERE id = ?")
+        .bind("2026-07-14T10:00:00Z")
+        .bind("active-source")
+        .execute(&pool)
+        .await
+        .expect("soft-delete source");
+    let insert = ActionItemsRepository::insert_drafts(
+        &pool,
+        &local,
+        &meeting,
+        &[action("source-deleted-at-insert", "active-source")],
+    )
+    .await;
+    assert!(
+        matches!(
+            insert,
+            Err(SummaryDraftError::UnresolvableSources { count: 1 })
+        ),
+        "soft-deleted evidence must fail the write-time source gate: {insert:?}"
+    );
+
+    sqlx::query("UPDATE transcripts SET deleted_at = NULL WHERE id = ?")
+        .bind("active-source")
+        .execute(&pool)
+        .await
+        .expect("restore source");
+    ActionItemsRepository::insert_drafts(
+        &pool,
+        &local,
+        &meeting,
+        &[action("approval-target", "active-source")],
+    )
+    .await
+    .expect("insert approval target");
+
+    sqlx::query("UPDATE transcripts SET deleted_at = ? WHERE id = ?")
+        .bind("2026-07-14T10:01:00Z")
+        .bind("active-source")
+        .execute(&pool)
+        .await
+        .expect("soft-delete source before approval");
+    assert!(
+        !ActionItemsRepository::set_status(
+            &pool,
+            &local,
+            "approval-target",
+            BlockStatus::Approved,
+        )
+        .await
+        .expect("approval with deleted source returns a decision"),
+        "approval must fail atomically when the source is inactive"
+    );
+
+    sqlx::query("UPDATE transcripts SET deleted_at = NULL WHERE id = ?")
+        .bind("active-source")
+        .execute(&pool)
+        .await
+        .expect("restore source again");
+    sqlx::query("UPDATE meetings SET deleted_at = ? WHERE id = ?")
+        .bind("2026-07-14T10:02:00Z")
+        .bind(&meeting)
+        .execute(&pool)
+        .await
+        .expect("soft-delete meeting");
+    assert!(
+        !ActionItemsRepository::set_status(
+            &pool,
+            &local,
+            "approval-target",
+            BlockStatus::Approved,
+        )
+        .await
+        .expect("approval with deleted meeting returns a decision"),
+        "approval must fail atomically when the meeting is inactive"
+    );
+    let insert = ActionItemsRepository::insert_drafts(
+        &pool,
+        &local,
+        &meeting,
+        &[action("meeting-deleted-at-insert", "active-source")],
+    )
+    .await;
+    assert!(
+        matches!(insert, Err(SummaryDraftError::MeetingNotFound)),
+        "soft-deleted meetings must reject new generation batches: {insert:?}"
+    );
+
+    pool.close().await;
+}
+
+/// The Action Center is a bounded, deterministic, tenant-scoped projection of
+/// approved items whose meeting/source joins are still active and consistent.
+#[tokio::test]
+async fn approved_action_center_filters_untrusted_states_and_preserves_source_links() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("approved_action_center.sqlite")).await;
+    let local = AuthContext::local();
+    let other = other_ws_ctx();
+
+    let newer = seed_meeting(
+        &pool,
+        &local,
+        "Newer planning",
+        &["new-source", "soft-source"],
+    )
+    .await;
+    let older = seed_meeting(&pool, &local, "Older planning", &["old-source"]).await;
+    let deleted_meeting = seed_meeting(
+        &pool,
+        &local,
+        "Deleted meeting",
+        &["deleted-meeting-source"],
+    )
+    .await;
+    let other_meeting = seed_meeting(&pool, &other, "Other tenant", &["other-source"]).await;
+
+    for (meeting_id, created_at) in [
+        (&newer, "2026-07-03T09:00:00Z"),
+        (&deleted_meeting, "2026-07-02T09:00:00Z"),
+        (&older, "2026-07-01T09:00:00Z"),
+        (&other_meeting, "2026-07-04T09:00:00Z"),
+    ] {
+        sqlx::query("UPDATE meetings SET created_at = ? WHERE id = ?")
+            .bind(created_at)
+            .bind(meeting_id)
+            .execute(&pool)
+            .await
+            .expect("set deterministic meeting date");
+    }
+
+    let mut primary = action("approved-primary", "new-source");
+    primary.assignee = Some("Ayse".to_string());
+    primary.due = Some("next Friday".to_string());
+    let newer_batch = [
+        primary,
+        action("still-draft", "new-source"),
+        action("human-edited", "new-source"),
+        action("rejected", "new-source"),
+        action("approved-secondary", "new-source"),
+        action("soft-deleted-item", "new-source"),
+        action("wrong-meeting-source", "new-source"),
+        action("foreign-workspace-source", "new-source"),
+        action("soft-deleted-source", "soft-source"),
+    ];
+    ActionItemsRepository::insert_drafts(&pool, &local, &newer, &newer_batch)
+        .await
+        .expect("insert newer batch");
+
+    for id in [
+        "approved-primary",
+        "approved-secondary",
+        "soft-deleted-item",
+        "wrong-meeting-source",
+        "foreign-workspace-source",
+        "soft-deleted-source",
+    ] {
+        assert!(
+            ActionItemsRepository::set_status(&pool, &local, id, BlockStatus::Approved)
+                .await
+                .unwrap_or_else(|error| panic!("approve {id}: {error}")),
+            "{id} should approve while its original source is active"
+        );
+    }
+    assert!(ActionItemsRepository::edit(
+        &pool,
+        &local,
+        "human-edited",
+        Some("human refined action"),
+        None,
+        None,
+    )
+    .await
+    .expect("edit action"));
+    assert!(
+        ActionItemsRepository::set_status(&pool, &local, "rejected", BlockStatus::Rejected)
+            .await
+            .expect("reject action")
+    );
+    assert!(
+        ActionItemsRepository::soft_delete(&pool, &local, "soft-deleted-item")
+            .await
+            .expect("soft-delete action")
+    );
+
+    ActionItemsRepository::insert_drafts(
+        &pool,
+        &local,
+        &older,
+        &[action("approved-older", "old-source")],
+    )
+    .await
+    .expect("insert older action");
+    assert!(ActionItemsRepository::set_status(
+        &pool,
+        &local,
+        "approved-older",
+        BlockStatus::Approved,
+    )
+    .await
+    .expect("approve older action"));
+
+    ActionItemsRepository::insert_drafts(
+        &pool,
+        &local,
+        &deleted_meeting,
+        &[action("approved-deleted-meeting", "deleted-meeting-source")],
+    )
+    .await
+    .expect("insert deleted-meeting action");
+    assert!(ActionItemsRepository::set_status(
+        &pool,
+        &local,
+        "approved-deleted-meeting",
+        BlockStatus::Approved,
+    )
+    .await
+    .expect("approve deleted-meeting action"));
+
+    ActionItemsRepository::insert_drafts(
+        &pool,
+        &other,
+        &other_meeting,
+        &[action("approved-other", "other-source")],
+    )
+    .await
+    .expect("insert other-workspace action");
+    assert!(ActionItemsRepository::set_status(
+        &pool,
+        &other,
+        "approved-other",
+        BlockStatus::Approved,
+    )
+    .await
+    .expect("approve other-workspace action"));
+
+    // Simulate corrupt/future-sync rows that violate immutable source rules.
+    // The trusted read must fail closed even if storage is tampered with.
+    sqlx::query("UPDATE action_items SET source_chunk_id = ? WHERE id = ?")
+        .bind("old-source")
+        .bind("wrong-meeting-source")
+        .execute(&pool)
+        .await
+        .expect("inject wrong-meeting source");
+    sqlx::query("UPDATE action_items SET source_chunk_id = ? WHERE id = ?")
+        .bind("other-source")
+        .bind("foreign-workspace-source")
+        .execute(&pool)
+        .await
+        .expect("inject foreign-workspace source");
+    sqlx::query("UPDATE transcripts SET deleted_at = ? WHERE id = ?")
+        .bind("2026-07-14T11:00:00Z")
+        .bind("soft-source")
+        .execute(&pool)
+        .await
+        .expect("soft-delete cited source");
+    sqlx::query("UPDATE meetings SET deleted_at = ? WHERE id = ?")
+        .bind("2026-07-14T11:01:00Z")
+        .bind(&deleted_meeting)
+        .execute(&pool)
+        .await
+        .expect("soft-delete cited meeting");
+
+    let first = ActionItemsRepository::list_approved_with_sources(&pool, &local, 2, 0)
+        .await
+        .expect("first Action Center page");
+    assert_eq!(
+        first
+            .items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["approved-primary", "approved-secondary"],
+        "backend order must be preserved after every fail-closed filter"
+    );
+    assert!(first.has_more);
+    assert_eq!(first.next_offset, Some(2));
+    assert!(first
+        .items
+        .iter()
+        .all(|item| item.review_status == BlockStatus::Approved));
+    assert_eq!(first.items[0].meeting_id, newer);
+    assert_eq!(first.items[0].meeting_title, "Newer planning");
+    assert_eq!(first.items[0].meeting_created_at, "2026-07-03T09:00:00Z");
+    assert_eq!(first.items[0].assignee.as_deref(), Some("Ayse"));
+    assert_eq!(first.items[0].due.as_deref(), Some("next Friday"));
+    assert_eq!(first.items[0].source_chunk_id, "new-source");
+    assert_eq!(first.items[0].source_timestamp, "2026-07-05T10:00:00.000Z");
+    assert_eq!(first.items[0].audio_start_time, Some(0.0));
+
+    let second = ActionItemsRepository::list_approved_with_sources(
+        &pool,
+        &local,
+        2,
+        first.next_offset.expect("next page offset"),
+    )
+    .await
+    .expect("second Action Center page");
+    assert_eq!(
+        second
+            .items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["approved-older"]
+    );
+    assert!(!second.has_more);
+    assert_eq!(second.next_offset, None);
+
+    let clamped = ActionItemsRepository::list_approved_with_sources(&pool, &local, 0, 0)
+        .await
+        .expect("zero limit is safely clamped");
+    assert_eq!(clamped.items.len(), 1);
+    assert!(clamped.has_more);
+    assert_eq!(clamped.next_offset, Some(1));
+
+    let other_page = ActionItemsRepository::list_approved_with_sources(&pool, &other, 100, 0)
+        .await
+        .expect("other-workspace page");
+    assert_eq!(other_page.items.len(), 1);
+    assert_eq!(other_page.items[0].id, "approved-other");
+    assert_eq!(other_page.items[0].meeting_id, other_meeting);
+
+    let wire = serde_json::to_value(&first).expect("serialize Action Center page");
+    assert!(wire.get("hasMore").is_some());
+    assert!(wire.get("nextOffset").is_some());
+    assert!(wire["items"][0].get("meetingId").is_some());
+    assert!(wire["items"][0].get("sourceChunkId").is_some());
+    assert_eq!(wire["items"][0]["reviewStatus"], "approved");
+    assert!(wire["items"][0].get("meeting_id").is_none());
+
+    pool.close().await;
+}
+
+/// A caller cannot bypass the Action Center's 200-row safety cap, and the
+/// visible continuation metadata makes the remaining rows retrievable.
+#[tokio::test]
+async fn approved_action_center_caps_large_pages_without_silent_truncation() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pool = open_migrated_temp_db(&tmp.path().join("action_center_page_cap.sqlite")).await;
+    let local = AuthContext::local();
+    let meeting = seed_meeting(&pool, &local, "Large action set", &["cap-source"]).await;
+
+    assert_eq!(DEFAULT_ACTION_CENTER_PAGE_SIZE, 100);
+    assert_eq!(MAX_ACTION_CENTER_PAGE_SIZE, 200);
+
+    let generated: Vec<ActionItemDraft> = (0..205)
+        .map(|index| action(&format!("cap-{index:03}"), "cap-source"))
+        .collect();
+    ActionItemsRepository::insert_drafts(&pool, &local, &meeting, &generated)
+        .await
+        .expect("insert large generated batch");
+
+    // Projection-only fixture setup: the approval transition itself is covered
+    // elsewhere; this test needs enough approved rows to exercise the cap.
+    sqlx::query(
+        "UPDATE action_items SET status = 'approved' \
+         WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
+    )
+    .bind(&meeting)
+    .bind(LOCAL_WORKSPACE_ID)
+    .execute(&pool)
+    .await
+    .expect("mark page-cap fixture approved");
+
+    let first = ActionItemsRepository::list_approved_with_sources(&pool, &local, u32::MAX, 0)
+        .await
+        .expect("capped first page");
+    assert_eq!(first.items.len(), MAX_ACTION_CENTER_PAGE_SIZE as usize);
+    assert!(first.has_more);
+    assert_eq!(first.next_offset, Some(MAX_ACTION_CENTER_PAGE_SIZE));
+    assert_eq!(first.items.first().unwrap().id, "cap-000");
+    assert_eq!(first.items.last().unwrap().id, "cap-199");
+
+    let second = ActionItemsRepository::list_approved_with_sources(
+        &pool,
+        &local,
+        u32::MAX,
+        first.next_offset.unwrap(),
+    )
+    .await
+    .expect("capped second page");
+    assert_eq!(second.items.len(), 5);
+    assert!(!second.has_more);
+    assert_eq!(second.next_offset, None);
+    assert_eq!(second.items.first().unwrap().id, "cap-200");
+    assert_eq!(second.items.last().unwrap().id, "cap-204");
 
     pool.close().await;
 }

@@ -24,7 +24,7 @@ export interface BetaFeatures {
   importAndRetranscribe: boolean;
 
   /**
-   * Opt-in source-linked structured summaries (human review required).
+   * Source-linked structured summaries (human review required).
    * When on, new summaries render as an editable draft where every block and
    * action item is bound to its source transcript segment and must be approved
    * by a human before it is "approved" (HITL, EU AI Act Art. 50). Draft
@@ -35,7 +35,9 @@ export interface BetaFeatures {
 }
 
 export const DEFAULT_BETA_FEATURES: BetaFeatures = {
-  importAndRetranscribe: true, // Default: enabled
+  // Disabled in v1.0.4 until all file operations resolve meeting paths inside
+  // the Rust trust boundary instead of accepting renderer-supplied paths.
+  importAndRetranscribe: false,
   // Default: ENABLED (2026-07-10, owner call). The structured draft is the surface
   // that satisfies CLAUDE.md §0.5 (every AI output is a source-linked draft behind
   // human approval) and it is the read.ai-style Report (docs/DESIGN_READAI.md).
@@ -59,7 +61,7 @@ export const BETA_FEATURE_NAMES: Record<keyof BetaFeatures, string> = {
  */
 export const BETA_FEATURE_DESCRIPTIONS: Record<keyof BetaFeatures, string> = {
   importAndRetranscribe: 'Import audio files to transcribe or retranscribe existing meetings with different language settings.',
-  structuredSummaries: 'Opt-in source-linked structured summaries. Each summary block and action item is linked to its transcript segment and requires human review and approval before it is finalized.',
+  structuredSummaries: 'Source-linked structured summaries. Each summary block and action item is linked to its transcript segment and requires human review and approval before it is finalized.',
 };
 
 /**
@@ -74,7 +76,7 @@ export type BetaFeatureKey = keyof BetaFeatures;
  * any save after that carries the current version, so explicit user choices are
  * never overridden again. v2 = structuredSummaries re-defaulted to true.
  */
-export const BETA_PREFS_VERSION = 2;
+export const BETA_PREFS_VERSION = 4;
 
 /**
  * Load beta features from localStorage
@@ -100,6 +102,7 @@ export function loadBetaFeatures(): BetaFeatures {
         const migrated: BetaFeatures = {
           ...DEFAULT_BETA_FEATURES,
           ...parsed,
+          importAndRetranscribe: false,
           structuredSummaries: true,
         };
         saveBetaFeatures(migrated);
@@ -108,7 +111,12 @@ export function loadBetaFeatures(): BetaFeatures {
 
       // Merge with defaults to handle missing keys (graceful degradation)
       const { _v, ...rest } = parsed;
-      return { ...DEFAULT_BETA_FEATURES, ...rest };
+      return {
+        ...DEFAULT_BETA_FEATURES,
+        ...rest,
+        importAndRetranscribe: false,
+        structuredSummaries: true,
+      };
     }
   } catch (error) {
     console.error('[BetaFeatures] Failed to load from localStorage:', error);
@@ -128,7 +136,12 @@ export function saveBetaFeatures(features: BetaFeatures): void {
   try {
     // Stamp the prefs version so one-time default migrations (loadBetaFeatures)
     // never re-run over an explicit user choice.
-    localStorage.setItem('betaFeatures', JSON.stringify({ ...features, _v: BETA_PREFS_VERSION }));
+    localStorage.setItem('betaFeatures', JSON.stringify({
+      ...features,
+      importAndRetranscribe: false,
+      structuredSummaries: true,
+      _v: BETA_PREFS_VERSION,
+    }));
   } catch (error) {
     console.error('[BetaFeatures] Failed to save to localStorage:', error);
   }

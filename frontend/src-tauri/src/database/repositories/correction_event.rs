@@ -1,4 +1,4 @@
-//! Append-only capture of the human-in-the-loop correction signal (ADR-0024 §2).
+//! Append-only capture of the human-in-the-loop correction signal (ADR-0030 §2).
 //!
 //! Every explicit human verdict on an AI draft — an edit, a rejection, an
 //! approval, a restore — is appended here as one immutable row.
@@ -14,7 +14,7 @@
 //!
 //! **Append-only is enforced HERE, at the repository layer**, because SQLite
 //! cannot express it without a trigger and a trigger would fight the
-//! `ON DELETE CASCADE` that erasure requires (ADR-0024 §10). The surface below is
+//! `ON DELETE CASCADE` that erasure requires (ADR-0030 §10). The surface below is
 //! therefore deliberately insert + read ONLY: no update method, no delete method.
 //! The `updated_at`/`updated_by`/`rev`/`deleted_at` columns exist solely to
 //! satisfy the CLAUDE.md §6 common-column contract and keep their insert-time
@@ -34,9 +34,9 @@
 //! CONTENT WARNING for maintainers: unlike every other table in this schema
 //! except `transcripts`, these rows hold raw meeting content — both what the
 //! model wrote and what the human replaced it with. Three consequences, none
-//! optional: the rows are LOCAL-ONLY (no `SyncEntity`; ADR-0024 §11); they
+//! optional: the rows are LOCAL-ONLY (no `SyncEntity`; ADR-0030 §11); they
 //! CASCADE away with their meeting, so "delete my data" stays a real DELETE
-//! (ADR-0024 §10); and the §0.6 rule that no content ever reaches a log line or
+//! (ADR-0030 §10); and the §0.6 rule that no content ever reaches a log line or
 //! an error message applies with full force — every `tracing` call below carries
 //! ids, tokens and counts only.
 
@@ -94,7 +94,7 @@ pub enum CorrectionAction {
     /// what the model said and what the human wanted instead.
     Edit,
     /// The human threw the item away. Weak on its own — "this was wrong" is not
-    /// teachable — which is why `reason` exists (ADR-0024 §3).
+    /// teachable — which is why `reason` exists (ADR-0030 §3).
     Reject,
     /// The human accepted the item. Approving an UNEDITED block is the strongest
     /// *positive* signal available: original and final are identical, i.e. the
@@ -155,7 +155,7 @@ pub(crate) fn block_type_to_db(block_type: BlockType) -> &'static str {
 /// human→human delta would silently understate the burden.
 #[derive(Debug)]
 pub struct NewCorrectionEvent<'a> {
-    /// Meeting the corrected item belongs to (CASCADE anchor — ADR-0024 §10).
+    /// Meeting the corrected item belongs to (CASCADE anchor — ADR-0030 §10).
     pub meeting_id: &'a str,
     /// Which table/space `subject_id` lives in.
     pub subject_kind: CorrectionSubject,
@@ -167,7 +167,7 @@ pub struct NewCorrectionEvent<'a> {
     pub original_text: Option<&'a str>,
     /// What the human left behind. `None` for reject/restore (nothing survives).
     pub final_text: Option<&'a str>,
-    /// Optional free-text rationale (ADR-0024 §3). Never blocks the action.
+    /// Optional free-text rationale (ADR-0030 §3). Never blocks the action.
     pub reason: Option<&'a str>,
     /// §4 block-kind token; `None` for action items (they have no block kind).
     pub block_type: Option<&'a str>,
@@ -238,7 +238,7 @@ const SELECT_COLS: &str = "id, meeting_id, subject_kind, subject_id, action, ori
                            final_text, reason, block_type, section_title, template_id, model, \
                            created_at";
 
-/// Append-only repository over `correction_events` (ADR-0024 §2).
+/// Append-only repository over `correction_events` (ADR-0030 §2).
 ///
 /// Insert + read only, by design — see the module docs.
 pub struct CorrectionEventsRepository;
@@ -246,7 +246,7 @@ pub struct CorrectionEventsRepository;
 impl CorrectionEventsRepository {
     /// Appends one event **inside the caller's transaction**.
     ///
-    /// Transactional on purpose (ADR-0024 §2): the mutation and the record of it
+    /// Transactional on purpose (ADR-0030 §2): the mutation and the record of it
     /// either both land or neither does, so the learning signal can never
     /// silently diverge from the state it claims to describe. Callers pass
     /// `&mut *tx`.
@@ -296,11 +296,11 @@ impl CorrectionEventsRepository {
     }
 
     /// Every correction recorded for one meeting, oldest first — the evidence
-    /// view behind a learned rule (ADR-0024 §4 `evidence`).
+    /// view behind a learned rule (ADR-0030 §4 `evidence`).
     ///
     /// Returns an empty vec, never an error, when the meeting has been deleted:
     /// its events cascaded away, and a rule pointing at them must degrade to
-    /// "kanıt silindi" rather than blow up (ADR-0024 §10).
+    /// "kanıt silindi" rather than blow up (ADR-0030 §10).
     pub async fn list_for_meeting(
         pool: &SqlitePool,
         ctx: &AuthContext,
@@ -340,7 +340,7 @@ impl CorrectionEventsRepository {
     /// Fetch specific events by id, oldest first — resolves a rule's `evidence`
     /// list. Ids that no longer exist are simply absent from the result (the
     /// meeting was deleted); callers MUST treat a short result as dangling
-    /// evidence, not as an error (ADR-0024 §10).
+    /// evidence, not as an error (ADR-0030 §10).
     pub async fn list_by_ids(
         pool: &SqlitePool,
         ctx: &AuthContext,

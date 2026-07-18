@@ -251,8 +251,8 @@ impl AudioCapture {
         if needs_resampling {
             warn!("⚠️ SAMPLE RATE MISMATCH DETECTED ⚠️");
             warn!(
-                "🔄 [{:?}] Audio device '{}' ({:?}) reports {} Hz (pipeline expects {} Hz)",
-                device_type, device.name, device_kind, sample_rate, TARGET_SAMPLE_RATE
+                "🔄 [{:?}] Audio device ({:?}) reports {} Hz (pipeline expects {} Hz)",
+                device_type, device_kind, sample_rate, TARGET_SAMPLE_RATE
             );
             warn!(
                 "🔄 Automatic resampling will be applied: {} Hz → {} Hz",
@@ -694,7 +694,7 @@ impl AudioCapture {
 
     /// Handle stream errors with enhanced disconnect detection
     pub fn handle_stream_error(&self, error: cpal::StreamError) {
-        error!("Audio stream error for {}: {}", self.device.name, error);
+        error!("Audio stream error: {}", error);
 
         let error_str = error.to_string().to_lowercase();
 
@@ -706,7 +706,7 @@ impl AudioCapture {
             || error_str.contains("device unavailable")
             || error_str.contains("device removed")
         {
-            warn!("🔌 Device disconnect detected for: {}", self.device.name);
+            warn!("🔌 Audio device disconnect detected");
             AudioError::DeviceDisconnected
         } else if error_str.contains("permission") || error_str.contains("access denied") {
             AudioError::PermissionDenied

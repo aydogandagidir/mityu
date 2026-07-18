@@ -1,4 +1,4 @@
-//! Correction burden (ADR-0024 §9) — how much of Mityu's writing the human had
+//! Correction burden (ADR-0030 §9) — how much of Mityu's writing the human had
 //! to change.
 //!
 //! This is the learning system's objective function, and its whole point is that

@@ -12,10 +12,17 @@ export interface SaveMeetingRequest {
   meetingTitle: string;
   transcripts: Transcript[];
   folderPath: string | null;
+  completionToken: string | null;
 }
 
 export interface SaveMeetingResponse {
   meeting_id: string;
+}
+
+export interface PendingRecordingPostProcessing {
+  completionToken: string;
+  persisted: boolean;
+  meetingId: string | null;
 }
 
 export interface Meeting {
@@ -33,18 +40,40 @@ export class StorageService {
    * Save meeting transcript to SQLite database
    * @param meetingTitle - Title of the meeting
    * @param transcripts - Array of transcript segments
-   * @param folderPath - Optional folder path for audio file
+   * @param folderPath - Legacy recording-folder correlation value; never a native path authority
+   * @param completionToken - Opaque, one-time token emitted by the native recording-stop flow
    * @returns Promise with { meeting_id: string }
    */
   async saveMeeting(
     meetingTitle: string,
     transcripts: Transcript[],
-    folderPath: string | null
+    folderPath: string | null,
+    completionToken: string | null,
   ): Promise<SaveMeetingResponse> {
     return invoke<SaveMeetingResponse>('api_save_transcript', {
       meetingTitle,
       transcripts,
       folderPath,
+      completionToken,
+    });
+  }
+
+  /** Release the native new-recording gate after the matching save flow is fully complete. */
+  async acknowledgeRecordingPostProcessing(completionToken: string): Promise<void> {
+    return invoke('api_acknowledge_recording_post_processing', {
+      completionToken,
+    });
+  }
+
+  async getPendingRecordingPostProcessing(): Promise<PendingRecordingPostProcessing | null> {
+    return invoke<PendingRecordingPostProcessing | null>(
+      'api_get_pending_recording_post_processing',
+    );
+  }
+
+  async abandonRecordingPostProcessing(completionToken: string): Promise<void> {
+    return invoke('api_abandon_recording_post_processing', {
+      completionToken,
     });
   }
 

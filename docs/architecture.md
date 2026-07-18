@@ -81,7 +81,7 @@ sequenceDiagram
 
 - **Server language:** Rust/Axum (one language with the core, share models) vs a clean FastAPI service (faster iteration, reuse the legacy schema/prompts as reference). Default recommendation: **Rust/Axum** for cohesion and to avoid a second stack; choose FastAPI only if team velocity in Rust is a bottleneck.
 - **Sync model:** start with **per-field last-write-wins + audit note**; adopt CRDTs only if real concurrent multi-user editing of the same record becomes a requirement.
-- **Storage of audio:** default is **transcript-only retention** (delete audio after transcription) to minimize cost and risk; make raw-audio retention an explicit, per-tenant policy.
+- **Storage of audio target:** default **transcript-only retention** (delete audio after transcription) remains the accepted C6 target. Current v1.0.4 behavior is different and disclosed under ADR-0027: raw audio stays in Mityu-managed local storage until the meeting is deleted. Implement the target later as an explicit, separately smoke-tested per-tenant policy.
 
 ## Known tech debt inherited from the base (track, converge deliberately)
 - **Dual transcription/summary paths** (Rust core vs archived Python backend) — the app is the Rust core; keep the Python code as reference, do not depend on it.

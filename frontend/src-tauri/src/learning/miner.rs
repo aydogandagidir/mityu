@@ -1,4 +1,4 @@
-//! Deterministic rule mining (ADR-0024 §8) — the part that actually learns.
+//! Deterministic rule mining (ADR-0030 §8) — the part that actually learns.
 //!
 //! Reads the append-only correction log and proposes plain-language rules. No
 //! model, no network, no cost: everything here is arithmetic over text the user

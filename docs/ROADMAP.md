@@ -1,6 +1,6 @@
 # Roadmap (phased, go/no-go gated)
 
-Local-first first, server-optional later. Each phase has an exit gate; do not skip.
+Local-first first, server-optional later. Each phase has an exit gate; do not silently skip or misreport it. ADR-0027 records a narrow publication-only exception for v1.0.4: A5 and C8 are deferred/not passed, field and accuracy claims stay prohibited, and downstream C8 dependencies remain locked.
 
 ## Phase 0 — Foundation & de-risk (before feature work)
 - Fork the MIT base; rebrand to **Mityu** (working name); wire this Claude Code pack (CLAUDE.md, .claude/, docs/). Concrete rebrand edits:
@@ -9,13 +9,13 @@ Local-first first, server-optional later. Each phase has an exit gate; do not sk
   - Replace app icons/assets and user-facing "meetily" strings. Keep the MIT `LICENSE` (Zackriya Solutions copyright) intact.
   - Note in DECISIONS.md that the name is provisional; run a TÜRKPATENT/EUIPO/USPTO + domain/app-store availability check before public launch.
 - Decide in DECISIONS.md: authoritative audio module (`audio` vs `audio_v2`), server language (Rust/Axum vs FastAPI), audio-retention default.
-- **Prove transcription quality on YOUR real audio** (meeting room + noisy field), whisper `large-v3` vs Parakeet, custom vocabulary for domain jargon. **Gate:** acceptable WER, or narrow scope.
+- **Prove transcription quality on YOUR real audio** (meeting room + noisy field), whisper `large-v3` vs Parakeet, custom vocabulary for domain jargon. **Gate:** acceptable WER, or narrow scope. For v1.0.4 this remains explicit evidence debt (ADR-0027), not a quality claim.
 
 ## Phase 1 — Enterprise local-first MVP (single tenant, no server)
 - Introduce the seams (WorkspaceContext/AuthContext, `workspace_id` on all entities, repository layer, dormant `sync/` module).
 - Add: SQLCipher-encrypted local DB, local audit log, retention/redaction policy, org branding, structured source-linked summaries with HITL approval, export (PDF/Docx/Markdown).
 - Converge canonical editor to BlockNote; keep legacy paths inert.
-- **Gate:** works fully offline; a real pilot user gets value; DoD green.
+- **Gate:** works fully offline; a real pilot user gets value; DoD green. C8 is deferred/not performed for v1.0.4 only and remains the Phase 1 exit gate.
 
 ## Phase 2 — Enterprise self-host (optional server turns on)
 - Build the NEW clean `server/` (authenticated, multi-tenant): OIDC (Keycloak/Authentik), RBAC, Postgres+RLS, audit, central policy, tenant-scoped sync API; enable the client `sync/`.

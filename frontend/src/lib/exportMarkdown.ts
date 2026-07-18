@@ -20,12 +20,16 @@
  *   ---
  *   _Note: N action item(s) were not yet approved and are not included._
  *
- * The `[MM:SS]` source stamp is emitted whenever the model resolved one; it is a
+ * Every emitted item carries a verified source stamp; it is a
  * transparency + evidence affordance (EU AI Act Art. 50 / HITL source linkage),
  * so it is prefixed on paragraph/heading lines and inside the bullet marker.
  */
 
-import type { ExportDoc, ExportItem } from './exportModel';
+import {
+  buildVerifiedExportProvenance,
+  type ExportDoc,
+  type ExportItem,
+} from './exportModel';
 
 /** Markdown heading prefix for each item kind ('' = not a heading). */
 const HEADING_HASHES: Record<ExportItem['kind'], string> = {
@@ -35,10 +39,107 @@ const HEADING_HASHES: Record<ExportItem['kind'], string> = {
   bullet: '',
 };
 
-/** Render one section item line, prefixing its `[MM:SS]` when present. */
+/**
+ * Emit untrusted meeting/AI text as one passive Markdown inline.
+ *
+ * Newlines are collapsed so content cannot introduce a new block, raw HTML is
+ * entity-encoded, autolink punctuation is visibly separated, and link/image
+ * label delimiters are escaped.
+ * The rendered text remains readable, but it cannot create HTML, an image fetch,
+ * or a clickable link in CommonMark/GFM renderers.
+ */
+function renderPassiveMarkdownText(value: string): string {
+  return value
+    .replace(/[\r\n\u2028\u2029\t]+/g, ' ')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\\/g, '\\\\')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    // Deliberately visible separators remain readable in plain text and cannot
+    // be normalized by a Markdown parser into an active remote destination.
+    .replace(/\b(https?|ftp|mailto|javascript|data):/gi, '$1 :')
+    .replace(/\bwww\.(?=[a-z0-9-])/gi, 'www .')
+    .replace(/@/g, ' @ ');
+}
+
+/** Keep canonical source stamps readable while neutralizing legacy free text. */
+function renderSourceTimestamp(value: string): string {
+  const normalized = value.trim();
+  return /^\[\d+:[0-5]\d\]$/.test(normalized)
+    ? normalized
+    : renderPassiveMarkdownText(normalized);
+}
+
+/**
+ * JSON-compatible YAML scalar rendering for machine provenance.
+ * Only characters inside JSON strings are Unicode-escaped; array/object syntax
+ * remains machine-readable while embedded values cannot become Markdown links,
+ * images, raw HTML, or GFM autolinks when front matter is shown as plain text.
+ */
+function stringifyProvenanceValue(value: unknown): string {
+  const json = JSON.stringify(value);
+  if (json === undefined) return 'null';
+  const escapedCharacters: Record<string, string> = {
+    '<': '\\u003c',
+    '>': '\\u003e',
+    '[': '\\u005b',
+    ']': '\\u005d',
+    '(': '\\u0028',
+    ')': '\\u0029',
+    '!': '\\u0021',
+    ':': '\\u003a',
+    '@': '\\u0040',
+  };
+  let inString = false;
+  let escaped = false;
+  let stringTail = '';
+  let output = '';
+
+  for (const character of json) {
+    if (!inString) {
+      output += character;
+      if (character === '"') {
+        inString = true;
+        stringTail = '';
+      }
+      continue;
+    }
+    if (escaped) {
+      output += character;
+      escaped = false;
+      stringTail = '';
+      continue;
+    }
+    if (character === '\\') {
+      output += character;
+      escaped = true;
+      stringTail = '';
+      continue;
+    }
+    if (character === '"') {
+      output += character;
+      inString = false;
+      stringTail = '';
+      continue;
+    }
+    output +=
+      character === '.' && stringTail.toLowerCase().endsWith('www')
+        ? '\\u002e'
+        : (escapedCharacters[character] ?? character);
+    stringTail = `${stringTail}${character}`.slice(-3);
+  }
+
+  return output;
+}
+
+/** Render one section item line, prefixing its verified source timestamp. */
 function renderItem(item: ExportItem): string {
-  const ts = item.sourceTs ? `${item.sourceTs} ` : '';
-  const text = item.text.trim();
+  const ts = item.sourceTs ? `${renderSourceTimestamp(item.sourceTs)} ` : '';
+  const text = renderPassiveMarkdownText(item.text);
   if (item.kind === 'bullet') {
     return `- ${ts}${text}`;
   }
@@ -49,8 +150,12 @@ function renderItem(item: ExportItem): string {
 /** Render the `(Assignee: …, Due: …)` suffix for an action item, if any. */
 function renderActionMeta(assignee?: string, due?: string): string {
   const parts: string[] = [];
-  if (assignee && assignee.trim()) parts.push(`Assignee: ${assignee.trim()}`);
-  if (due && due.trim()) parts.push(`Due: ${due.trim()}`);
+  if (assignee && assignee.trim()) {
+    parts.push(`Assignee: ${renderPassiveMarkdownText(assignee)}`);
+  }
+  if (due && due.trim()) {
+    parts.push(`Due: ${renderPassiveMarkdownText(due)}`);
+  }
   return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 }
 
@@ -61,17 +166,31 @@ export function renderExportMarkdown(doc: ExportDoc): string {
   const { meta, sections, actionItems, excludedActionItemCount } = doc;
   const lines: string[] = [];
 
+  // YAML front matter preserves the same transparency contract for machines
+  // that consume an export without rendering its visible approval banner.
+  const provenance = buildVerifiedExportProvenance(doc);
+  lines.push('---');
+  for (const [key, value] of Object.entries(provenance)) {
+    if (value !== undefined) lines.push(`${key}: ${stringifyProvenanceValue(value)}`);
+  }
+  lines.push('---');
+  lines.push('');
+
   // --- Header + provenance -------------------------------------------------
-  lines.push(`# ${meta.title.trim() || 'Meeting Summary'}`);
+  lines.push(`# ${renderPassiveMarkdownText(meta.title) || 'Meeting Summary'}`);
   lines.push('');
 
   // The AI-generated + human-approval provenance line (transparency, non-negotiable).
   const approver = meta.approvedBy?.trim();
   const approvedOn = meta.approvedAt?.trim();
   if (approver && approvedOn) {
-    lines.push(`> AI-generated · reviewed & approved by ${approver} on ${approvedOn}`);
+    lines.push(
+      `> AI-generated · reviewed & approved by ${renderPassiveMarkdownText(approver)} on ${renderPassiveMarkdownText(approvedOn)}`,
+    );
   } else if (approvedOn) {
-    lines.push(`> AI-generated · reviewed & approved on ${approvedOn}`);
+    lines.push(
+      `> AI-generated · reviewed & approved on ${renderPassiveMarkdownText(approvedOn)}`,
+    );
   } else {
     lines.push('> AI-generated · reviewed & approved by a human before export');
   }
@@ -79,9 +198,15 @@ export function renderExportMarkdown(doc: ExportDoc): string {
 
   // Optional metadata line (only the parts we actually know).
   const metaBits: string[] = [];
-  if (meta.meetingDate?.trim()) metaBits.push(`**Meeting date:** ${meta.meetingDate.trim()}`);
-  if (meta.model?.trim()) metaBits.push(`**Model:** ${meta.model.trim()}`);
-  if (meta.exportedAt?.trim()) metaBits.push(`**Exported:** ${meta.exportedAt.trim()}`);
+  if (meta.meetingDate?.trim()) {
+    metaBits.push(`**Meeting date:** ${renderPassiveMarkdownText(meta.meetingDate)}`);
+  }
+  if (meta.model?.trim()) {
+    metaBits.push(`**Model:** ${renderPassiveMarkdownText(meta.model)}`);
+  }
+  if (meta.exportedAt?.trim()) {
+    metaBits.push(`**Exported:** ${renderPassiveMarkdownText(meta.exportedAt)}`);
+  }
   if (metaBits.length > 0) {
     lines.push(metaBits.join('  •  '));
     lines.push('');
@@ -92,7 +217,7 @@ export function renderExportMarkdown(doc: ExportDoc): string {
 
   // --- Sections ------------------------------------------------------------
   for (const section of sections) {
-    lines.push(`## ${section.title.trim()}`);
+    lines.push(`## ${renderPassiveMarkdownText(section.title)}`);
     lines.push('');
     let prevWasBullet = false;
     for (const item of section.items) {
@@ -120,9 +245,9 @@ export function renderExportMarkdown(doc: ExportDoc): string {
     lines.push('## Action Items');
     lines.push('');
     for (const ai of actionItems) {
-      const ts = ai.sourceTs ? `${ai.sourceTs} ` : '';
+      const ts = ai.sourceTs ? `${renderSourceTimestamp(ai.sourceTs)} ` : '';
       const suffix = renderActionMeta(ai.assignee, ai.due);
-      lines.push(`- ${ts}${ai.text.trim()}${suffix}`);
+      lines.push(`- ${ts}${renderPassiveMarkdownText(ai.text)}${suffix}`);
     }
     lines.push('');
   }

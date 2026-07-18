@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X, Info, Shield } from 'lucide-react';
+import { APP_VERSION } from '@/lib/appVersion';
 
 interface AnalyticsDataModalProps {
   isOpen: boolean;
@@ -36,8 +37,12 @@ export default function AnalyticsDataModal({ isOpen, onClose, onConfirmDisable }
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
               <div className="text-sm text-green-800 dark:text-green-200">
-                <p className="font-semibold mb-1">Your Privacy is Protected</p>
-                <p>Analytics is off by default. If you enable it, we collect <strong>anonymous usage data only</strong>. No meeting content, names, file paths, or personal information is ever collected.</p>
+                <p className="font-semibold mb-1">Analytics Is Optional and Content-Free</p>
+                <p>
+                  Analytics is off by default. If you enable it, Mityu sends pseudonymous usage
+                  metrics under a random installation identifier. It never sends meeting content,
+                  meeting identifiers, names, file paths, raw errors, or account details.
+                </p>
               </div>
             </div>
           </div>
@@ -46,20 +51,20 @@ export default function AnalyticsDataModal({ isOpen, onClose, onConfirmDisable }
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-foreground">Data We Collect When Enabled:</h3>
 
-            {/* Model Preferences */}
+            {/* Model Families */}
             <div className="border border-border rounded-lg p-4">
-              <h4 className="font-semibold text-foreground mb-2">1. Model Preferences</h4>
+              <h4 className="font-semibold text-foreground mb-2">1. Model Families</h4>
               <ul className="text-sm text-foreground space-y-1 ml-4">
-                <li>• Transcription model (e.g., "Whisper large-v3", "Parakeet")</li>
-                <li>• Summary model (e.g., "Llama 3.2", "Claude Sonnet")</li>
+                <li>• Transcription model family (e.g., "whisper", "parakeet")</li>
+                <li>• Summary model family (e.g., "llama", "claude", "custom")</li>
                 <li>• Model provider (e.g., "Local", "Ollama", "OpenRouter")</li>
               </ul>
-              <p className="text-xs text-muted-foreground mt-2 italic">Helps us understand which models users prefer</p>
+              <p className="text-xs text-muted-foreground mt-2 italic">Exact or custom model names are reduced to a fixed family bucket before sending</p>
             </div>
 
             {/* Meeting Metrics */}
             <div className="border border-border rounded-lg p-4">
-              <h4 className="font-semibold text-foreground mb-2">2. Anonymous Meeting Metrics</h4>
+              <h4 className="font-semibold text-foreground mb-2">2. Aggregate Meeting Metrics</h4>
               <ul className="text-sm text-foreground space-y-1 ml-4">
                 <li>• Recording duration (e.g., "125 seconds")</li>
                 <li>• Pause duration (e.g., "5 seconds")</li>
@@ -86,7 +91,7 @@ export default function AnalyticsDataModal({ isOpen, onClose, onConfirmDisable }
                 <li>• App started/stopped events</li>
                 <li>• Session duration</li>
                 <li>• Feature usage (e.g., "settings changed")</li>
-                <li>• Error occurrences (helps us fix bugs)</li>
+                <li>• Success or error occurrence only, never the error message</li>
               </ul>
               <p className="text-xs text-muted-foreground mt-2 italic">Helps us improve user experience</p>
             </div>
@@ -95,7 +100,7 @@ export default function AnalyticsDataModal({ isOpen, onClose, onConfirmDisable }
             <div className="border border-border rounded-lg p-4">
               <h4 className="font-semibold text-foreground mb-2">5. Platform Information</h4>
               <ul className="text-sm text-foreground space-y-1 ml-4">
-                <li>• Operating system (e.g., "macOS", "Windows")</li>
+                <li>• Operating-system family (e.g., "macOS", "Windows")</li>
                 <li>• App version (automatically included in all events)</li>
                 <li>• Architecture (e.g., "x86_64", "aarch64")</li>
               </ul>
@@ -112,10 +117,17 @@ export default function AnalyticsDataModal({ isOpen, onClose, onConfirmDisable }
               <li>• ❌ Meeting transcripts or content</li>
               <li>• ❌ Audio recordings</li>
               <li>• ❌ Device names (only types: Bluetooth/Wired)</li>
-              <li>• ❌ Personal information</li>
-              <li>• ❌ Any identifiable data</li>
+              <li>• ❌ Meeting IDs or the random installation ID in custom event fields</li>
+              <li>• ❌ Raw error messages, provider responses, or settings values</li>
+              <li>• ❌ Exact OS versions, user-agent strings, email, or account details</li>
             </ul>
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            PostHog receives the random installation identifier only as the event&apos;s pseudonymous
+            distinct ID so events from one installation can be grouped. The identifier is not a
+            meeting ID, account ID, or email address, and it is not added to custom event fields.
+          </p>
 
           {/* Example Event */}
           <div className="bg-muted border border-border rounded-lg p-4">
@@ -123,11 +135,11 @@ export default function AnalyticsDataModal({ isOpen, onClose, onConfirmDisable }
             <pre className="text-xs text-foreground overflow-x-auto">
               {`{
   "event": "meeting_ended",
-  "app_version": "1.0.0",
+  "app_version": "${APP_VERSION}",
   "transcription_provider": "parakeet",
-  "transcription_model": "parakeet-tdt-0.6b-v3-int8",
+  "transcription_model_family": "parakeet",
   "summary_provider": "ollama",
-  "summary_model": "llama3.2:latest",
+  "summary_model_family": "llama",
   "total_duration_seconds": "125.5",
   "microphone_device_type": "Wired",
   "system_audio_device_type": "Bluetooth",

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { Download, RefreshCw, BadgeAlert, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatSummaryModelSizeLabelFromMb } from '@/lib/onboarding-summary-model';
+import { openExternalUrl } from '@/services/systemService';
 
 interface ModelInfo {
   name: string;
@@ -20,6 +21,8 @@ interface ModelInfo {
   size_mb: number;
   context_size: number;
   description: string;
+  license_name: string;
+  license_url: string;
   gguf_file: string;
 }
 
@@ -447,7 +450,19 @@ export function BuiltInModelManager({
                   </p>
                 )}
                 <div className="text-xs text-muted-foreground">
-                  <span>{formatSummaryModelSizeLabelFromMb(model.size_mb)} • {model.context_size} tokens</span>
+                  <span>{formatSummaryModelSizeLabelFromMb(model.size_mb)} • {model.context_size} tokens • </span>
+                  <button
+                    type="button"
+                    className="underline hover:text-foreground"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void openExternalUrl(model.license_url).catch(() => {
+                        toast.error('Could not open the model terms');
+                      });
+                    }}
+                  >
+                    {model.license_name}
+                  </button>
                 </div>
                 </div>
               </div>

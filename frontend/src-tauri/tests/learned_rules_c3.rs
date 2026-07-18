@@ -1,4 +1,4 @@
-//! Integration tests for the learned-rule lifecycle and policy (ADR-0024 §4/§7,
+//! Integration tests for the learned-rule lifecycle and policy (ADR-0030 §4/§7,
 //! phase C3).
 //!
 //! What this proves: **rules persist, the status machine holds, the workspace's

@@ -32,6 +32,10 @@ on:
         required: false
         type: boolean
         default: false
+      production-release:
+        required: false
+        type: boolean
+        default: false
       repository:
         required: false
         type: string
@@ -43,19 +47,51 @@ on:
         required: false
         type: boolean
         default: false
+      release-notes:
+        # Becomes latest.json `notes` — the changelog an older version shows in
+        # its update dialog. Empty falls back to a link to the release page, so a
+        # release never ships an empty in-app changelog.
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
     permissions:
       contents: write
     runs-on: ${{ inputs.platform }}
+    environment: ${{ inputs.production-release && 'Production' || 'Build-Test' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: ${{ inputs.repository }}
           ref: ${{ inputs.ref }}
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release-mode contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.production-release }}" == "true" ]]; then
+            # Production mandates a release id and the fail-closed updater key
+            # (enforced in release.yml). Platform Authenticode/Apple signing is
+            # optional: v1.0.4 ships updater-signed only (ADR-0029).
+            if [[ -z "${{ inputs.release-id }}" ]]; then
+              echo "ERROR: Production mode requires a release id."
+              exit 1
+            fi
+          else
+            if [[ -n "${{ inputs.release-id }}" ]]; then
+              echo "ERROR: A release id is forbidden outside explicit production mode."
+              exit 1
+            fi
+            if [[ "${{ inputs.sign-binaries }}" == "true" ]]; then
+              echo "ERROR: Signing credentials are forbidden outside the protected Production environment."
+              exit 1
+            fi
+          fi
 
       - name: Get version from tauri.conf.json.
         id: get-version
@@ -78,16 +114,16 @@ jobs:
           fi
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           # must match frontend/pnpm-lock.yaml (lockfileVersion 9.0 = pnpm >= 9)
-          version: 10
+          version: 10.33.0
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20'
+          node-version: '20.19.4'
 
       - name: Get pnpm store directory
         shell: bash
@@ -95,21 +131,22 @@ jobs:
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.STORE_PATH }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
+          toolchain: 1.95.0
           # Only aarch64-apple-darwin for Apple Silicon (no Intel support)
           targets: ${{ contains(inputs.platform, 'macos') && 'aarch64-apple-darwin' || '' }}
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: ". -> target"
           key: ${{ inputs.platform }}-${{ inputs.target }}-vulkan-v2
@@ -134,7 +171,7 @@ jobs:
 
       - name: Install Vulkan SDK (Windows)
         if: contains(inputs.platform, 'windows')
-        uses: humbletim/install-vulkan-sdk@v1.2
+        uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
         with:
           version: 1.4.309.0
           cache: true
@@ -242,17 +279,16 @@ jobs:
       - name: Setup DigiCert Environment
         if: contains(inputs.platform, 'windows') && inputs.sign-binaries
         shell: pwsh
+        env:
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_CODE_SIGNING_CERT_SHA1_HASH: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
         run: |
-          # Set environment variables
-          "SM_HOST=${{ secrets.SM_HOST }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SM_API_KEY=${{ secrets.SM_API_KEY }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SM_CODE_SIGNING_CERT_SHA1_HASH=${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
           # Decode and save client certificate using PowerShell
-          $certPath = "D:\Certificate_pkcs12.p12"
-          $base64String = "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}"
-          $certBytes = [System.Convert]::FromBase64String($base64String)
+          $certPath = Join-Path $env:RUNNER_TEMP "mityu-digicert-client.p12"
+          $certBytes = [System.Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64)
           [System.IO.File]::WriteAllBytes($certPath, $certBytes)
 
           # Verify the certificate file was created and has content
@@ -264,7 +300,7 @@ jobs:
 
             # Verify it's a valid PKCS12 file by checking if we can load it
             try {
-              $testCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, "${{ secrets.SM_CLIENT_CERT_PASSWORD }}")
+              $testCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, $env:SM_CLIENT_CERT_PASSWORD)
               Write-Host "  ✓ Certificate file is valid PKCS12 format"
               Write-Host "  ✓ Password is correct"
               Write-Host "  Certificate Subject: $($testCert.Subject)"
@@ -279,16 +315,26 @@ jobs:
             exit 1
           }
 
-          # Set the environment variable with Windows-style path
-          "SM_CLIENT_CERT_FILE=D:\Certificate_pkcs12.p12" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Persist only the non-secret temporary path; credentials remain step-scoped.
+          "SM_CLIENT_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Setup DigiCert KeyLocker
         if: contains(inputs.platform, 'windows') && inputs.sign-binaries
-        uses: digicert/ssm-code-signing@v1.1.1
+        uses: digicert/ssm-code-signing@fb61e357690ad6aaa11c372000c37fb74d35c000 # v1.1.1
+        env:
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_CODE_SIGNING_CERT_SHA1_HASH: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
 
       - name: Sync Certificate to Windows Certificate Store
         if: contains(inputs.platform, 'windows') && inputs.sign-binaries
         shell: pwsh
+        env:
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_CODE_SIGNING_CERT_SHA1_HASH: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
         run: |
           Write-Host "============================================================"
           Write-Host "=== SYNCING CERTIFICATE TO WINDOWS CERTIFICATE STORE ==="
@@ -300,21 +346,20 @@ jobs:
           # First, get the keypair alias from smctl keypair ls
           Write-Host "Retrieving keypair alias from DigiCert KeyLocker..."
           $keypairOutput = smctl keypair ls 2>&1 | Out-String
-          Write-Host $keypairOutput
 
           # Extract the alias (looking for pattern like "key_XXXXXXXXXX")
           $aliasMatch = [regex]::Match($keypairOutput, 'key_\d+')
           if ($aliasMatch.Success) {
             $keypairAlias = $aliasMatch.Value
+            Write-Output "::add-mask::$keypairAlias"
             Write-Host "✓ Found keypair alias: $keypairAlias"
           } else {
             Write-Error "✗ Could not find keypair alias in smctl output"
-            Write-Error "Output was: $keypairOutput"
             exit 1
           }
 
           Write-Host ""
-          Write-Host "Syncing certificate using alias: $keypairAlias"
+          Write-Host "Syncing the selected certificate"
           $certsyncOutput = smctl windows certsync --keypair-alias $keypairAlias 2>&1
           Write-Host $certsyncOutput
 
@@ -322,10 +367,9 @@ jobs:
             Write-Host ""
             Write-Error "✗ Certificate sync FAILED"
             Write-Error "Exit code: $LASTEXITCODE"
-            Write-Error "Output: $certsyncOutput"
             Write-Error ""
             Write-Error "Possible causes:"
-            Write-Error "  1. Keypair alias '$keypairAlias' not found in KeyLocker"
+            Write-Error "  1. Selected keypair alias not found in KeyLocker"
             Write-Error "  2. Certificate is revoked or expired"
             Write-Error "  3. API credentials are invalid"
             exit 1
@@ -369,6 +413,11 @@ jobs:
       - name: Verify DigiCert Setup
         if: contains(inputs.platform, 'windows') && inputs.sign-binaries
         shell: pwsh
+        env:
+          SM_HOST: ${{ secrets.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_CODE_SIGNING_CERT_SHA1_HASH: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
         run: |
           Write-Host "=== DigiCert Setup Verification ==="
           Write-Host ""
@@ -380,8 +429,8 @@ jobs:
 
           # Check environment variables
           Write-Host "Environment Variables:"
-          Write-Host "  SM_HOST: $env:SM_HOST"
-          Write-Host "  SM_API_KEY: $($env:SM_API_KEY.Substring(0, [Math]::Min(20, $env:SM_API_KEY.Length)))..."
+          Write-Host "  SM_HOST: $(if ($env:SM_HOST) { '***SET***' } else { 'NOT SET' })"
+          Write-Host "  SM_API_KEY: $(if ($env:SM_API_KEY) { '***SET***' } else { 'NOT SET' })"
           Write-Host "  SM_CLIENT_CERT_FILE: $env:SM_CLIENT_CERT_FILE"
           Write-Host "  SM_CLIENT_CERT_PASSWORD: $(if ($env:SM_CLIENT_CERT_PASSWORD) { '***SET***' } else { 'NOT SET' })"
           Write-Host ""
@@ -399,8 +448,12 @@ jobs:
           Write-Host ""
 
           # List available keypairs (verifies API authentication works)
-          Write-Host "Available Keypairs:"
-          smctl keypair ls
+          Write-Host "Checking KeyLocker access..."
+          smctl keypair ls | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Unable to list KeyLocker keypairs"
+            exit 1
+          }
           Write-Host ""
 
           # Verify certificate (healthcheck)
@@ -432,7 +485,19 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd frontend
-          pnpm install
+          pnpm install --frozen-lockfile
+
+      - name: Disable updater artifacts outside production
+        if: ${{ !inputs.production-release }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'frontend/src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.bundle.createUpdaterArtifacts = false;
+          fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+          NODE
 
       - name: rustup install target
         if: ${{ inputs.target != '' && !contains(inputs.target, 'unknown-linux-gnu') && !contains(inputs.target, 'pc-windows-msvc') }}
@@ -562,29 +627,62 @@ jobs:
           ls -la frontend/src-tauri/binaries/
 
       - name: Cache FFmpeg binary
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: frontend/src-tauri/binaries/ffmpeg-*
-          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('frontend/src-tauri/build.rs', 'frontend/src-tauri/build/ffmpeg.rs') }}    
+          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('frontend/src-tauri/build.rs', 'frontend/src-tauri/build/ffmpeg.rs') }}
+
+      # latest.json `notes` is what an OLDER version shows in its update dialog.
+      # tauri-action leaves it "" unless releaseBody is passed, which silently ships
+      # an empty changelog. Never emit "": fall back to the release page.
+      - name: Resolve updater release notes
+        id: updater-notes
+        shell: bash
+        env:
+          PROVIDED_NOTES: ${{ inputs.release-notes }}
+          VERSION: ${{ steps.get-version.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${PROVIDED_NOTES//[[:space:]]/}" ]]; then
+            body="$PROVIDED_NOTES"
+          else
+            body="Mityu ${VERSION} — see https://github.com/${REPOSITORY}/releases/tag/v${VERSION} for what's new."
+          fi
+          {
+            echo "body<<__MITYU_NOTES_EOF__"
+            echo "$body"
+            echo "__MITYU_NOTES_EOF__"
+          } >> "$GITHUB_OUTPUT"
+          echo "Updater notes resolved (${#body} chars)."
 
       - name: Build with Tauri
         id: tauri-build
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_ID: ${{ inputs.sign-binaries && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ inputs.sign-binaries && secrets.APPLE_ID_PASSWORD || '' }}
-          APPLE_PASSWORD: ${{ inputs.sign-binaries && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ inputs.sign-binaries && secrets.APPLE_TEAM_ID || '' }}
-          APPLE_CERTIFICATE: ${{ inputs.sign-binaries && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ inputs.sign-binaries && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ inputs.sign-binaries && env.CERT_ID || '' }}
-          # Tauri updater signing (ALWAYS enabled for .sig files)
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Mityu PostHog project key (embedded at build time; unset => telemetry no-op)
-          MITYU_POSTHOG_API_KEY: ${{ secrets.MITYU_POSTHOG_API_KEY }}
-          MITYU_POLAR_ORG_ID: ${{ secrets.MITYU_POLAR_ORG_ID }}
+          # The third-party build action needs repository write access only
+          # when it is uploading to the production draft release.
+          GITHUB_TOKEN: ${{ inputs.production-release && inputs.release-id && secrets.GITHUB_TOKEN || '' }}
+          APPLE_ID: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'macos') && secrets.APPLE_ID || '' }}
+          APPLE_ID_PASSWORD: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'macos') && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_PASSWORD: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'macos') && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'macos') && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_CERTIFICATE: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'macos') && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'macos') && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'macos') && env.CERT_ID || '' }}
+          # Windows signing credentials are scoped to the Tauri packaging step;
+          # they are not exported job-wide to dependency installation/build steps.
+          SM_HOST: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'windows') && secrets.SM_HOST || '' }}
+          SM_API_KEY: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'windows') && secrets.SM_API_KEY || '' }}
+          SM_CLIENT_CERT_PASSWORD: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'windows') && secrets.SM_CLIENT_CERT_PASSWORD || '' }}
+          SM_CODE_SIGNING_CERT_SHA1_HASH: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'windows') && secrets.SM_CODE_SIGNING_CERT_SHA1_HASH || '' }}
+          MITYU_REQUIRE_WINDOWS_SIGNING: ${{ inputs.production-release && inputs.sign-binaries && contains(inputs.platform, 'windows') && '1' || '' }}
+          # Tauri updater signing is available only in explicit production mode.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ inputs.production-release && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.production-release && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          # v1.0.4 ships telemetry as a no-op until processor/DPA, retention,
+          # region and erasure governance are approved for production.
+          MITYU_POLAR_ORG_ID: ${{ inputs.production-release && secrets.MITYU_POLAR_ORG_ID || '' }}
           NEXT_PUBLIC_MITYU_CHECKOUT_URL: ${{ vars.NEXT_PUBLIC_MITYU_CHECKOUT_URL }}
         with:
           projectPath: frontend
@@ -592,10 +690,110 @@ jobs:
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
           args: ${{ inputs.build-args }} ${{ steps.build-features.outputs.features }}
+          # tauri-action copies this into latest.json `notes`, which is the text an
+          # older version renders in its update dialog. Resolved in a prior step so
+          # multi-line notes survive and no expression escaping is needed.
+          releaseBody: ${{ steps.updater-notes.outputs.body }}
+          # release.yml verifies and publishes the NSIS updater target. Keep the
+          # action-generated latest.json on that exact installer/signature pair.
+          updaterJsonPreferNsis: ${{ inputs.production-release }}
+
+      - name: Verify bundled FFmpeg policy and AAC path
+        if: contains(inputs.platform, 'windows')
+        shell: pwsh
+        run: |
+          $ffmpeg = "frontend/src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path -LiteralPath $ffmpeg)) {
+            Write-Error "Bundled FFmpeg binary is missing: $ffmpeg"
+            exit 1
+          }
+
+          $expectedHash = "DD757098407E2AC4920647A2F66F41A6E1006DCF373B0825023948AE1B96912A"
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ffmpeg).Hash
+          if ($actualHash -ne $expectedHash) {
+            Write-Error "Bundled FFmpeg executable SHA-256 mismatch"
+            exit 1
+          }
+
+          $banner = (& $ffmpeg -version 2>&1 | Out-String).ToLowerInvariant()
+          $forbidden = @('gyan.dev', '--enable-gpl', '--enable-nonfree', '--enable-libx264', '--enable-libx265')
+          foreach ($marker in $forbidden) {
+            if ($banner.Contains($marker)) {
+              Write-Error "Rejected FFmpeg build marker: $marker"
+              exit 1
+            }
+          }
+
+          $smokeFile = Join-Path $env:RUNNER_TEMP "mityu-ffmpeg-smoke.mp4"
+          & $ffmpeg -hide_banner -loglevel error -f lavfi -i "anullsrc=r=48000:cl=mono" -t 1 -c:a aac -f mp4 -y $smokeFile
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $smokeFile) -or (Get-Item $smokeFile).Length -le 0) {
+            Write-Error "FFmpeg AAC/MP4 encode smoke test failed"
+            exit 1
+          }
+
+          & $ffmpeg -hide_banner -loglevel error -i $smokeFile -f null NUL
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "FFmpeg AAC/MP4 decode smoke test failed"
+            exit 1
+          }
+
+          Remove-Item -LiteralPath $smokeFile -Force
+
+      - name: Verify Windows installer signatures
+        if: contains(inputs.platform, 'windows') && inputs.sign-binaries
+        shell: pwsh
+        env:
+          EXPECTED_SIGNER_THUMBPRINT: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
+        run: |
+          $bundleDir = "target/${{ steps.build-profile.outputs.profile }}/bundle"
+          $nsisInstallers = @(Get-ChildItem -Path "$bundleDir/nsis" -File -Filter '*.exe' -ErrorAction Stop)
+          $msiInstallers = @(Get-ChildItem -Path "$bundleDir/msi" -File -Filter '*.msi' -ErrorAction Stop)
+
+          if ($nsisInstallers.Count -ne 1 -or $msiInstallers.Count -ne 1) {
+            Write-Error "Expected exactly one NSIS and one MSI installer; found NSIS=$($nsisInstallers.Count), MSI=$($msiInstallers.Count)."
+            exit 1
+          }
+
+          $expectedThumbprint = ($env:EXPECTED_SIGNER_THUMBPRINT -replace '\s', '').ToUpperInvariant()
+          if (-not $expectedThumbprint) {
+            Write-Error "Expected signer thumbprint is missing."
+            exit 1
+          }
+
+          $installers = @($nsisInstallers[0], $msiInstallers[0])
+
+          foreach ($installer in $installers) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+            Write-Host "Authenticode $($installer.Name): $($signature.Status)"
+
+            if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate) {
+              Write-Error "Invalid or missing Authenticode signature: $($installer.FullName)"
+              exit 1
+            }
+
+            $actualThumbprint = ($signature.SignerCertificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if ($actualThumbprint -ne $expectedThumbprint) {
+              Write-Error "Unexpected signer certificate: $($installer.FullName)"
+              exit 1
+            }
+
+            if (-not $signature.TimeStamperCertificate) {
+              Write-Error "Missing trusted timestamp: $($installer.FullName)"
+              exit 1
+            }
+          }
+
+      - name: Remove temporary DigiCert client certificate
+        if: always() && contains(inputs.platform, 'windows') && inputs.sign-binaries
+        shell: pwsh
+        run: |
+          if ($env:SM_CLIENT_CERT_FILE -and (Test-Path -LiteralPath $env:SM_CLIENT_CERT_FILE)) {
+            Remove-Item -LiteralPath $env:SM_CLIENT_CERT_FILE -Force
+          }
 
       - name: Upload artifacts (macOS)
         if: inputs.upload-artifacts && contains(inputs.platform, 'macos')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.asset-prefix }}-${{ inputs.target }}
           path: |
@@ -658,7 +856,7 @@ jobs:
 
       - name: Upload artifacts (Linux)
         if: inputs.upload-artifacts && contains(inputs.platform, 'ubuntu')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.asset-prefix }}-${{ inputs.platform }}-${{ inputs.target }}
           path: |
@@ -669,7 +867,7 @@ jobs:
 
       - name: Upload artifacts (Windows)
         if: inputs.upload-artifacts && contains(inputs.platform, 'windows')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.asset-prefix }}-${{ inputs.target }}
           path: |

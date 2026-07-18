@@ -27,7 +27,7 @@ Sources: read.ai/meeting-reports, read.ai/meetings, read.ai/assistant, read.ai/m
 | **"For You" dashboard** (14-day summaries, trending topics, recent action items across meetings) | Personal command center | **ADOPT (adapt)** | Becomes Mityu's **Home** (today the sidebar is the only library). On-device aggregation across local meetings; search already exists (C3). |
 | **File upload → report** | Upload audio/video → AI report | **ALREADY HAVE** | Mityu's Import Audio (beta). Align its output to the new Report layout. |
 | **Talk-time metrics** | Per-participant talk time | **ADAPT (gated)** | Only meaningful with diarization. Compute **on-device** if/when feasible; frame plainly. Not a launch blocker. |
-| **Sentiment / engagement / reactions** | Real-time emotional metrics | **ADAPT, cautious** | On-device only, opt-in, labeled "AI-generated · review required" (EU AI Act Art. 50). Never biometric identification. |
+| **Sentiment / engagement / reactions** | Real-time emotional metrics | **REJECT** | Workplace emotion inference is outside Mityu's product boundary. Topic and participation analytics may be descriptive, but the app must not infer a person's emotions, engagement, intent, personality, or performance from voice or behavior. |
 | **"Charisma" / "bias" scoring** | Pseudo-scientific speaker scoring | **REJECT** | Ethically fraught, EU-AI-Act-risky, and off-brand for a privacy-first tool. Deliberate divergence from read.ai. |
 | **Cloud bot that joins calls** | Auto-join Zoom/Meet/Teams | **REJECT (core)** → opt-in later | Contradicts §1. Lives only as a future consent-gated Integration (EPIC G / ADR-0018 Tier 2), never the default. |
 | **Auto-push to Asana/Jira/Notion/Slack** | One-click export to tools | **DEFER → opt-in** | Manual export/copy now (HITL "send is a user action"); integrations are EPIC G, per-workspace consent. |
@@ -69,14 +69,15 @@ themes; every AI output draft-by-default + source-linked.
 
 - No cloud dependency in capture→transcript→summary→store; app works fully offline.
 - No AI item published without human approval + source-segment link.
-- No biometric/"charisma" inference; sentiment (if any) is on-device, opt-in, labeled.
+- No biometric, emotion, "charisma," intent, personality, or employee-performance inference.
 - Integrations (calendar, bot, tool-push) are opt-in, per-workspace, consent-gated — never default.
 
 ## Scope decision (owner, 2026-07-09)
 
 **Follow read.ai closely — including its analytics/metrics surface — not just the report layout.** So the
-metrics that were "ADAPT (gated/cautious)" above are promoted to first-class goals: talk-time, engagement,
-sentiment, topics and chapters are **in scope**, presented prominently in the Report and dashboard. Two
+safe descriptive metrics that were "ADAPT (gated/cautious)" above are promoted to first-class goals:
+talk-time, topics and chapters are **in scope**, presented prominently in the Report and dashboard. Emotion,
+engagement, intent, personality and employee-performance inference remain explicitly out of scope. Two
 changes to the plan follow: **Phase E (on-device speaker diarization + talk-time) moves up** — it's now a
 priority enabler, not a maybe — and the Report/dashboard are designed with a metrics rail from the start.
 

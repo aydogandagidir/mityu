@@ -67,7 +67,12 @@ Section           { title, blocks: [Block] }
 Block             { id, type: text|bullet|heading1|heading2, content, source_chunk_id }   // source_chunk_id REQUIRED
 ActionItemDraft   { id, text, assignee?, due?, status, source_chunk_id }                   // source_chunk_id REQUIRED
 ```
-No block/action item may be persisted as "approved" without a human Approve action and a resolvable `source_chunk_id`.
+Generation repositories force every incoming summary block and action item to
+`draft`; a producer-supplied status may not mint approval. No block/action item
+may be persisted as `approved` without an explicit human Approve action and a
+resolvable `source_chunk_id`. Resolvable means an active transcript row for the
+same active meeting in the caller's workspace; soft-deleted sources/meetings do
+not resolve.
 
 ## 5. Sync protocol (dormant until Phase 2) — tenant-scoped, mergeable
 ```jsonc

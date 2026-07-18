@@ -11,7 +11,7 @@ import {
   getOpenAIModels,
   getAnthropicModels,
   getGroqModels,
-  getApiKey,
+  hasApiKey,
   getAutoGenerateSetting,
   type OllamaModel,
   type OpenRouterModel,
@@ -54,11 +54,13 @@ export interface ModelConfig {
   model: string;
   whisperModel: string;
   apiKey?: string | null;
+  hasApiKey?: boolean;
   ollamaEndpoint?: string | null;
   // Custom OpenAI fields
   customOpenAIEndpoint?: string | null;
   customOpenAIModel?: string | null;
   customOpenAIApiKey?: string | null;
+  customOpenAIHasApiKey?: boolean;
   maxTokens?: number | null;
   temperature?: number | null;
   topP?: number | null;
@@ -119,6 +121,7 @@ export function ModelSettingsModal({
   const [models, setModels] = useState<OllamaModel[]>([]);
   const [error, setError] = useState<string>('');
   const [apiKey, setApiKey] = useState<string | null>(modelConfig.apiKey || null);
+  const [hasStoredApiKey, setHasStoredApiKey] = useState<boolean>(Boolean(modelConfig.hasApiKey));
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [isApiKeyLocked, setIsApiKeyLocked] = useState<boolean>(!!modelConfig.apiKey?.trim());
   const [isLockButtonVibrating, setIsLockButtonVibrating] = useState<boolean>(false);
@@ -142,6 +145,7 @@ export function ModelSettingsModal({
   const [customOpenAIEndpoint, setCustomOpenAIEndpoint] = useState<string>(modelConfig.customOpenAIEndpoint || '');
   const [customOpenAIModel, setCustomOpenAIModel] = useState<string>(modelConfig.customOpenAIModel || '');
   const [customOpenAIApiKey, setCustomOpenAIApiKey] = useState<string>(modelConfig.customOpenAIApiKey || '');
+  const [hasCustomStoredApiKey, setHasCustomStoredApiKey] = useState<boolean>(Boolean(modelConfig.customOpenAIHasApiKey));
   const [customMaxTokens, setCustomMaxTokens] = useState<string>(modelConfig.maxTokens?.toString() || '');
   const [customTemperature, setCustomTemperature] = useState<string>(modelConfig.temperature?.toString() || '');
   const [customTopP, setCustomTopP] = useState<string>(modelConfig.topP?.toString() || '');
@@ -196,13 +200,12 @@ export function ModelSettingsModal({
     return () => clearTimeout(timer);
   }, [ollamaEndpoint]);
 
-  const fetchApiKey = async (provider: string) => {
+  const fetchApiKeyPresence = async (provider: string) => {
     try {
-      const data = await getApiKey(provider);
-      setApiKey(data || '');
+      setHasStoredApiKey(await hasApiKey(provider));
     } catch (err) {
-      console.error('Error fetching API key:', err);
-      setApiKey(null);
+      console.error('Error checking API key presence:', err);
+      setHasStoredApiKey(false);
     }
   };
 
@@ -241,7 +244,7 @@ export function ModelSettingsModal({
   );
 
   const isDoneDisabled =
-    (requiresApiKey && (!apiKey || (typeof apiKey === 'string' && !apiKey.trim()))) ||
+    (requiresApiKey && !apiKey?.trim() && !hasStoredApiKey) ||
     (modelConfig.provider === 'ollama' && ollamaEndpointChanged) ||
     isCustomOpenAIInvalid;
 
@@ -257,17 +260,8 @@ export function ModelSettingsModal({
         const data = (await configService.getModelConfig()) as any;
         if (data && data.provider !== null) {
           setModelConfig(data);
-
-          // Fetch API key if not included in response and provider requires it
-          if (data.provider !== 'ollama' && !data.apiKey) {
-            try {
-              const apiKeyData = await getApiKey(data.provider);
-              data.apiKey = apiKeyData;
-              setApiKey(apiKeyData);
-            } catch (err) {
-              console.error('Failed to fetch API key:', err);
-            }
-          }
+          setApiKey(null);
+          setHasStoredApiKey(Boolean(data.hasApiKey));
 
           // Sync ollamaEndpoint state with fetched config
           if (data.ollamaEndpoint) {
@@ -283,7 +277,8 @@ export function ModelSettingsModal({
               if (customConfig) {
                 setCustomOpenAIEndpoint(customConfig.endpoint || '');
                 setCustomOpenAIModel(customConfig.model || '');
-                setCustomOpenAIApiKey(customConfig.apiKey || '');
+                setCustomOpenAIApiKey('');
+                setHasCustomStoredApiKey(Boolean(customConfig.hasApiKey));
                 setCustomMaxTokens(customConfig.maxTokens?.toString() || '');
                 setCustomTemperature(customConfig.temperature?.toString() || '');
                 setCustomTopP(customConfig.topP?.toString() || '');
@@ -334,16 +329,13 @@ export function ModelSettingsModal({
   // Sync custom OpenAI state from modelConfig (context or props)
   useEffect(() => {
     if (modelConfig.provider === 'custom-openai') {
-      console.log('Syncing custom OpenAI fields from ConfigContext:', {
-        endpoint: modelConfig.customOpenAIEndpoint,
-        model: modelConfig.customOpenAIModel,
-        hasApiKey: !!modelConfig.customOpenAIApiKey,
-      });
+      console.log('Syncing custom OpenAI configuration from application state');
 
       // Always sync from modelConfig (which comes from context if available)
       setCustomOpenAIEndpoint(modelConfig.customOpenAIEndpoint || '');
       setCustomOpenAIModel(modelConfig.customOpenAIModel || '');
       setCustomOpenAIApiKey(modelConfig.customOpenAIApiKey || '');
+      setHasCustomStoredApiKey(Boolean(modelConfig.customOpenAIHasApiKey));
       setCustomMaxTokens(modelConfig.maxTokens?.toString() || '');
       setCustomTemperature(modelConfig.temperature?.toString() || '');
       setCustomTopP(modelConfig.topP?.toString() || '');
@@ -353,6 +345,7 @@ export function ModelSettingsModal({
     modelConfig.customOpenAIEndpoint,
     modelConfig.customOpenAIModel,
     modelConfig.customOpenAIApiKey,
+    modelConfig.customOpenAIHasApiKey,
     modelConfig.maxTokens,
     modelConfig.temperature,
     modelConfig.topP
@@ -390,13 +383,19 @@ export function ModelSettingsModal({
     }
   }, [ollamaEndpoint, lastFetchedEndpoint, modelConfig.provider]);
 
-  // Sync local apiKey state when provider changes
+  // Sync only newly entered keys. Persisted secrets remain in the OS keychain;
+  // only their presence is exposed to this settings view.
   useEffect(() => {
     if (providerApiKeys && requiresApiKey && modelConfig.provider !== 'custom-openai') {
       const correctKey = providerApiKeys[modelConfig.provider as keyof typeof providerApiKeys];
-      if (correctKey !== apiKey) {
-        setApiKey(correctKey || '');
-        setIsApiKeyLocked(!!correctKey?.trim());
+      if (correctKey?.trim()) {
+        setApiKey(correctKey);
+        setHasStoredApiKey(true);
+        setIsApiKeyLocked(true);
+      } else {
+        setApiKey('');
+        setIsApiKeyLocked(false);
+        void fetchApiKeyPresence(modelConfig.provider);
       }
     }
   }, [modelConfig.provider, providerApiKeys, requiresApiKey]);
@@ -514,10 +513,6 @@ export function ModelSettingsModal({
 
   // Fetch OpenAI models from API
   const loadOpenAIModels = async (key: string | null) => {
-    if (!key?.trim()) {
-      setOpenaiModels([]); // Will use fallback via modelOptions
-      return;
-    }
     setIsLoadingOpenAI(true);
     try {
       const data = await getOpenAIModels(key);
@@ -532,10 +527,6 @@ export function ModelSettingsModal({
 
   // Fetch Anthropic (Claude) models from API
   const loadClaudeModels = async (key: string | null) => {
-    if (!key?.trim()) {
-      setClaudeModels([]); // Will use fallback via modelOptions
-      return;
-    }
     setIsLoadingClaude(true);
     try {
       const data = await getAnthropicModels(key);
@@ -550,10 +541,6 @@ export function ModelSettingsModal({
 
   // Fetch Groq models from API
   const loadGroqModels = async (key: string | null) => {
-    if (!key?.trim()) {
-      setGroqModels([]); // Will use fallback via modelOptions
-      return;
-    }
     setIsLoadingGroq(true);
     try {
       const data = await getGroqModels(key);
@@ -566,24 +553,25 @@ export function ModelSettingsModal({
     }
   };
 
-  // Auto-fetch OpenAI models when provider is openai and we have an API key
+  // When no newly entered key is supplied, Rust resolves a stored credential
+  // internally without returning it to the WebView.
   useEffect(() => {
-    if (modelConfig.provider === 'openai' && apiKey?.trim()) {
-      loadOpenAIModels(apiKey);
+    if (modelConfig.provider === 'openai') {
+      loadOpenAIModels(apiKey?.trim() || null);
     }
   }, [modelConfig.provider, apiKey]);
 
   // Auto-fetch Claude models when provider is claude and we have an API key
   useEffect(() => {
-    if (modelConfig.provider === 'claude' && apiKey?.trim()) {
-      loadClaudeModels(apiKey);
+    if (modelConfig.provider === 'claude') {
+      loadClaudeModels(apiKey?.trim() || null);
     }
   }, [modelConfig.provider, apiKey]);
 
   // Auto-fetch Groq models when provider is groq and we have an API key
   useEffect(() => {
-    if (modelConfig.provider === 'groq' && apiKey?.trim()) {
-      loadGroqModels(apiKey);
+    if (modelConfig.provider === 'groq') {
+      loadGroqModels(apiKey?.trim() || null);
     }
   }, [modelConfig.provider, apiKey]);
 
@@ -615,6 +603,9 @@ export function ModelSettingsModal({
           temperature: customTemperature ? parseFloat(customTemperature) : null,
           topP: customTopP ? parseFloat(customTopP) : null,
         });
+        if (customOpenAIApiKey.trim()) {
+          setHasCustomStoredApiKey(true);
+        }
         console.log('Custom OpenAI config saved successfully');
       } catch (err) {
         console.error('Failed to save custom OpenAI config:', err);
@@ -626,6 +617,7 @@ export function ModelSettingsModal({
     const updatedConfig = {
       ...modelConfig,
       apiKey: typeof apiKey === 'string' ? apiKey.trim() || null : null,
+      hasApiKey: hasStoredApiKey || Boolean(apiKey?.trim()),
       ollamaEndpoint: modelConfig.provider === 'ollama'
         ? (ollamaEndpoint.trim() || null)
         : (modelConfig.ollamaEndpoint || null),
@@ -633,6 +625,7 @@ export function ModelSettingsModal({
       customOpenAIEndpoint: modelConfig.provider === 'custom-openai' ? customOpenAIEndpoint.trim() : null,
       customOpenAIModel: modelConfig.provider === 'custom-openai' ? customOpenAIModel.trim() : null,
       customOpenAIApiKey: modelConfig.provider === 'custom-openai' && customOpenAIApiKey.trim() ? customOpenAIApiKey.trim() : null,
+      customOpenAIHasApiKey: hasCustomStoredApiKey || Boolean(customOpenAIApiKey.trim()),
       maxTokens: modelConfig.provider === 'custom-openai' && customMaxTokens ? parseInt(customMaxTokens, 10) : null,
       temperature: modelConfig.provider === 'custom-openai' && customTemperature ? parseFloat(customTemperature) : null,
       topP: modelConfig.provider === 'custom-openai' && customTopP ? parseFloat(customTopP) : null,
@@ -640,7 +633,7 @@ export function ModelSettingsModal({
       model: modelConfig.provider === 'custom-openai' ? customOpenAIModel.trim() : modelConfig.model,
     };
     setModelConfig(updatedConfig);
-    console.log('ModelSettingsModal - handleSave - Updated ModelConfig:', updatedConfig);
+    console.log('Model configuration updated');
 
     // Persist confirmed model choice to per-provider cache
     if (updatedConfig.model) {
@@ -824,7 +817,9 @@ export function ModelSettingsModal({
                   provider,
                   model,
                 });
-                // API key is now synced automatically via useEffect watching providerApiKeys
+                if (provider !== 'custom-openai' && provider !== 'ollama' && provider !== 'builtin-ai') {
+                  void fetchApiKeyPresence(provider);
+                }
 
                 // Load OpenRouter models only when OpenRouter is selected
                 if (provider === 'openrouter') {
@@ -842,7 +837,8 @@ export function ModelSettingsModal({
                     if (config) {
                       setCustomOpenAIEndpoint(config.endpoint || '');
                       setCustomOpenAIModel(config.model || '');
-                      setCustomOpenAIApiKey(config.apiKey || '');
+                      setCustomOpenAIApiKey('');
+                      setHasCustomStoredApiKey(Boolean(config.hasApiKey));
                       setCustomMaxTokens(config.maxTokens?.toString() || '');
                       setCustomTemperature(config.temperature?.toString() || '');
                       setCustomTopP(config.topP?.toString() || '');
@@ -965,7 +961,7 @@ export function ModelSettingsModal({
                 type="password"
                 value={customOpenAIApiKey}
                 onChange={(e) => setCustomOpenAIApiKey(e.target.value)}
-                placeholder="Leave empty if not required"
+                placeholder={hasCustomStoredApiKey ? 'Stored securely — enter to replace' : 'Leave empty if not required'}
                 className="mt-1"
               />
             </div>
@@ -1062,7 +1058,7 @@ export function ModelSettingsModal({
                 value={apiKey || ''}
                 onChange={(e) => setApiKey(e.target.value)}
                 disabled={isApiKeyLocked}
-                placeholder="Enter your API key"
+                placeholder={hasStoredApiKey ? 'Stored securely — enter to replace' : 'Enter your API key'}
                 className="pr-24"
               />
               {isApiKeyLocked && apiKey?.trim() && (

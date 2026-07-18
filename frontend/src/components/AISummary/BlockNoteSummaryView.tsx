@@ -45,6 +45,11 @@ interface BlockNoteSummaryViewProps {
   onJumpToSource?: (sourceChunkId: string) => void;
   /** Notified when the whole summary is approved. */
   onSummaryApproved?: () => void;
+  /**
+   * Upgrade-safe rendering for pre-v1.0.4 summaries that have no evidence-linked
+   * draft row. Content remains visible but cannot be edited, copied, or exported.
+   */
+  legacyReadOnly?: boolean;
 }
 
 export interface BlockNoteSummaryViewRef {
@@ -99,6 +104,31 @@ function detectSummaryFormat(
   return { format: 'legacy', data: null };
 }
 
+function LegacyUnverifiedBanner({ onRegenerate }: { onRegenerate?: () => void }) {
+  return (
+    <div
+      role="note"
+      aria-label="Legacy AI-generated summary is unverified"
+      className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
+    >
+      <p className="font-semibold">Legacy AI-generated summary · unverified</p>
+      <p className="mt-1 text-sm">
+        This summary predates source-linked review. Source links are unavailable,
+        so it is shown read-only and cannot be copied or exported.
+      </p>
+      {onRegenerate ? (
+        <button
+          type="button"
+          className="mt-3 rounded-md border border-amber-400 px-3 py-1.5 text-sm font-medium hover:bg-amber-100 dark:hover:bg-amber-500/20"
+          onClick={onRegenerate}
+        >
+          Regenerate with sources
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNoteSummaryViewProps>(({
   summaryData,
   onSave,
@@ -114,6 +144,7 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
   draftError = null,
   onJumpToSource,
   onSummaryApproved,
+  legacyReadOnly = false,
 }, ref) => {
   const { format, data } = detectSummaryFormat(summaryData, structuredEnabled);
   const [isDirty, setIsDirty] = useState(false);
@@ -140,8 +171,8 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
           setTimeout(() => {
             isContentLoaded.current = true;
           }, 100);
-        } catch (err) {
-          console.error('❌ Failed to parse markdown:', err);
+        } catch {
+          console.error('Failed to parse markdown');
         }
       };
       loadMarkdown();
@@ -159,12 +190,13 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
   }, [format, data?.summary_json]);
 
   const handleEditorChange = useCallback((blocks: Block[]) => {
+    if (legacyReadOnly) return;
     // Only set dirty flag if content has finished loading
     if (isContentLoaded.current) {
       setCurrentBlocks(blocks);
       setIsDirty(true);
     }
-  }, []);
+  }, [legacyReadOnly]);
 
   // Notify parent of dirty state changes
   useEffect(() => {
@@ -174,7 +206,7 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
   }, [isDirty, onDirtyChange]);
 
   const handleSave = useCallback(async () => {
-    if (!onSave || !isDirty) return;
+    if (legacyReadOnly || !onSave || !isDirty) return;
 
     setIsSaving(true);
     try {
@@ -197,22 +229,22 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
 
       setIsDirty(false);
       console.log('✅ Save successful');
-    } catch (err) {
-      console.error('❌ Save failed:', err);
+    } catch {
+      console.error('Summary save failed');
       alert('Failed to save changes. Please try again.');
     } finally {
       setIsSaving(false);
     }
-  }, [onSave, isDirty, currentBlocks, editor]);
+  }, [legacyReadOnly, onSave, isDirty, currentBlocks, editor]);
 
   // Expose methods to parent via ref
   useImperativeHandle(ref, () => ({
     saveSummary: handleSave,
     getMarkdown: async () => {
       try {
+        if (legacyReadOnly) return '';
         console.log('🔍 getMarkdown called, format:', format);
         console.log('🔍 currentBlocks length:', currentBlocks.length);
-        console.log('🔍 data:', data);
 
         // For markdown format - use the main editor
         if (format === 'markdown' && editor) {
@@ -250,13 +282,13 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
         // For legacy format - return empty (handled by parent)
         console.warn('⚠️ Cannot generate markdown for legacy format, returning empty');
         return '';
-      } catch (err) {
-        console.error('❌ Failed to generate markdown:', err);
+      } catch {
+        console.error('Failed to generate markdown');
         return '';
       }
     },
     isDirty
-  }), [handleSave, isDirty, editor, format, currentBlocks, data]);
+  }), [handleSave, isDirty, editor, format, currentBlocks, data, legacyReadOnly]);
 
   // Render structured, source-linked draft (BACKLOG C1.6, HITL review surface).
   // Detected FIRST so it takes precedence over the editable views. Draft state
@@ -285,6 +317,29 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
   // Render legacy format
   if (format === 'legacy') {
     console.log('🎨 Rendering LEGACY format');
+    if (legacyReadOnly) {
+      const sections = Object.entries((summaryData ?? {}) as Summary)
+        .filter(([, section]) => section && Array.isArray(section.blocks));
+      return (
+        <div className="w-full">
+          <LegacyUnverifiedBanner onRegenerate={onRegenerateSummary} />
+          <div className="space-y-5" aria-label="Read-only legacy summary">
+            {sections.map(([key, section]) => (
+              <section key={key} className="rounded-lg border border-border bg-card p-4">
+                <h3 className="font-semibold text-foreground">{section.title || key}</h3>
+                <div className="mt-2 space-y-2">
+                  {section.blocks.map((block) => (
+                    <p key={block.id} className="whitespace-pre-wrap text-sm text-foreground">
+                      {block.type === 'bullet' ? '• ' : ''}{block.content}
+                    </p>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      );
+    }
     return (
       <AISummary
         summary={summaryData as Summary}
@@ -302,6 +357,7 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
     console.log('🎨 Rendering BLOCKNOTE format (direct)');
     return (
       <div className="flex flex-col w-full">
+        {legacyReadOnly ? <LegacyUnverifiedBanner onRegenerate={onRegenerateSummary} /> : null}
         <div className="w-full">
           <Editor
             initialContent={data.summary_json}
@@ -309,7 +365,7 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
               console.log('📝 Editor blocks changed:', blocks.length);
               handleEditorChange(blocks);
             }}
-            editable={true}
+            editable={!legacyReadOnly}
           />
         </div>
       </div>
@@ -321,12 +377,13 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
     console.log('🎨 Rendering MARKDOWN format (parsed to BlockNote)');
     return (
       <div className="flex flex-col w-full">
+        {legacyReadOnly ? <LegacyUnverifiedBanner onRegenerate={onRegenerateSummary} /> : null}
         <div className="w-full">
           <BlockNoteView
             editor={editor}
-            editable={true}
+            editable={!legacyReadOnly}
             onChange={() => {
-              if (isContentLoaded.current) {
+              if (!legacyReadOnly && isContentLoaded.current) {
                 handleEditorChange(editor.document);
               }
             }}

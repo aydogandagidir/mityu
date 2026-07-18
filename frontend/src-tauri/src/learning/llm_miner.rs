@@ -1,4 +1,4 @@
-//! LLM-assisted rule mining (ADR-0024 §8, phase C2) — the opt-in miner.
+//! LLM-assisted rule mining (ADR-0030 §8, phase C2) — the opt-in miner.
 //!
 //! The deterministic miner (`learning::miner`) only sees patterns it was taught
 //! to look for: term substitutions and section rejections. This one asks the

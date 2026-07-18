@@ -1,4 +1,4 @@
-//! Integration tests for the applied-rules snapshot (ADR-0024 §5, phase B2).
+//! Integration tests for the applied-rules snapshot (ADR-0030 §5, phase B2).
 //!
 //! What this proves: **a summary carries a record of the learned rules that
 //! shaped it, that record is a copy rather than a reference, and "we checked and

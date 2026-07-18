@@ -10,7 +10,7 @@
  * It renders the real `DraftSummaryView` with a fixture payload — the component
  * takes `draftResponse` as a prop, so no Tauri call is needed to mount it — which
  * makes the review controls, their local state and their keyboard handling all
- * real. What this surface proves: the reject-reason field (ADR-0024 §3) appears,
+ * real. What this surface proves: the reject-reason field (ADR-0030 §3) appears,
  * Enter submits it blank, Escape backs out.
  *
  * It deliberately does NOT stub `window.__TAURI_INTERNALS__`. Doing so makes

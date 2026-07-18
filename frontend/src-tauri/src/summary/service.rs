@@ -241,7 +241,7 @@ fn extract_cached_english_markdown(
 /// into a [`ProviderParams`] at the point of the request.
 ///
 /// Extracted from `process_transcript_background`'s inline assembly so the LLM
-/// rule miner (ADR-0024 §8, C2) resolves the provider the SAME way summarization
+/// rule miner (ADR-0030 §8, C2) resolves the provider the SAME way summarization
 /// does — one definition of "which model, which key, which endpoint", not two
 /// that drift.
 pub(crate) struct AssembledProvider {
@@ -389,7 +389,7 @@ impl SummaryService {
     /// provider-specific endpoints and sampling knobs.
     ///
     /// This is the exact assembly `process_transcript_background` performed inline;
-    /// it lives here now so the LLM rule miner (ADR-0024 §8, C2) resolves the
+    /// it lives here now so the LLM rule miner (ADR-0030 §8, C2) resolves the
     /// provider the SAME way rather than duplicating ~80 lines that could drift.
     /// Errors are content-free strings; the caller decides whether a failure is
     /// terminal for a user-facing process (mark it failed) or is swallowed by a
@@ -698,10 +698,18 @@ impl SummaryService {
                 }
                 StructuredOutcome::Degrade(reason) => {
                     warn!(
-                        meeting_id = %meeting_id,
-                        "structured generation degraded to the legacy summary path: {}",
-                        reason
+                        reason_chars = reason.chars().count(),
+                        "source-linked draft generation failed; legacy summary fallback is disabled"
                     );
+                    Self::update_process_failed(
+                        &pool,
+                        &ctx,
+                        &meeting_id,
+                        "Source-linked draft generation failed. No ungrounded legacy summary was created; retry generation.",
+                    )
+                    .await;
+                    Self::cleanup_cancellation_token(&meeting_id);
+                    return;
                 }
             }
         }
@@ -790,7 +798,11 @@ impl SummaryService {
                 if let Some(name) =
                     extract_meeting_name_from_markdown(&final_markdown).filter(|n| !n.is_empty())
                 {
-                    info!("Extracted meeting name from summary: '{}'", name);
+                    info!(
+                        "Extracted meeting name from summary (meeting_id={}, chars={})",
+                        meeting_id,
+                        name.chars().count()
+                    );
                     if let Err(e) =
                         MeetingsRepository::update_meeting_name(&pool, &ctx, &meeting_id, &name)
                             .await
@@ -958,7 +970,7 @@ impl SummaryService {
         // a user-facing setting.
         let mode = StructuredMode::for_provider(provider);
 
-        // ADR-0024 §6. Scope filtering happens HERE, not in `structured`: it
+        // ADR-0030 §6. Scope filtering happens HERE, not in `structured`: it
         // needs the `template_id`, which travels beside the `Template` rather
         // than inside it, and `structured` is a pure orchestration layer that
         // never reads the database.
@@ -1021,7 +1033,7 @@ impl SummaryService {
                     "structured draft generated"
                 );
 
-                // ADR-0024 §5. Snapshotted from `guidance.rules` — the very list
+                // ADR-0030 §5. Snapshotted from `guidance.rules` — the very list
                 // that was rendered into the prompt above, not a re-read of the
                 // table: a second read could return a different answer (the user
                 // may have edited a rule while the provider call was in flight)

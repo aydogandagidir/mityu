@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>Mityu — every meeting, understood. On your device.</title>
-<meta name="description" content="Mityu records, transcribes, and reports on your meetings — entirely on your machine. No bots. No uploads. No account.">
+<title>Mityu — meetings captured locally on your device.</title>
+<meta name="description" content="Mityu records and transcribes meetings on your machine, with local reporting by default. No bots. No audio uploads. No account.">
 <meta name="theme-color" content="#ffffff">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Mityu — every meeting, understood. On your device.">
-<meta property="og:description" content="Mityu records, transcribes, and reports on your meetings — entirely on your machine. No bots. No uploads. No account.">
+<meta property="og:title" content="Mityu — meetings captured locally on your device.">
+<meta property="og:description" content="Mityu records and transcribes meetings on your machine, with local reporting by default. No bots. No audio uploads. No account.">
 <meta name="twitter:card" content="summary">
 <meta property="og:url" content="https://mityu.bluedev.dev/">
 <link rel="canonical" href="https://mityu.bluedev.dev/">
@@ -200,16 +200,17 @@ a{color:inherit;text-decoration:none}
   <!-- ================= hero ================= -->
   <section class="hero" aria-label="Introduction">
     <h1 class="headline">
-      <span class="sr-only">Every meeting, understood.</span>
-      <span aria-hidden="true"><span class="typed" id="typed">Every meeting, understood.</span><span class="caret"></span></span>
+      <span class="sr-only">Meetings, captured locally.</span>
+      <span aria-hidden="true"><span class="typed" id="typed">Meetings, captured locally.</span><span class="caret"></span></span>
     </h1>
     <div class="hero-sub" id="heroSub">
-      <p class="sub">Mityu records, transcribes, and reports on your meetings — entirely on your machine. No bots. No uploads. No account.</p>
+      <p class="sub">Mityu records and transcribes meetings on your machine, with local reporting by default. No bots. No audio uploads. No account.</p>
       <div class="hero-ctas">
         <a class="btn btn-black" href="/download">Download for Windows</a>
         <a class="btn btn-gray" href="#pricing">See pricing</a>
       </div>
       <p class="platforms">Windows 10/11 (64-bit) · macOS in development</p>
+      <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. v1.0.4 target-environment validation and the human pilot are deferred; review important output against its source audio. Raw meeting audio remains local until you delete the meeting.</p>
     </div>
   </section>
 
@@ -267,7 +268,7 @@ a{color:inherit;text-decoration:none}
         <div class="divider"></div>
         <ul class="checks">
           <li><span class="ck">✓</span><span>Whisper large-v3 &amp; Parakeet, fully offline</span></li>
-          <li><span class="ck">✓</span><span>SQLCipher encryption at rest</span></li>
+          <li><span class="ck">✓</span><span>SQLCipher when secure OS key storage is available</span></li>
           <li><span class="ck">✓</span><span>Opt-in PII redaction</span></li>
         </ul>
       </article>
@@ -411,7 +412,7 @@ a{color:inherit;text-decoration:none}
 <!-- ================= footer ================= -->
 <footer class="footer">
   <div class="container foot-top">
-    <p class="foot-line">Never uploaded.</p>
+    <p class="foot-line">Your audio stays local.</p>
     <nav class="foot-cols" aria-label="Footer">
       <ul>
         <li><a href="mailto:info@bluedev.dev?subject=Mityu%20launch%20list">Get notified</a></li>
@@ -437,19 +438,15 @@ a{color:inherit;text-decoration:none}
   </div>
 </footer>
 
-<!-- ===== download registration (lead capture) modal ===== -->
+<!-- ===== anonymous download confirmation modal ===== -->
 <style>
   .dl-modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(11,11,15,.55);padding:20px}
   .dl-modal.open{display:flex}
   .dl-card{background:#fff;border-radius:20px;max-width:440px;width:100%;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.28)}
   .dl-card h3{font-size:20px;font-weight:600;margin:0 0 6px;color:#0B0B0F}
   .dl-sub{color:#5F6368;font-size:14px;margin:0 0 18px;line-height:1.5}
-  .dl-field{margin-bottom:12px}
-  .dl-field label{display:block;font-size:13px;font-weight:500;margin-bottom:5px;color:#0B0B0F}
-  .dl-field input{width:100%;box-sizing:border-box;border:1px solid #E5E7EB;border-radius:10px;padding:10px 12px;font-size:15px;font-family:inherit;color:#0B0B0F}
-  .dl-field input:focus{outline:none;border-color:#1E56FF;box-shadow:0 0 0 3px #E9F0FF}
-  .dl-consent{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:#5F6368;margin:14px 0 2px;line-height:1.45}
-  .dl-consent input{margin-top:2px;flex:0 0 auto}
+  .dl-notice{font-size:12.5px;color:#5F6368;line-height:1.45;margin:12px 0 2px}
+  .dl-hp{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}
   .dl-err{color:#EA4335;font-size:13px;min-height:18px;margin:6px 0 0}
   .dl-actions{display:flex;gap:10px;margin-top:14px}
   .dl-actions .btn{flex:1;justify-content:center}
@@ -460,12 +457,10 @@ a{color:inherit;text-decoration:none}
   <div class="dl-card">
     <button class="dl-x" id="dlClose" type="button" aria-label="Close">&times;</button>
     <h3 id="dlTitle">Download Mityu for Windows</h3>
-    <p class="dl-sub">Free 14-day trial, no card needed. Tell us who you are and the download starts right away.</p>
+    <p class="dl-sub">Free 14-day trial, no card and no account needed. We do not ask for your name or email, and this download does not subscribe you to marketing.</p>
     <form id="dlForm" novalidate>
-      <div class="dl-field"><label for="dlName">Name</label><input id="dlName" name="name" type="text" autocomplete="name" placeholder="Your name"></div>
-      <div class="dl-field"><label for="dlEmail">Work email *</label><input id="dlEmail" name="email" type="email" autocomplete="email" placeholder="you@company.com" required></div>
-      <div class="dl-field"><label for="dlCompany">Company *</label><input id="dlCompany" name="company" type="text" autocomplete="organization" placeholder="Your company" required></div>
-      <label class="dl-consent"><input type="checkbox" id="dlConsent"> I agree to the <a class="u" href="/privacy" target="_blank" rel="noopener">privacy policy</a> and to bluedev emailing me about Mityu.</label>
+      <div class="dl-hp" aria-hidden="true"><label for="dlWebsite">Website</label><input id="dlWebsite" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+      <p class="dl-notice">The endpoint does not offer or store a product-update signup. It keeps an aggregate count and, for abuse prevention, derives a keyed HMAC token from the request IP using a server-only secret. The counter under that token expires within 15 minutes of the first request; later requests do not extend the window. See the <a class="u" href="/privacy" target="_blank" rel="noopener">privacy notice</a>.</p>
       <p class="dl-err" id="dlErr" role="alert"></p>
       <div class="dl-actions">
         <button type="button" class="btn btn-gray" id="dlCancel">Cancel</button>
@@ -481,13 +476,9 @@ a{color:inherit;text-decoration:none}
   var form = document.getElementById('dlForm'),
       err = document.getElementById('dlErr'),
       submit = document.getElementById('dlSubmit'),
-      emailEl = document.getElementById('dlEmail'),
-      companyEl = document.getElementById('dlCompany'),
-      nameEl = document.getElementById('dlName'),
-      consentEl = document.getElementById('dlConsent');
-  var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+      websiteEl = document.getElementById('dlWebsite');
 
-  function openModal(e) { if (e) e.preventDefault(); err.textContent = ''; modal.classList.add('open'); setTimeout(function () { emailEl.focus(); }, 30); }
+  function openModal(e) { if (e) e.preventDefault(); err.textContent = ''; modal.classList.add('open'); setTimeout(function () { submit.focus(); }, 30); }
   function closeModal() { modal.classList.remove('open'); }
   function startDownload() { window.location.href = '/download'; }
 
@@ -496,17 +487,12 @@ a{color:inherit;text-decoration:none}
   document.getElementById('dlCancel').addEventListener('click', closeModal);
   modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
-
   form.addEventListener('submit', function (e) {
     e.preventDefault();
-    var email = emailEl.value.trim(), company = companyEl.value.trim(), name = nameEl.value.trim();
-    if (!EMAIL_RE.test(email)) { err.textContent = 'Please enter a valid email.'; emailEl.focus(); return; }
-    if (!company) { err.textContent = 'Please enter your company.'; companyEl.focus(); return; }
-    if (!consentEl.checked) { err.textContent = 'Please accept the privacy policy to continue.'; return; }
     err.textContent = ''; submit.disabled = true; submit.textContent = 'Starting…';
     fetch('/api/register-download', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, email: email, company: company, consent: true })
+      body: JSON.stringify({ website: websiteEl.value })
     }).catch(function () { /* never block the download on a logging failure */ })
       .finally(function () { submit.disabled = false; submit.textContent = 'Download'; closeModal(); startDownload(); });
   });
@@ -532,7 +518,7 @@ a{color:inherit;text-decoration:none}
   function reveal() { if (sub) { sub.classList.add('show'); } }
 
   var phrases = [
-    'Every meeting, understood.',
+    'Meetings, captured locally.',
     'Transcribed on your device.',
     'AI you approve, line by line.'
   ];

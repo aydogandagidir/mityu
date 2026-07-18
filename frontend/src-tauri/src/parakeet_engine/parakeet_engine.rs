@@ -17,6 +17,77 @@ pub enum QuantizationType {
     Int8, // 8-bit integer quantization (faster)
 }
 
+fn parakeet_revision(model_name: &str) -> &'static str {
+    if model_name.contains("-v2-") {
+        "0bbb45a3365852604aef28b538a8f066f4ccaa85"
+    } else {
+        "8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce"
+    }
+}
+
+fn parakeet_artifact(model_name: &str, filename: &str) -> Option<(u64, &'static str)> {
+    let v2 = model_name.contains("-v2-");
+    match (v2, filename) {
+        (true, "encoder-model.int8.onnx") => Some((
+            652_184_014,
+            "3e0581fda6ab843888b51e56d7ee78b6d5bc3237ec113af1f732d1d5286aa155",
+        )),
+        (true, "decoder_joint-model.int8.onnx") => Some((
+            8_998_286,
+            "a449f49acd68979d418651dd2dcb737cc0f1bf0225e009e29ee326354edbf7d3",
+        )),
+        (true, "encoder-model.onnx") => Some((
+            41_770_866,
+            "3987bcd28175d829d12888a996a84e8f62a0e374d9ffd640662c1515adc679d3",
+        )),
+        (true, "encoder-model.onnx.data") => Some((
+            2_435_420_160,
+            "4dab7362d4874d85965045b1e41b2d61dd2cc0fb25671a7f6b3dc47bf120cc41",
+        )),
+        (true, "decoder_joint-model.onnx") => Some((
+            35_792_059,
+            "cbb52a07bd70ab5b67f8439d4b3cd8704b18467b4430bcacb5adabe154b8d191",
+        )),
+        (true, "nemo128.onnx") => Some((
+            139_764,
+            "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
+        )),
+        (true, "vocab.txt") => Some((
+            9_384,
+            "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
+        )),
+        (false, "encoder-model.int8.onnx") => Some((
+            652_183_999,
+            "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09",
+        )),
+        (false, "decoder_joint-model.int8.onnx") => Some((
+            18_202_004,
+            "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70",
+        )),
+        (false, "encoder-model.onnx") => Some((
+            41_770_866,
+            "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1",
+        )),
+        (false, "encoder-model.onnx.data") => Some((
+            2_435_420_160,
+            "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36",
+        )),
+        (false, "decoder_joint-model.onnx") => Some((
+            72_520_893,
+            "e978ddf6688527182c10fde2eb4b83068421648985ef23f7a86be732be8706c1",
+        )),
+        (false, "nemo128.onnx") => Some((
+            139_764,
+            "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
+        )),
+        (false, "vocab.txt") => Some((
+            93_939,
+            "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+        )),
+        _ => None,
+    }
+}
+
 impl Default for QuantizationType {
     fn default() -> Self {
         QuantizationType::Int8 // Default to int8 for best performance
@@ -194,7 +265,7 @@ impl ParakeetEngine {
                 661,
                 QuantizationType::Int8,
                 "Fast (v2)",
-                "Previous version with int8 quantization, good balance of speed and accuracy",
+                "Previous version with int8 quantization and reduced storage use",
             ),
         ];
 
@@ -280,68 +351,38 @@ impl ParakeetEngine {
         Ok(models)
     }
 
-    /// Validate model directory by checking if all required files exist AND have valid sizes
+    /// Validate every native inference artifact against the pinned manifest.
     async fn validate_model_directory(&self, model_dir: &PathBuf) -> Result<()> {
-        // Check if vocab.txt exists and is readable
-        let vocab_path = model_dir.join("vocab.txt");
-        if !vocab_path.exists() {
-            return Err(anyhow!("vocab.txt not found"));
-        }
-
-        // Determine which files to check based on what exists
+        let model_name = model_dir
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| anyhow!("Invalid Parakeet model directory"))?;
         let is_int8 = model_dir.join("encoder-model.int8.onnx").exists();
         let is_fp32 = model_dir.join("encoder-model.onnx").exists();
-
-        if !is_int8 && !is_fp32 {
-            return Err(anyhow!("No ONNX model files found"));
-        }
-
-        // Check preprocessor
-        if !model_dir.join("nemo128.onnx").exists() {
-            return Err(anyhow!("Preprocessor (nemo128.onnx) not found"));
-        }
-
-        // Define minimum file sizes (90% of expected to allow some variance)
-        // These are critical to catch partial downloads that would crash on load
-        let expected_sizes: Vec<(&str, u64)> = if is_int8 {
+        let required_files: Vec<&str> = if is_int8 {
             vec![
-                ("encoder-model.int8.onnx", 580_000_000), // ~652 MB, min 580 MB (89%)
-                ("decoder_joint-model.int8.onnx", 8_000_000), // ~18 MB, min 8 MB
-                ("nemo128.onnx", 100_000),                // ~140 KB, min 100 KB
-                ("vocab.txt", 5_000),                     // ~94 KB, min 5 KB
+                "encoder-model.int8.onnx",
+                "decoder_joint-model.int8.onnx",
+                "nemo128.onnx",
+                "vocab.txt",
+            ]
+        } else if is_fp32 {
+            vec![
+                "encoder-model.onnx",
+                "encoder-model.onnx.data",
+                "decoder_joint-model.onnx",
+                "nemo128.onnx",
+                "vocab.txt",
             ]
         } else {
-            vec![
-                ("encoder-model.onnx", 2_200_000_000), // ~2.44 GB, min 2.2 GB
-                ("decoder_joint-model.onnx", 65_000_000), // ~72 MB, min 65 MB
-                ("nemo128.onnx", 100_000),             // ~140 KB, min 100 KB
-                ("vocab.txt", 5_000),                  // ~94 KB, min 5 KB
-            ]
+            return Err(anyhow!("No ONNX model files found"));
         };
 
-        // Validate each file exists AND has sufficient size
-        for (filename, min_size) in expected_sizes {
+        for filename in required_files {
             let file_path = model_dir.join(filename);
-            if !file_path.exists() {
-                return Err(anyhow!("{} not found", filename));
-            }
-
-            match std::fs::metadata(&file_path) {
-                Ok(metadata) => {
-                    let actual_size = metadata.len();
-                    if actual_size < min_size {
-                        return Err(anyhow!(
-                            "{} is incomplete: {} bytes (expected at least {} bytes)",
-                            filename,
-                            actual_size,
-                            min_size
-                        ));
-                    }
-                }
-                Err(e) => {
-                    return Err(anyhow!("Failed to read {} metadata: {}", filename, e));
-                }
-            }
+            let (expected_size, sha256) = parakeet_artifact(model_name, filename)
+                .ok_or_else(|| anyhow!("Artifact is absent from the trusted manifest"))?;
+            crate::utils::verify_file_integrity(&file_path, expected_size, sha256).await?;
         }
 
         Ok(())
@@ -384,8 +425,8 @@ impl ParakeetEngine {
                                 log::info!("Removed incomplete file: {:?}", path.file_name());
                                 removed_count += 1;
                             }
-                            Err(e) => {
-                                log::warn!("Failed to remove file {:?}: {}", path, e);
+                            Err(_) => {
+                                log::warn!("Failed to remove an incomplete model file");
                             }
                         }
                     }
@@ -504,7 +545,10 @@ impl ParakeetEngine {
             .transcribe_samples(audio_data)
             .map_err(|e| anyhow!("Parakeet transcription failed: {}", e))?;
 
-        log::debug!("Parakeet transcription result: '{}'", result.text);
+        log::debug!(
+            "Parakeet transcription completed (chars={})",
+            result.text.chars().count()
+        );
 
         Ok(result.text)
     }
@@ -542,7 +586,7 @@ impl ParakeetEngine {
                         .map_err(|e| anyhow!("Failed to delete directory '{}': {}", model_info.path.display(), e))?;
                     log::info!("Successfully deleted Parakeet model directory: {}", model_info.path.display());
                 } else {
-                    log::warn!("Directory '{}' does not exist, nothing to delete", model_info.path.display());
+                    log::warn!("Parakeet model directory does not exist; nothing to delete");
                 }
 
                 // Update model status to Missing
@@ -639,15 +683,16 @@ impl ParakeetEngine {
         }
 
         // HuggingFace base URL for Parakeet models (version-specific)
+        let revision = parakeet_revision(model_name);
         let base_url = if model_name.contains("-v2-") {
-            "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main"
+            format!("https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/{revision}")
         } else {
             // Default to v3 for v3 models. Same file names and sizes as the
             // previous Zackriya-controlled CDN (verified byte-for-byte against
             // this HF repo's listing during the 2026-07-07 GA-readiness audit,
             // see docs/DECISIONS.md ADR-0020) — CC-BY-4.0, matches NVIDIA's
             // original release, already credited in README.md.
-            "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main"
+            format!("https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/{revision}")
         };
 
         // Determine which files to download based on quantization
@@ -660,6 +705,7 @@ impl ParakeetEngine {
             ],
             QuantizationType::FP32 => vec![
                 "encoder-model.onnx",
+                "encoder-model.onnx.data",
                 "decoder_joint-model.onnx",
                 "nemo128.onnx",
                 "vocab.txt",
@@ -697,45 +743,14 @@ impl ParakeetEngine {
 
         // Calculate total download size for weighted progress
         // Note: These are approximate sizes based on HuggingFace repo inspection
-        let file_sizes: std::collections::HashMap<&str, u64> = match model_info.quantization {
-            QuantizationType::Int8 => {
-                if model_name.contains("-v2-") {
-                    // V2 model sizes
-                    [
-                        ("encoder-model.int8.onnx", 652_000_000u64),     // 652 MB
-                        ("decoder_joint-model.int8.onnx", 9_000_000u64), // 9 MB
-                        ("nemo128.onnx", 140_000u64),                    // 140 KB
-                        ("vocab.txt", 9_380u64),                         // 9.38 KB
-                    ]
-                    .iter()
-                    .cloned()
-                    .collect()
-                } else {
-                    // V3 model sizes (default)
-                    [
-                        ("encoder-model.int8.onnx", 652_000_000u64), // 652 MB
-                        ("decoder_joint-model.int8.onnx", 18_200_000u64), // 18.2 MB
-                        ("nemo128.onnx", 140_000u64),                // 140 KB
-                        ("vocab.txt", 93_900u64),                    // 93.9 KB
-                    ]
-                    .iter()
-                    .cloned()
-                    .collect()
-                }
-            }
-            QuantizationType::FP32 => {
-                // FP32 model sizes (encoder has .onnx + .onnx.data)
-                [
-                    ("encoder-model.onnx", 41_800_000u64 + 2_440_000_000u64), // 41.8 MB + 2.44 GB
-                    ("decoder_joint-model.onnx", 72_500_000u64),              // 72.5 MB
-                    ("nemo128.onnx", 140_000u64),                             // 140 KB
-                    ("vocab.txt", 93_900u64),                                 // 93.9 KB
-                ]
-                .iter()
-                .cloned()
-                .collect()
-            }
-        };
+        let file_sizes: std::collections::HashMap<&str, u64> = files_to_download
+            .iter()
+            .map(|filename| {
+                let (size, _) = parakeet_artifact(model_name, filename)
+                    .expect("every downloadable file must be in the trusted manifest");
+                (*filename, size)
+            })
+            .collect();
 
         // Calculate total expected download size
         let total_size_bytes: u64 = files_to_download
@@ -779,24 +794,34 @@ impl ParakeetEngine {
             let file_path = model_dir.join(filename);
 
             // Check for existing partial file to resume
-            let existing_size: u64 = if file_path.exists() {
+            let mut existing_size: u64 = if file_path.exists() {
                 fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0)
             } else {
                 0
             };
 
             let expected_size = file_sizes.get(*filename).copied().unwrap_or(0);
+            let (_, expected_sha256) = parakeet_artifact(model_name, filename)
+                .expect("download artifact must be in the trusted manifest");
 
-            // Skip if file is already complete (with 1% tolerance for size variations)
-            let size_tolerance = (expected_size as f64 * 0.99) as u64;
-            if existing_size >= size_tolerance && expected_size > 0 {
-                log::info!(
-                    "Skipping complete file: {} ({:.2} MB, expected: {:.2} MB)",
-                    filename,
-                    existing_size as f64 / 1_048_576.0,
-                    expected_size as f64 / 1_048_576.0
-                );
-                continue;
+            if existing_size == expected_size && expected_size > 0 {
+                if crate::utils::verify_file_integrity(&file_path, expected_size, expected_sha256)
+                    .await
+                    .is_ok()
+                {
+                    log::info!("Skipping an already verified Parakeet artifact");
+                    continue;
+                }
+
+                fs::remove_file(&file_path)
+                    .await
+                    .map_err(|_| anyhow!("Failed to remove an invalid Parakeet artifact"))?;
+                existing_size = 0;
+            } else if existing_size > expected_size {
+                fs::remove_file(&file_path)
+                    .await
+                    .map_err(|_| anyhow!("Failed to remove an oversized Parakeet artifact"))?;
+                existing_size = 0;
             }
 
             log::info!(
@@ -820,83 +845,89 @@ impl ParakeetEngine {
                 .map_err(|e| anyhow!("Failed to start download for {}: {}", filename, e))?;
 
             // Handle response status
-            let (file_total_size, resuming) =
-                if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
-                    // Server supports resume, get remaining size
-                    let remaining = response.content_length().unwrap_or(0);
-                    log::info!("Server supports resume, remaining: {} bytes", remaining);
-                    (existing_size + remaining, true)
-                } else if response.status().is_success() {
-                    // Fresh download or server doesn't support resume
-                    if existing_size > 0 {
-                        log::warn!(
-                            "Server doesn't support resume for {}, starting fresh download",
-                            filename
-                        );
-                    }
-                    (response.content_length().unwrap_or(0), false)
-                } else if response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
-                    // 416: Range not satisfiable - file complete or invalid range
-                    log::warn!("Server returned 416 Range Not Satisfiable for {}", filename);
+            let (file_total_size, resuming) = if response.status()
+                == reqwest::StatusCode::PARTIAL_CONTENT
+            {
+                // Server supports resume, get remaining size
+                let remaining = response.content_length().unwrap_or(0);
+                log::info!("Server supports resume, remaining: {} bytes", remaining);
+                (existing_size + remaining, true)
+            } else if response.status().is_success() {
+                // Fresh download or server doesn't support resume
+                if existing_size > 0 {
+                    log::warn!(
+                        "Server doesn't support resume for {}, starting fresh download",
+                        filename
+                    );
+                }
+                (response.content_length().unwrap_or(0), false)
+            } else if response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+                // 416: Range not satisfiable - file complete or invalid range
+                log::warn!("Server returned 416 Range Not Satisfiable for {}", filename);
 
-                    let size_tolerance = (expected_size as f64 * 0.99) as u64;
-                    if existing_size >= size_tolerance && expected_size > 0 {
-                        // File is complete - skip it
-                        log::info!(
-                            "File {} complete ({} bytes). Skipping.",
-                            filename,
-                            existing_size
-                        );
-                        continue;
-                    } else {
-                        // File incomplete but server won't accept range - delete and retry
-                        log::warn!(
-                            "File {} incomplete ({}/{} bytes). Deleting and retrying.",
+                if crate::utils::verify_file_integrity(&file_path, expected_size, expected_sha256)
+                    .await
+                    .is_ok()
+                {
+                    // The server says there is no remaining range. Skip only
+                    // after exact manifest verification; byte-count tolerance
+                    // is not an integrity boundary.
+                    log::info!(
+                        "File {} is already complete and verified ({} bytes). Skipping.",
+                        filename,
+                        existing_size
+                    );
+                    continue;
+                } else {
+                    // File is incomplete or untrusted and the server will not
+                    // accept the range. Delete and retry from byte zero.
+                    log::warn!(
+                            "File {} failed manifest verification ({}/{} bytes). Deleting and retrying.",
                             filename,
                             existing_size,
                             expected_size
                         );
 
-                        if let Err(e) = fs::remove_file(&file_path).await {
-                            let mut active = self.active_downloads.write().await;
-                            active.remove(model_name);
-                            return Err(anyhow!(
-                                "Failed to delete incomplete file {}: {}",
-                                filename,
-                                e
-                            ));
-                        }
-
-                        // Retry without Range header
-                        log::info!("Retrying {} without resume", filename);
-                        response = client
-                            .get(&file_url)
-                            .send()
-                            .await
-                            .map_err(|e| anyhow!("Retry failed for {}: {}", filename, e))?;
-
-                        if !response.status().is_success() {
-                            let mut active = self.active_downloads.write().await;
-                            active.remove(model_name);
-                            return Err(anyhow!(
-                                "Retry failed for {} with status: {}",
-                                filename,
-                                response.status()
-                            ));
-                        }
-
-                        (response.content_length().unwrap_or(0), false)
+                    if let Err(e) = fs::remove_file(&file_path).await {
+                        let mut active = self.active_downloads.write().await;
+                        active.remove(model_name);
+                        return Err(anyhow!(
+                            "Failed to delete incomplete file {}: {}",
+                            filename,
+                            e
+                        ));
                     }
-                } else {
-                    // Other errors
-                    let mut active = self.active_downloads.write().await;
-                    active.remove(model_name);
-                    return Err(anyhow!(
-                        "Download failed for {} with status: {}",
-                        filename,
-                        response.status()
-                    ));
-                };
+
+                    // Retry without Range header
+                    log::info!("Retrying {} without resume", filename);
+                    response = client
+                        .get(&file_url)
+                        .send()
+                        .await
+                        .map_err(|e| anyhow!("Retry failed for {}: {}", filename, e))?;
+
+                    if !response.status().is_success() {
+                        let mut active = self.active_downloads.write().await;
+                        active.remove(model_name);
+                        return Err(anyhow!(
+                            "Retry failed for {} with status: {}",
+                            filename,
+                            response.status()
+                        ));
+                    }
+
+                    (response.content_length().unwrap_or(0), false)
+                }
+            } else {
+                // Other errors
+                let mut active = self.active_downloads.write().await;
+                active.remove(model_name);
+                return Err(anyhow!(
+                    "Download failed for {} with status: {}",
+                    filename,
+                    response.status()
+                ));
+            };
 
             // Open file for writing (append if resuming, create new if not)
             let file = if resuming {
@@ -1104,6 +1135,21 @@ impl ParakeetEngine {
 
                 return Err(anyhow!("Failed to flush file {}: {}", filename, e));
             }
+            drop(writer);
+
+            let (_, sha256) = parakeet_artifact(model_name, filename)
+                .expect("download artifact must be in the trusted manifest");
+            if let Err(error) =
+                crate::utils::verify_file_integrity(&file_path, expected_size, sha256).await
+            {
+                let _ = fs::remove_file(&file_path).await;
+                let mut active = self.active_downloads.write().await;
+                active.remove(model_name);
+                return Err(anyhow!(
+                    "Downloaded Parakeet artifact failed integrity verification: {}",
+                    error
+                ));
+            }
 
             log::info!(
                 "Completed download: {} ({:.2} MB, overall progress: {:.1}%)",
@@ -1111,6 +1157,17 @@ impl ParakeetEngine {
                 file_downloaded as f64 / 1_048_576.0,
                 (total_downloaded as f64 / total_size_bytes as f64) * 100.0
             );
+        }
+
+        // A per-file path (including HTTP 416 resume handling) must never be
+        // able to bypass the complete model manifest before Ready is exposed.
+        if let Err(error) = self.validate_model_directory(model_dir).await {
+            let mut active = self.active_downloads.write().await;
+            active.remove(model_name);
+            return Err(anyhow!(
+                "Downloaded Parakeet model failed final integrity verification: {}",
+                error
+            ));
         }
 
         // Report 100% progress with final speed

@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { TranscriptModelProps } from '@/components/TranscriptSettings';
 import { SelectedDevices } from '@/components/DeviceSelection';
 import { configService, ModelConfig } from '@/services/configService';
-import { getOllamaModels, getApiKey, type OllamaModel } from '@/services/providerModelsService';
+import { getOllamaModels, type OllamaModel } from '@/services/providerModelsService';
 import { invoke } from '@tauri-apps/api/core';
 import Analytics from '@/lib/analytics';
 import { BetaFeatures, BetaFeatureKey, loadBetaFeatures, saveBetaFeatures } from '@/types/betaFeatures';
@@ -195,15 +195,15 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       try {
         const config = await configService.getTranscriptConfig();
         if (config) {
-          console.log('[ConfigContext] Loaded saved transcript config:', config);
+          console.log('[ConfigContext] Loaded saved transcript config');
           setTranscriptModelConfig({
             provider: config.provider || 'parakeet',
             model: config.model || 'parakeet-tdt-0.6b-v3-int8',
             apiKey: config.apiKey || null
           });
         }
-      } catch (error) {
-        console.error('[ConfigContext] Failed to load transcript config:', error);
+      } catch {
+        console.error('[ConfigContext] Failed to load transcript config');
       }
     };
     loadTranscriptConfig();
@@ -234,10 +234,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
               const customConfig = await configService.getCustomOpenAIConfig();
               if (customConfig) {
                 // Merge custom config fields into modelConfig
-                console.log('[ConfigContext] Loading custom OpenAI config:', {
-                  endpoint: customConfig.endpoint,
-                  model: customConfig.model,
-                });
+                console.log('[ConfigContext] Loading custom OpenAI config');
                 const resolvedModel = customConfig.model || data.model || '';
                 setModelConfig(prev => ({
                   ...prev,
@@ -246,7 +243,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
                   whisperModel: data.whisperModel || prev.whisperModel,
                   customOpenAIEndpoint: customConfig.endpoint,
                   customOpenAIModel: customConfig.model,
-                  customOpenAIApiKey: customConfig.apiKey,
+                  customOpenAIApiKey: null,
+                  customOpenAIHasApiKey: customConfig.hasApiKey,
                   maxTokens: customConfig.maxTokens,
                   temperature: customConfig.temperature,
                   topP: customConfig.topP,
@@ -289,39 +287,12 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     fetchModelConfig();
   }, []);
 
-  // Load all provider API keys on mount
-  useEffect(() => {
-    const loadAllApiKeys = async () => {
-      try {
-        const providers = ['claude', 'groq', 'openai', 'openrouter'];
-        const keys = await Promise.all(
-          providers.map(p =>
-            getApiKey(p)
-              .catch(() => null) // Gracefully handle missing keys
-          )
-        );
-
-        setProviderApiKeys({
-          claude: keys[0],
-          groq: keys[1],
-          openai: keys[2],
-          openrouter: keys[3],
-        });
-        console.log('[ConfigContext] Loaded provider API keys');
-      } catch (error) {
-        console.error('[ConfigContext] Failed to load provider API keys:', error);
-      }
-    };
-
-    loadAllApiKeys();
-  }, []);
-
   // Listen for model config updates from other components
   useEffect(() => {
     const setupListener = async () => {
       const { listen } = await import('@tauri-apps/api/event');
       const unlisten = await listen<ModelConfig>('model-config-updated', (event) => {
-        console.log('[ConfigContext] Received model-config-updated event:', event.payload);
+        console.log('[ConfigContext] Received model-config-updated event');
         setModelConfig(event.payload);
 
         // Update provider-specific key when config changes
@@ -350,7 +321,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
             micDevice: prefs.preferred_mic_device,
             systemDevice: prefs.preferred_system_device
           });
-          console.log('Loaded device preferences:', prefs);
+          console.log('Loaded device preferences');
         }
       } catch (error) {
         console.log('No device preferences found or failed to load:', error);

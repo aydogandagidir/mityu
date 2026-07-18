@@ -2,65 +2,141 @@ name: "Release"
 
 on:
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "What's new (shown in the in-app update dialog of older versions). Leave empty to link to the release page instead."
+        required: false
+        type: string
 
 # Prevent duplicate releases
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false  # Don't cancel releases, fail instead
+  cancel-in-progress: false  # Never cancel an active release; later dispatches queue.
 
 jobs:
-  # STEP 1: Create draft release first
+  # STEP 0: Never create a tag/draft until the same commit passes CI.
+  quality-gates:
+    uses: ./.github/workflows/ci.yml
+
+  # STEP 1: Create the Windows release draft after quality and secret gates.
   create-release:
+    needs: quality-gates
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    environment: Production
     outputs:
       release-id: ${{ steps.create-release.outputs.result }}
       version: ${{ steps.get-version.outputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Fetch all tags
+          persist-credentials: false
 
-      - name: Get version from tauri.conf.json and check for existing tags
+      - name: Validate updater signing configuration
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # v1.0.4 ships updater-signed only (ADR-0029): Windows Authenticode is
+          # deferred by owner decision, matching the v1.0.0-v1.0.3 release line.
+          # The Tauri updater key stays fail-closed and mandatory so the
+          # v1.0.3 -> v1.0.4 auto-update signature chain cannot break.
+          required=(
+            TAURI_SIGNING_PRIVATE_KEY
+            TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          )
+
+          missing=()
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "ERROR: Missing required updater signing secrets:"
+            printf '  - %s\n' "${missing[@]}"
+            echo "Configure them before dispatching Release; no draft or tag was created."
+            exit 1
+          fi
+
+          echo "Updater signing configuration is present. Windows Authenticode is deferred for v1.0.4 (ADR-0029)."
+
+      - name: Validate synchronized app version and check tag
         id: get-version
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BASE_VERSION=$(grep -o '"version": "[^"]*"' frontend/src-tauri/tauri.conf.json | cut -d'"' -f4)
-          echo "Base version from tauri.conf.json: $BASE_VERSION"
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "ERROR: Production releases must be dispatched from main; got $GITHUB_REF."
+            exit 1
+          fi
+
+          TAURI_VERSION=$(node -p "require('./frontend/src-tauri/tauri.conf.json').version")
+          PACKAGE_VERSION=$(node -p "require('./frontend/package.json').version")
+          CARGO_VERSION=$(awk -F'"' '/^version = "/ { print $2; exit }' frontend/src-tauri/Cargo.toml)
+          LOCK_VERSION=$(awk '
+            $0 == "name = \"mityu\"" { in_mityu = 1; next }
+            in_mityu && /^version = "/ {
+              gsub(/^version = "|"$/, "")
+              print
+              exit
+            }
+          ' Cargo.lock)
+
+          echo "Tauri version:  $TAURI_VERSION"
+          echo "Package version: $PACKAGE_VERSION"
+          echo "Cargo version:   $CARGO_VERSION"
+          echo "Lock version:    $LOCK_VERSION"
+
+          if [[ -z "$TAURI_VERSION" || "$TAURI_VERSION" != "$PACKAGE_VERSION" || "$TAURI_VERSION" != "$CARGO_VERSION" || "$TAURI_VERSION" != "$LOCK_VERSION" ]]; then
+            echo "ERROR: Application versions are not synchronized."
+            echo "Update frontend/package.json, frontend/src-tauri/tauri.conf.json, frontend/src-tauri/Cargo.toml and the mityu entry in Cargo.lock together."
+            exit 1
+          fi
+
+          if [[ ! "$TAURI_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "ERROR: Version must be strict SemVer X.Y.Z without prefixes or a fourth component."
+            exit 1
+          fi
+
+          VERSION="$TAURI_VERSION"
+
+          LATEST_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')
+          LATEST_VERSION="${LATEST_TAG#v}"
+          HIGHEST_VERSION=$(printf '%s\n%s\n' "$LATEST_VERSION" "$VERSION" | sort -V | tail -n 1)
+          if [[ "$VERSION" == "$LATEST_VERSION" || "$HIGHEST_VERSION" != "$VERSION" ]]; then
+            echo "ERROR: Candidate $VERSION must be greater than latest published version $LATEST_VERSION."
+            exit 1
+          fi
+
+          # NOTE: this guard only sees DRAFT releases because this job holds
+          # `contents: write`. Lowering it to `read` would silently hide drafts
+          # (the list endpoint omits them for read-only tokens) and turn this
+          # duplicate check into a no-op instead of an error. Do not downgrade.
+          EXISTING_RELEASE_IDS=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq ".[] | select(.tag_name == \"v${VERSION}\") | .id")
+          if [[ -n "$EXISTING_RELEASE_IDS" ]]; then
+            echo "ERROR: A GitHub release or draft already exists for v${VERSION}."
+            echo "Review and explicitly clean up an unpublished failed draft before retrying."
+            exit 1
+          fi
 
           # Fetch all tags
           git fetch --tags
 
-          # Check if base version tag exists
-          if git tag -l "v${BASE_VERSION}" | grep -q .; then
-            echo "Tag v${BASE_VERSION} already exists, looking for minor updates..."
-
-            # Find all existing minor versions (e.g., 0.1.1.1, 0.1.1.2, etc.)
-            LATEST_MINOR=0
-            for i in $(seq 1 100); do
-              if git tag -l "v${BASE_VERSION}.${i}" | grep -q .; then
-                LATEST_MINOR=$i
-              else
-                break
-              fi
-            done
-
-            # Increment to next minor version
-            NEXT_MINOR=$((LATEST_MINOR + 1))
-
-            if [ $NEXT_MINOR -gt 100 ]; then
-              echo "ERROR: Maximum minor version (100) reached for ${BASE_VERSION}"
-              echo "Please update the version in tauri.conf.json"
-              exit 1
-            fi
-
-            VERSION="${BASE_VERSION}.${NEXT_MINOR}"
-            echo "Using minor update version: $VERSION"
-          else
-            VERSION="${BASE_VERSION}"
-            echo "Using base version: $VERSION"
+          if git tag -l "v${VERSION}" | grep -q .; then
+            echo "ERROR: Tag v${VERSION} already exists."
+            echo "Choose the next SemVer version and update every synchronized source before retrying."
+            exit 1
           fi
 
           echo "Final version: $VERSION"
@@ -68,7 +144,7 @@ jobs:
 
       - name: Create Draft Release
         id: create-release
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const { data } = await github.rest.repos.createRelease({
@@ -76,6 +152,7 @@ jobs:
               repo: context.repo.repo,
               tag_name: `v${{ steps.get-version.outputs.version }}`,
               name: `Mityu v${{ steps.get-version.outputs.version }}`,
+              target_commitish: context.sha,
               draft: true,
               prerelease: false,
               generate_release_notes: true
@@ -83,29 +160,24 @@ jobs:
             console.log(`Created draft release with ID: ${data.id}`)
             return data.id
 
-  # STEP 2: Build all platforms and upload directly to release
-  # Note: Linux builds are excluded from release (only macOS and Windows)
-  build-all-platforms:
+  # STEP 2: v1.0.4 keeps the published v1.0.3 platform scope: Windows x64.
+  # macOS stays excluded until its FFmpeg provenance, signing/notarization and
+  # physical smoke-test gates are complete.
+  build-windows:
     needs: create-release
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: "macos-latest" # for Apple Silicon only (M1 and above)
-            args: "--target aarch64-apple-darwin"
-            target: "aarch64-apple-darwin"
-          - platform: "windows-latest"
-            args: ""
-            target: "x86_64-pc-windows-msvc"
-
     uses: ./.github/workflows/build.yml
     with:
-      platform: ${{ matrix.platform }}
-      target: ${{ matrix.target }}
-      build-args: ${{ matrix.args }}
-      sign-binaries: true
+      platform: "windows-latest"
+      target: "x86_64-pc-windows-msvc"
+      ref: ${{ github.sha }}
+      build-args: ""
+      sign-binaries: false  # v1.0.4: updater-signed only, Windows Authenticode deferred (ADR-0029)
+      production-release: true
+      # Ends up as latest.json `notes` = the changelog older versions show in
+      # their update dialog. Empty here means build.yml falls back to a link.
+      release-notes: ${{ inputs.release_notes }}
       asset-prefix: "mityu"
       upload-artifacts: false  # tauri-action uploads directly to release
       release-id: ${{ needs.create-release.outputs.release-id }}
@@ -113,16 +185,59 @@ jobs:
 
   # STEP 3: Show release summary
   release-summary:
-    needs: [create-release, build-all-platforms]
+    needs: [create-release, build-windows]
     runs-on: ubuntu-latest
     permissions:
+      # `contents: write` is REQUIRED here, not optional: an unpublished draft
+      # release is invisible to a read-only GITHUB_TOKEN, so listing/downloading
+      # its assets 403s ("Resource not accessible by integration"). GitHub has no
+      # finer-grained `releases` scope — releases are governed by `contents`.
+      # This job still performs no mutation; the write scope is unused capability.
+      # (Regression fix: ae09449 flipped this to `read` and run 29470672916 failed.)
       contents: write
     steps:
+      - name: Checkout the exact release commit
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain for updater verification
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: 1.95.0
+
       - name: Get release assets and latest.json
         id: release-info
         run: |
+          set -euo pipefail
+
           VERSION="${{ needs.create-release.outputs.version }}"
           RELEASE_ID="${{ needs.create-release.outputs.release-id }}"
+
+          ASSETS_JSON=$(gh api "repos/${{ github.repository }}/releases/${RELEASE_ID}/assets")
+          ASSET_NAMES=$(jq -r '.[].name' <<< "$ASSETS_JSON")
+
+          required_assets=(
+            "Mityu_${VERSION}_x64-setup.exe"
+            "Mityu_${VERSION}_x64-setup.exe.sig"
+            "Mityu_${VERSION}_x64_en-US.msi"
+            "Mityu_${VERSION}_x64_en-US.msi.sig"
+            "latest.json"
+          )
+
+          missing=()
+          for asset in "${required_assets[@]}"; do
+            if ! grep -Fqx "$asset" <<< "$ASSET_NAMES"; then
+              missing+=("$asset")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "ERROR: Draft release is missing required Windows artifacts:"
+            printf '  - %s\n' "${missing[@]}"
+            exit 1
+          fi
 
           echo "## Release Assets" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -130,18 +245,34 @@ jobs:
           # List all release assets
           echo "### Files in Release" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          gh api repos/${{ github.repository }}/releases/${RELEASE_ID}/assets --jq '.[] | "\(.name) (\(.size / 1048576 | floor)MB)"' >> $GITHUB_STEP_SUMMARY
+          jq -r '.[] | "\(.name) (\(.size / 1048576 | floor)MB)"' <<< "$ASSETS_JSON" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Download and show latest.json
           echo "### latest.json content" >> $GITHUB_STEP_SUMMARY
-          gh release download "v${VERSION}" --pattern "latest.json" --dir . 2>/dev/null || echo "latest.json not yet available"
-          if [ -f latest.json ]; then
-            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
-            cat latest.json >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          rm -f latest.json
+          gh release download "v${VERSION}" --pattern "latest.json" --dir .
+          gh release download "v${VERSION}" --pattern "Mityu_${VERSION}_x64-setup.exe" --dir .
+          gh release download "v${VERSION}" --pattern "Mityu_${VERSION}_x64-setup.exe.sig" --dir .
+
+          EXPECTED_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/Mityu_${VERSION}_x64-setup.exe"
+          jq -e --arg version "$VERSION" --arg url "$EXPECTED_URL" '
+            .version == $version
+            and ((.platforms["windows-x86_64"].signature // "") | length > 0)
+            and (.platforms["windows-x86_64"].url == $url)
+          ' latest.json > /dev/null
+
+          MANIFEST_SIGNATURE=$(jq -r '.platforms["windows-x86_64"].signature' latest.json | tr -d '\r\n')
+          ASSET_SIGNATURE=$(tr -d '\r\n' < "Mityu_${VERSION}_x64-setup.exe.sig")
+          if [[ "$MANIFEST_SIGNATURE" != "$ASSET_SIGNATURE" ]]; then
+            echo "ERROR: latest.json signature does not match the uploaded NSIS updater signature."
+            exit 1
           fi
+
+          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+          cat latest.json >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Download links
@@ -155,6 +286,36 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify updater signature against the baked public key
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.create-release.outputs.version }}"
+
+          # This step intentionally has no GitHub or signing secret. It verifies
+          # the exact remotely downloaded artifact with the key baked into the
+          # release commit, using Tauri's minisign-verify 0.2.5 algorithm.
+          cargo run --locked --quiet -p updater-signature-verifier -- \
+            "Mityu_${VERSION}_x64-setup.exe" \
+            "Mityu_${VERSION}_x64-setup.exe.sig" \
+            frontend/src-tauri/tauri.conf.json
+
+      # Any failure above makes cleanup-failed-draft delete the draft, which takes
+      # ~40 minutes of build AND the evidence with it (exactly what happened on the
+      # first v1.0.4 attempt). Keep the small artifacts so the next attempt starts
+      # from a diagnosis instead of another full rebuild. The installers are not
+      # uploaded: they are large and re-derivable.
+      - name: Preserve verification evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-summary-evidence-v${{ needs.create-release.outputs.version }}
+          path: |
+            latest.json
+            Mityu_*.sig
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Release Summary
         run: |
           echo "============================================"
@@ -164,8 +325,7 @@ jobs:
           echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.create-release.outputs.version }}"
           echo ""
           echo "Uploaded assets (via tauri-action):"
-          echo "  - macOS: DMG installer + app.tar.gz (for updater) + .sig"
-          echo "  - Windows: MSI + NSIS installers (SIGNED via signCommand) + .sig files"
+          echo "  - Windows: MSI + NSIS installers (updater-signed via minisign; Windows Authenticode deferred, ADR-0029) + .sig files"
           echo "  - Updater manifest: latest.json (auto-generated by tauri-action)"
           echo ""
           echo "Next steps:"
@@ -185,8 +345,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Assets |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **macOS** | DMG installer, app.tar.gz (updater), .sig |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Windows** | MSI installer (SIGNED), NSIS installer (SIGNED), .sig files |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Windows** | MSI + NSIS installers (updater-signed; Windows Authenticode deferred, ADR-0029), .sig files |" >> $GITHUB_STEP_SUMMARY
           echo "| **Updater** | latest.json manifest (auto-generated by tauri-action) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
@@ -195,3 +354,39 @@ jobs:
           echo "2. Edit release notes if needed" >> $GITHUB_STEP_SUMMARY
           echo "3. Publish the release when ready" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+  # A platform/signature/manifest failure may occur after tauri-action uploads
+  # files to the new draft. Remove only this workflow's still-unpublished draft
+  # and tag so invalid artifacts cannot be published accidentally.
+  cleanup-failed-draft:
+    needs: [create-release, build-windows, release-summary]
+    if: ${{ always() && needs.create-release.result == 'success' && (needs.build-windows.result != 'success' || needs.release-summary.result != 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete failed unpublished draft and tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release-id }}
+        run: |
+          set -euo pipefail
+
+          RELEASE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")
+          IS_DRAFT=$(jq -r '.draft' <<< "$RELEASE_JSON")
+          TAG_NAME=$(jq -r '.tag_name' <<< "$RELEASE_JSON")
+          if [[ "$IS_DRAFT" != "true" || "$TAG_NAME" != "v${VERSION}" ]]; then
+            echo "ERROR: Refusing cleanup because release ${RELEASE_ID} is not the expected unpublished v${VERSION} draft."
+            exit 1
+          fi
+
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"
+
+          TAG_REFS=$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}" --jq '.[].ref')
+          if grep -Fqx "refs/tags/v${VERSION}" <<< "$TAG_REFS"; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/v${VERSION}"
+            echo "Removed failed draft v${VERSION} and its tag."
+          else
+            echo "Removed failed draft v${VERSION}; no tag had been created."
+          fi

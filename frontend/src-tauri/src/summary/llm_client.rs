@@ -223,9 +223,9 @@ pub async fn generate_summary_with_response_format(
             header::HeaderMap::new(),
         ),
         LLMProvider::Ollama => {
-            let host = ollama_endpoint
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            let host = crate::summary::validate_llm_endpoint(
+                ollama_endpoint.unwrap_or("http://localhost:11434"),
+            )?;
             (
                 format!("{}/v1/chat/completions", host),
                 header::HeaderMap::new(),
@@ -234,8 +234,9 @@ pub async fn generate_summary_with_response_format(
         LLMProvider::CustomOpenAI => {
             let endpoint = custom_openai_endpoint
                 .ok_or_else(|| "Custom OpenAI endpoint not configured".to_string())?;
+            let endpoint = crate::summary::validate_llm_endpoint(endpoint)?;
             (
-                format!("{}/chat/completions", endpoint.trim_end_matches('/')),
+                format!("{}/chat/completions", endpoint),
                 header::HeaderMap::new(),
             )
         }
@@ -265,7 +266,7 @@ pub async fn generate_summary_with_response_format(
     };
 
     // Add authorization header for non-Claude providers
-    if provider != &LLMProvider::Claude {
+    if provider != &LLMProvider::Claude && !api_key.trim().is_empty() {
         headers.insert(
             header::AUTHORIZATION,
             format!("Bearer {}", api_key)
@@ -319,14 +320,23 @@ pub async fn generate_summary_with_response_format(
         })
     };
 
-    info!(
-        "🐞 LLM Request to {}: model={}",
-        provider_name(provider),
-        model_name
-    );
+    info!("LLM request started for {}", provider_name(provider));
 
     // Send request with timeout and cancellation support
-    let request_future = client
+    // Custom endpoints can redirect across hosts or protocols. Disabling
+    // redirects prevents credentials and transcript content from being
+    // forwarded to a destination the user did not configure.
+    let restricted_client;
+    let request_client = if matches!(provider, LLMProvider::Ollama | LLMProvider::CustomOpenAI) {
+        restricted_client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| "Failed to initialize the LLM HTTP client".to_string())?;
+        &restricted_client
+    } else {
+        client
+    };
+    let request_future = request_client
         .post(api_url)
         .headers(headers)
         .json(&request_body)
@@ -340,8 +350,10 @@ pub async fn generate_summary_with_response_format(
                 result.map_err(|e| {
                     if e.is_timeout() {
                         "LLM request timed out after 60 seconds".to_string()
+                    } else if e.is_connect() {
+                        "Could not connect to the configured LLM provider".to_string()
                     } else {
-                        format!("Failed to send request to LLM: {}", e)
+                        "Failed to send request to the configured LLM provider".to_string()
                     }
                 })?
             }
@@ -353,18 +365,19 @@ pub async fn generate_summary_with_response_format(
         request_future.await.map_err(|e| {
             if e.is_timeout() {
                 "LLM request timed out after 60 seconds".to_string()
+            } else if e.is_connect() {
+                "Could not connect to the configured LLM provider".to_string()
             } else {
-                format!("Failed to send request to LLM: {}", e)
+                "Failed to send request to the configured LLM provider".to_string()
             }
         })?
     };
 
     if !response.status().is_success() {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(format!("LLM API request failed: {}", error_body));
+        return Err(format!(
+            "LLM API request failed with HTTP status {}",
+            response.status()
+        ));
     }
 
     // Parse response based on provider
@@ -412,5 +425,60 @@ fn provider_name(provider: &LLMProvider) -> &str {
         LLMProvider::BuiltInAI => "Built-in AI",
         LLMProvider::OpenRouter => "OpenRouter",
         LLMProvider::CustomOpenAI => "Custom OpenAI",
+    }
+}
+
+#[cfg(test)]
+mod endpoint_boundary_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn legacy_remote_http_custom_endpoint_fails_before_network_send() {
+        let result = generate_summary_with_response_format(
+            &Client::new(),
+            &LLMProvider::CustomOpenAI,
+            "test-model",
+            "test-key",
+            "system",
+            "user",
+            None,
+            Some("http://llm.example.com/v1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result
+            .expect_err("remote plaintext endpoint must be rejected")
+            .contains("must use HTTPS"));
+    }
+
+    #[tokio::test]
+    async fn legacy_remote_http_ollama_endpoint_fails_before_network_send() {
+        let result = generate_summary_with_response_format(
+            &Client::new(),
+            &LLMProvider::Ollama,
+            "test-model",
+            "",
+            "system",
+            "user",
+            Some("http://localhost.evil.example:11434"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result
+            .expect_err("fake loopback hostname must be rejected")
+            .contains("must use HTTPS"));
     }
 }

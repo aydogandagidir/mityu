@@ -26,9 +26,9 @@ import {
 } from '@/services/learningService';
 
 /**
- * What Mityu has learned — the rules screen (ADR-0024 §9).
+ * What Mityu has learned — the rules screen (ADR-0030 §9).
  *
- * This is not a nice-to-have panel. ADR-0024 §7 lets a well-supported mined rule
+ * This is not a nice-to-have panel. ADR-0030 §7 lets a well-supported mined rule
  * activate WITHOUT asking, and that is only defensible because of three bounds,
  * one of which is this screen: every rule visible, readable in plain language,
  * editable, and deletable. An opaque "our AI learns you" is exactly what cannot

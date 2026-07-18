@@ -186,7 +186,8 @@ impl SettingsRepository {
         ctx: &AuthContext,
         provider: &str,
     ) -> std::result::Result<Option<String>, sqlx::Error> {
-        // Custom OpenAI uses JSON config - extract API key from there
+        // Custom OpenAI keeps only non-secret endpoint/model settings in JSON;
+        // hydrate its key from the workspace-scoped OS credential store.
         if provider == "custom-openai" {
             let config = Self::get_custom_openai_config(pool, ctx).await?;
             return Ok(config.and_then(|c| c.api_key));
@@ -346,8 +347,10 @@ impl SettingsRepository {
     ) -> std::result::Result<(), sqlx::Error> {
         let now = Utc::now();
 
-        // Custom OpenAI uses JSON config - clear the entire config
+        // Custom OpenAI has a dedicated keychain entry. Remove the secret
+        // before clearing its non-secret JSON config.
         if provider == "custom-openai" {
+            secrets::delete_api_key(ctx, SecretDomain::Summary, provider).map_err(keychain_err)?;
             sqlx::query(
                 "UPDATE settings SET customOpenAIConfig = NULL, updated_at = ? \
                  WHERE id = '1' AND workspace_id = ?",
@@ -396,6 +399,9 @@ impl SettingsRepository {
     ) -> std::result::Result<Option<CustomOpenAIConfig>, sqlx::Error> {
         use sqlx::Row;
 
+        // Lazy upgrade covers calls made before/without the startup sweep.
+        Self::migrate_custom_openai_json_if_plaintext(pool, ctx).await?;
+
         let row = sqlx::query(
             r#"
             SELECT customOpenAIConfig
@@ -414,9 +420,17 @@ impl SettingsRepository {
 
                 if let Some(json) = config_json {
                     // Parse JSON into CustomOpenAIConfig
-                    let config: CustomOpenAIConfig = serde_json::from_str(&json).map_err(|e| {
-                        sqlx::Error::Protocol(format!("Invalid JSON in customOpenAIConfig: {}", e))
-                    })?;
+                    let mut config: CustomOpenAIConfig =
+                        serde_json::from_str(&json).map_err(|e| {
+                            sqlx::Error::Protocol(format!(
+                                "Invalid JSON in customOpenAIConfig: {}",
+                                e
+                            ))
+                        })?;
+
+                    config.api_key =
+                        secrets::get_api_key(ctx, SecretDomain::Summary, "custom-openai")
+                            .map_err(keychain_err)?;
 
                     Ok(Some(config))
                 } else {
@@ -442,8 +456,26 @@ impl SettingsRepository {
         ctx: &AuthContext,
         config: &CustomOpenAIConfig,
     ) -> std::result::Result<(), sqlx::Error> {
-        // Serialize config to JSON
-        let config_json = serde_json::to_string(config).map_err(|e| {
+        match config
+            .api_key
+            .as_deref()
+            .filter(|key| !key.trim().is_empty())
+        {
+            Some(api_key) => {
+                secrets::set_api_key(ctx, SecretDomain::Summary, "custom-openai", api_key)
+                    .map_err(keychain_err)?
+            }
+            // An omitted key means "preserve the credential already stored".
+            // Explicit deletion uses `delete_api_key`; a blank settings form
+            // must never silently erase a secret it was intentionally not
+            // allowed to read back from the OS keychain.
+            None => {}
+        }
+
+        // The JSON column is configuration only; it must never contain the key.
+        let mut non_secret_config = config.clone();
+        non_secret_config.api_key = None;
+        let config_json = serde_json::to_string(&non_secret_config).map_err(|e| {
             sqlx::Error::Protocol(format!("Failed to serialize config to JSON: {}", e))
         })?;
 
@@ -546,7 +578,7 @@ impl SettingsRepository {
         Ok(())
     }
 
-    // ===== LEARNING CONFIG (per-workspace learning policy, ADR-0024 §7) =====
+    // ===== LEARNING CONFIG (per-workspace learning policy, ADR-0030 §7) =====
 
     /// Reads the workspace's [`LearningConfig`] from the `settings.learningConfig`
     /// JSON column. Scoped by `workspace_id = ctx.tenant_id`; holds no secret, so
@@ -665,8 +697,84 @@ impl SettingsRepository {
         matches!(value, Some(v) if !v.is_empty() && v != KEYCHAIN_MARKER)
     }
 
+    /// Remove a legacy custom-openai key embedded in JSON. The key is copied to
+    /// the OS credential store when available. If that store is unavailable,
+    /// plaintext is still removed from SQLite and user re-entry is required.
+    async fn migrate_custom_openai_json_if_plaintext(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let current: Option<String> = sqlx::query_scalar(
+            "SELECT customOpenAIConfig FROM settings \
+             WHERE id = '1' AND workspace_id = ? LIMIT 1",
+        )
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+
+        let Some(raw) = current else {
+            return Ok(false);
+        };
+        let mut config: CustomOpenAIConfig = match serde_json::from_str(&raw) {
+            Ok(config) => config,
+            Err(_) => {
+                sqlx::query(
+                    "UPDATE settings SET customOpenAIConfig = NULL, updated_at = ? \
+                     WHERE id = '1' AND workspace_id = ?",
+                )
+                .bind(Utc::now())
+                .bind(ctx.tenant_id.as_str())
+                .execute(pool)
+                .await?;
+                tracing::warn!(
+                    workspace_id = %ctx.tenant_id,
+                    "removed invalid legacy custom OpenAI JSON from SQLite because it could contain a plaintext secret"
+                );
+                return Ok(true);
+            }
+        };
+
+        let Some(legacy_key) = config.api_key.take() else {
+            return Ok(false);
+        };
+        let key_saved = if legacy_key.trim().is_empty() || legacy_key == KEYCHAIN_MARKER {
+            false
+        } else {
+            secrets::set_api_key(ctx, SecretDomain::Summary, "custom-openai", &legacy_key).is_ok()
+        };
+
+        let sanitized = serde_json::to_string(&config).map_err(|error| {
+            sqlx::Error::Protocol(format!("Failed to sanitize custom OpenAI config: {error}"))
+        })?;
+        sqlx::query(
+            "UPDATE settings SET customOpenAIConfig = ?, updated_at = ? \
+             WHERE id = '1' AND workspace_id = ?",
+        )
+        .bind(sanitized)
+        .bind(Utc::now())
+        .bind(ctx.tenant_id.as_str())
+        .execute(pool)
+        .await?;
+
+        if key_saved {
+            tracing::info!(
+                workspace_id = %ctx.tenant_id,
+                "migrated legacy custom OpenAI key to the OS credential store"
+            );
+        } else {
+            tracing::warn!(
+                workspace_id = %ctx.tenant_id,
+                "removed legacy custom OpenAI key from SQLite; OS credential store was unavailable or the value was empty"
+            );
+        }
+        Ok(true)
+    }
+
     /// Move the value of one `(table, column)` cell for the given workspace into
-    /// the keychain and overwrite the column with the marker. Idempotent: a
+    /// the keychain and overwrite the column with the marker. If the credential
+    /// store is unavailable, scrub the plaintext and require user re-entry.
+    /// Idempotent: a
     /// missing/empty/already-migrated cell is a no-op. Runs fully offline.
     async fn migrate_column_cell(
         pool: &SqlitePool,
@@ -689,27 +797,41 @@ impl SettingsRepository {
         }
         let plaintext = current.expect("is_legacy_plaintext guarantees Some");
 
-        // Store to the OS credential store first; only blank the column once the
-        // secret is safely in the keychain (fail closed — never lose the key).
-        secrets::set_api_key(ctx, domain, provider, &plaintext).map_err(keychain_err)?;
+        // Attempt the OS credential store first. Regardless of availability,
+        // remove the legacy plaintext from SQLite; a failed store requires user
+        // re-entry and is surfaced in the warning below.
+        let key_saved = secrets::set_api_key(ctx, domain, provider, &plaintext).is_ok();
 
         let now = Utc::now();
         sqlx::query(&format!(
             "UPDATE {table} SET \"{column}\" = ?, updated_at = ? \
              WHERE id = '1' AND workspace_id = ?"
         ))
-        .bind(KEYCHAIN_MARKER)
+        .bind(if key_saved {
+            Some(KEYCHAIN_MARKER)
+        } else {
+            None
+        })
         .bind(now)
         .bind(ctx.tenant_id.as_str())
         .execute(pool)
         .await?;
 
-        tracing::info!(
-            provider,
-            domain = ?domain,
-            workspace_id = %ctx.tenant_id,
-            "migrated a legacy plaintext API key from SQLite into the OS credential store"
-        );
+        if key_saved {
+            tracing::info!(
+                provider,
+                domain = ?domain,
+                workspace_id = %ctx.tenant_id,
+                "migrated a legacy plaintext API key from SQLite into the OS credential store"
+            );
+        } else {
+            tracing::warn!(
+                provider,
+                domain = ?domain,
+                workspace_id = %ctx.tenant_id,
+                "removed legacy plaintext API key from SQLite; OS credential store unavailable"
+            );
+        }
         Ok(())
     }
 
@@ -753,16 +875,19 @@ impl SettingsRepository {
         Ok(())
     }
 
-    /// One-time startup sweep: move every legacy plaintext API key still stored
-    /// in a `settings` / `transcript_settings` column into the OS credential
-    /// store, then overwrite the column with [`KEYCHAIN_MARKER`]. Iterates over
-    /// **every workspace row** (using each row's own `workspace_id`, not just
-    /// `local`) so a multi-workspace DB migrates correctly, and is fully idempotent
-    /// and offline. Safe to call on every startup.
+    /// One-time startup sweep for the caller's authorized workspace. Move every
+    /// legacy plaintext API key still stored in a `settings` /
+    /// `transcript_settings` column into the OS credential store, then overwrite
+    /// the column with [`KEYCHAIN_MARKER`], or clear it when the credential store
+    /// is unavailable. Identity comes only from [`AuthContext`]; this method
+    /// never enumerates or synthesizes identities for other workspaces. It is
+    /// fully idempotent and offline, so it is safe to call on every startup and
+    /// again after a future authenticated workspace switch.
     ///
     /// Returns the number of keys migrated (useful for logging/tests).
     pub async fn migrate_plaintext_keys_to_keychain(
         pool: &SqlitePool,
+        ctx: &AuthContext,
     ) -> std::result::Result<usize, sqlx::Error> {
         let mut migrated = 0usize;
 
@@ -774,44 +899,32 @@ impl SettingsRepository {
                 SecretDomain::Transcript,
             ),
         ] {
-            // Every distinct workspace that owns a row in this table.
-            let workspaces: Vec<String> =
-                sqlx::query_scalar(&format!("SELECT DISTINCT workspace_id FROM {table}"))
-                    .fetch_all(pool)
-                    .await?;
+            for (provider, column) in columns {
+                let before: Option<String> = sqlx::query_scalar(&format!(
+                    "SELECT \"{column}\" FROM {table} WHERE id = '1' AND workspace_id = ? LIMIT 1"
+                ))
+                .bind(ctx.tenant_id.as_str())
+                .fetch_optional(pool)
+                .await?
+                .flatten();
 
-            for workspace_id in workspaces {
-                // Build a data-migration context from the persisted workspace id.
-                // (Not identity resolution — we are moving already-owned rows.)
-                let ctx = crate::context::AuthContext {
-                    tenant_id: crate::context::TenantId::new(workspace_id.clone()),
-                    user_id: crate::context::UserId::new(crate::context::LOCAL_USER_ID),
-                    roles: vec![crate::context::Role::Owner],
-                    request_id: crate::context::RequestId::generate(),
-                };
-
-                for (provider, column) in columns {
-                    let before: Option<String> = sqlx::query_scalar(&format!(
-                        "SELECT \"{column}\" FROM {table} WHERE id = '1' AND workspace_id = ? LIMIT 1"
-                    ))
-                    .bind(&workspace_id)
-                    .fetch_optional(pool)
-                    .await?
-                    .flatten();
-
-                    if Self::is_legacy_plaintext(&before) {
-                        Self::migrate_column_cell(pool, &ctx, table, column, domain, provider)
-                            .await?;
-                        migrated += 1;
-                    }
+                if Self::is_legacy_plaintext(&before) {
+                    Self::migrate_column_cell(pool, ctx, table, column, domain, provider).await?;
+                    migrated += 1;
                 }
+            }
+
+            if table == "settings"
+                && Self::migrate_custom_openai_json_if_plaintext(pool, ctx).await?
+            {
+                migrated += 1;
             }
         }
 
         if migrated > 0 {
             tracing::info!(
                 count = migrated,
-                "startup: migrated legacy plaintext API keys from SQLite into the OS credential store"
+                "startup: removed legacy plaintext API keys from SQLite"
             );
         }
         Ok(migrated)

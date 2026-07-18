@@ -7,7 +7,6 @@ import { BlockNoteSummaryView, BlockNoteSummaryViewRef } from '@/components/AISu
 import { EmptyStateSummary } from '@/components/EmptyStateSummary';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 import { SummaryGeneratorButtonGroup } from './SummaryGeneratorButtonGroup';
-import { SummaryUpdaterButtonGroup } from './SummaryUpdaterButtonGroup';
 import Analytics from '@/lib/analytics';
 import { useEffect, useRef, useState, RefObject } from 'react';
 import { toast } from 'sonner';
@@ -34,12 +33,7 @@ interface SummaryPanelProps {
   isEditingTitle: boolean;
   onStartEditTitle: () => void;
   onFinishEditTitle: () => void;
-  isTitleDirty: boolean;
   summaryRef: RefObject<BlockNoteSummaryViewRef>;
-  isSaving: boolean;
-  onSaveAll: () => Promise<void>;
-  onCopySummary: () => Promise<void>;
-  onOpenFolder: () => Promise<void>;
   aiSummary: Summary | null;
   summaryStatus: 'idle' | 'processing' | 'summarizing' | 'regenerating' | 'completed' | 'error';
   transcripts: Transcript[];
@@ -63,7 +57,7 @@ interface SummaryPanelProps {
   onOpenModelSettings?: (openFn: () => void) => void;
 
   // BACKLOG C1.6 — source-linked structured draft (HITL review surface).
-  /** Route to the structured draft view (live draft exists OR beta flag on). */
+  /** Route to the structured draft view when an evidence-linked draft exists. */
   structuredEnabled?: boolean;
   /** The fetched draft payload. */
   draftResponse?: SummaryDraftResponse | null;
@@ -91,12 +85,7 @@ export function SummaryPanel({
   isEditingTitle,
   onStartEditTitle,
   onFinishEditTitle,
-  isTitleDirty,
   summaryRef,
-  isSaving,
-  onSaveAll,
-  onCopySummary,
-  onOpenFolder,
   aiSummary,
   summaryStatus,
   transcripts,
@@ -253,6 +242,7 @@ export function SummaryPanel({
   };
 
   const isSummaryLoading = summaryStatus === 'processing' || summaryStatus === 'summarizing' || summaryStatus === 'regenerating';
+  const isLegacyUnverified = !!aiSummary && !structuredEnabled;
 
   const languageSlot = (
     <Popover open={langPickerOpen} onOpenChange={setLangPickerOpen}>
@@ -340,21 +330,6 @@ export function SummaryPanel({
             languageSlot={transcripts.length > 0 ? languageSlot : undefined}
           />
 
-          {aiSummary && !isSummaryLoading && (
-            <SummaryUpdaterButtonGroup
-              isSaving={isSaving}
-              isDirty={isTitleDirty || (summaryRef.current?.isDirty || false)}
-              onSave={onSaveAll}
-              onCopy={onCopySummary}
-              onFind={() => {
-                // TODO: Implement find in summary functionality
-                console.log('Find in summary clicked');
-              }}
-              onOpenFolder={onOpenFolder}
-              hasSummary={!!aiSummary}
-            />
-          )}
-
         </div>
       </div>
 
@@ -363,9 +338,7 @@ export function SummaryPanel({
         // regardless of the legacy `aiSummary`/transcripts gate because
         // DraftSummaryView owns its own loading/empty/error states, and the
         // always-on "AI-generated · review required" banner must be shown while
-        // a draft is under review. Existing meetings are unaffected: the parent
-        // only sets structuredEnabled when a live draft exists or the beta flag
-        // is on.
+        // a draft is under review.
         <div className="flex-1 overflow-y-auto min-h-0">
           {/* Centered column so the draft (and its compact empty state) reads
               well at the rebalanced, narrower panel width instead of stretching
@@ -474,6 +447,7 @@ export function SummaryPanel({
                 title: meetingTitle,
                 created_at: meeting.created_at
               }}
+              legacyReadOnly={isLegacyUnverified}
             />
           </div>
           {summaryStatus !== 'idle' && (

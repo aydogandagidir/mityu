@@ -1,11 +1,11 @@
-//! Tauri commands for the learned-rule surface (ADR-0024 §9).
+//! Tauri commands for the learned-rule surface (ADR-0030 §9).
 //!
 //! Thin wrappers in the `summary::commands` mould: resolve identity via
 //! `context::current()`, call exactly one repository method, map the typed error
 //! to a content-free `String`. No business logic — the status machine, the birth
 //! policy and the scope filter all live where they can be unit-tested.
 //!
-//! **This module is what makes auto-activation defensible.** ADR-0024 §7 permits
+//! **This module is what makes auto-activation defensible.** ADR-0030 §7 permits
 //! a mined rule to activate without asking, but only because three things hold,
 //! and one of them is that the user can SEE, edit and delete every rule. Before
 //! this existed, that bound was a promise; the screen behind these commands is
@@ -101,7 +101,7 @@ pub struct RuleEvidenceResponse {
     /// The corrections that still exist, oldest first.
     pub events: Vec<RuleEvidenceView>,
     /// How many of the rule's corrections are GONE — their meeting was deleted,
-    /// and the CASCADE took them (ADR-0024 §10).
+    /// and the CASCADE took them (ADR-0030 §10).
     ///
     /// This is a first-class field rather than an error because dangling evidence
     /// is the EXPECTED end state of the erasure asymmetry: the rule is an
@@ -129,7 +129,7 @@ pub async fn api_list_learned_rules(
 /// The user writes their own rule.
 ///
 /// Born ACTIVE regardless of the workspace's auto-activation setting — writing
-/// the rule IS the approval (ADR-0024 §7). This is also the manual knob that has
+/// the rule IS the approval (ADR-0030 §7). This is also the manual knob that has
 /// to work before the automatic one is credible.
 ///
 /// `scope` is a raw token (`global` | `template:<id>` | `section:<title>`);
@@ -319,7 +319,7 @@ pub async fn api_get_rule_evidence(
 }
 
 /// Run the deterministic miners over this workspace's correction log and persist
-/// whatever is new (ADR-0024 §8).
+/// whatever is new (ADR-0030 §8).
 ///
 /// Returns how many rules were created. Idempotent in practice: a signature
 /// already on record in any status is never re-proposed, so calling this twice in
@@ -509,7 +509,7 @@ fn redact_events_for_miner(
         .collect()
 }
 
-/// The LLM mining pass (ADR-0024 §8, phase C2) — the opt-in miner that asks the
+/// The LLM mining pass (ADR-0030 §8, phase C2) — the opt-in miner that asks the
 /// user's own BYOK provider to name subtler preferences than the deterministic
 /// miner can see. Returns the number of rules created.
 ///
@@ -634,7 +634,7 @@ pub async fn mine_llm_and_persist<R: tauri::Runtime>(
     Ok(created)
 }
 
-/// What the learning system has to show for itself (ADR-0024 §9).
+/// What the learning system has to show for itself (ADR-0030 §9).
 #[derive(Debug, Clone, Serialize)]
 pub struct LearningStats {
     /// Corrections recorded in this workspace, ever.

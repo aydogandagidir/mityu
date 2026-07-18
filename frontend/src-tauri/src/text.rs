@@ -15,7 +15,7 @@
 //! differently.** The eval harness reports both, because Turkish diacritic loss
 //! ("konveyor arizali" for "konveyör arızalı") is an orthographic error, not a
 //! lexical one, and a human weighs which number matters. The learning miner
-//! (ADR-0024 §8) must use `strict` ONLY: a user who corrects "konveyor" to
+//! (ADR-0030 §8) must use `strict` ONLY: a user who corrects "konveyor" to
 //! "konveyör" is teaching exactly the distinction folding erases, and a folded
 //! miner would see no change at all and learn nothing.
 
@@ -95,7 +95,7 @@ fn fold_diacritics(s: &str) -> String {
 /// Here beside `normalize` for the same reason it is: two consumers, one
 /// implementation. The eval harness measures how far a transcript is from a
 /// human reference; the learning system measures how far a draft is from what
-/// the human made of it (ADR-0024 §9). Same question, same answer.
+/// the human made of it (ADR-0030 §9). Same question, same answer.
 pub fn levenshtein<T: PartialEq>(a: &[T], b: &[T]) -> usize {
     if a.is_empty() {
         return b.len();
@@ -122,7 +122,7 @@ pub fn levenshtein<T: PartialEq>(a: &[T], b: &[T]) -> usize {
 /// `0.0` = identical, `1.0` = nothing in common. Dividing by the longer side —
 /// rather than by the reference, as WER does — is what bounds this at 1.0, and
 /// the bound is the point: this feeds an average that a user reads as a
-/// percentage (ADR-0024 §9), and WER's ability to exceed 1.0 when the hypothesis
+/// percentage (ADR-0030 §9), and WER's ability to exceed 1.0 when the hypothesis
 /// runs long would let one verbose edit drag a whole average past 100%.
 pub fn normalized_word_distance(a: &str, b: &str) -> f64 {
     let aw: Vec<&str> = a.split_whitespace().collect();

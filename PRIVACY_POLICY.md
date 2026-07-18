@@ -1,29 +1,38 @@
 # Mityu Privacy Policy
 
-*Last updated: 2026-07-02*
+*Last updated: 2026-07-15*
 
 ## Our Privacy-First Commitment
 
 Mityu is built on the principle that your meeting data should remain private and under your control. This privacy policy explains how we handle data in our local-first meeting assistant.
 
+**Data controller (veri sorumlusu):** **Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** (trading as "bluedev"), İçerenköy Mah. Topçu İbrahim Sk. Quick Tower Sitesi No: 8-10d, Ataşehir/İstanbul, Türkiye — MERSİS 0178185796600001, VKN 1781857966. Contact: info@bluedev.dev. Because Mityu is local-first, the controller has **no access to your meeting content**; this identity governs the limited account/support and optional off-by-default telemetry data described below.
+
 ## Data Processing Philosophy
 
 ### Local-First Processing
-- **Meeting transcription**: Processed entirely on your device using local Whisper models
+- **Meeting transcription**: Processed entirely on your device using local Whisper or Parakeet models
 - **Audio recordings**: Never transmitted to external servers
-- **Meeting content**: Remains on your infrastructure
-- **AI summaries**: Generated locally or through your chosen LLM provider
+- **v1.0.4 raw-audio retention**: The raw recording remains in Mityu-managed local storage until you delete the meeting. Automatic deletion immediately after transcription is not implemented in this version.
+- **Meeting content**: Remains on your device unless you explicitly choose a third-party LLM provider or export/share it
+- **AI summaries**: Generated locally or through the LLM provider you choose
 
 ### Your Data Ownership
 - You own all meeting data, transcripts, and recordings
 - Data is stored locally on your device
 - No vendor lock-in - export your data anytime
-- Complete control over data retention and deletion
+- Control over application-managed retention, export, and deletion, subject to the storage limitations described below
+
+## Website Download
+
+Downloading the installer requires no account, name, email address, or marketing consent. The Mityu website is hosted by Vercel, which may process ordinary request/security logs under its service terms. The download endpoint keeps an aggregate counter. For abuse prevention it also derives a keyed HMAC token from the request IP address using a server-only secret and retains only a request counter under that token. The token expires no later than 15 minutes after the first request; later requests do not extend the window. The KV rate-limit record contains neither the IP address nor the HMAC secret, and the endpoint does not store the user agent, referrer, meeting content, audio, or contact details.
+
+v1.0.4 does not offer or store a product-update signup. Contact collection remains disabled until an email-ownership verification flow, retention/erasure operations, processor terms, transfer safeguards, and the required legal/product approvals are in place.
 
 ## Usage Analytics
 
 ### What We Collect
-Usage analytics is optional and off by default. When you choose to enable it, Mityu collects minimal, anonymized usage data:
+Usage analytics is optional and off by default. When you choose to enable it, Mityu collects minimal, pseudonymous usage data:
 
 **Application Usage:**
 - Feature usage patterns (which tools you use most)
@@ -31,15 +40,15 @@ Usage analytics is optional and off by default. When you choose to enable it, Mi
 - Performance metrics (transcription success rates, error frequencies)
 - UI interaction patterns (button clicks, navigation flows)
 
-**Technical Metrics:**
+**Technical Metrics (only if a future production build enables the optional processor):**
 - Application version and platform information
-- Error logs and crash reports (anonymized)
+- Content-free error occurrence categories; Mityu does not upload diagnostic logs or crash dumps
 - Performance benchmarks (processing times, resource usage)
 
 ### What We DON'T Collect
 We never collect:
 - ❌ Meeting content, transcripts, or recordings
-- ❌ Personal information or identifiable data
+- ❌ Names, email addresses, or contact information entered as analytics identity
 - ❌ File names, meeting titles, or metadata
 - ❌ Audio data or voice patterns
 - ❌ Participant names or contact information
@@ -56,10 +65,11 @@ When enabled, analytics helps us with:
 ### Analytics Implementation
 - **Provider**: PostHog (privacy-focused analytics platform)
 - **Default**: Off by default; analytics starts only after you enable it in settings
-- **Anonymization**: All data linked to generated user IDs only - no personal identification
-- **Data retention**: 12 months maximum, then automatically deleted
+- **v1.0.4 production posture**: The release workflow intentionally embeds no PostHog project key, so analytics remains a local no-op even after opt-in. A later release may enable the processor only after the region, retention, deletion/erasure process, access controls, DPA/subprocessor terms, and this notice are approved.
+- **Pseudonymous identifier**: Events are linked to a generated installation/user ID rather than a name or email address
+- **Data retention**: The desktop application does not enforce PostHog-side retention. The active PostHog project configuration and provider policy control retention and must be verified by the distributor.
 - **Encryption**: All data encrypted in transit using industry-standard protocols
-- **Location**: Data processed in accordance with PostHog's privacy policy
+- **Location**: No PostHog processing occurs in v1.0.4. Before a future build enables it, the selected processing region and cross-border transfer basis must be disclosed here.
 - **Access Control**: Strictly limited to core development team members
 
 ## Third-Party Services
@@ -70,13 +80,19 @@ If you choose to use external LLM providers with your own API key:
 - **OpenAI** (and OpenAI-compatible endpoints): Subject to the provider's privacy policy
 - **Groq**: Subject to Groq's privacy policy
 - **OpenRouter**: Subject to OpenRouter's privacy policy
-- **Local Ollama**: Processed entirely on your device
+- **Ollama**: Processed entirely on your device only when configured to an exact loopback endpoint. If you deliberately configure a remote HTTPS Ollama-compatible endpoint, meeting content is sent to that endpoint under its operator's terms.
 
-Your provider API keys are stored in your operating system's secure credential store (keychain) — never in plaintext, and never transmitted anywhere except to the provider you chose.
+Newly configured provider API keys are stored in your operating system's secure credential store (keychain) and are transmitted only to the provider you choose. Legacy plaintext database fields are scrubbed during startup migration. When the credential store accepts the key, the database keeps only a non-secret marker; if the store is unavailable, the plaintext is removed and you must enter the key again.
+
+### Licensing (Polar)
+If you activate, deactivate, or periodically validate a paid license, Mityu contacts `api.polar.sh`. The request contains the license key, public organization ID, Polar activation ID, and a random pseudonymous device label. Mityu does not send your hostname or meeting content. Licensed installations validate in the background at most once every seven days; network failure does not disable an existing license.
+
+### Models and Updates
+Model downloads are started by you and fetch only pinned model artifacts from Hugging Face; no meeting content is uploaded. The app may check the Mityu GitHub release endpoint for signed update metadata. Downloaded updater artifacts are accepted only after signature verification.
 
 ### Analytics Service (Optional)
 - **PostHog**: Used for usage analytics when enabled
-- **Data**: Only anonymized usage patterns, no meeting content
+- **Data**: Only pseudonymous usage patterns, no meeting content
 - **Control**: Completely optional, off by default, and user-controlled
 
 ## Your Privacy Rights
@@ -84,7 +100,11 @@ Your provider API keys are stored in your operating system's secure credential s
 ### Data Control
 - **Access**: View all data stored locally on your device
 - **Export**: Export your data in standard formats
-- **Delete**: Remove all data from your device
+- **Delete**: Remove Mityu-managed meeting rows, search-index data, recording artifacts, and recovery-cache entries through the App
+
+Application-controlled deletion enables SQLite and FTS secure deletion, compacts free pages, truncates the SQLite write-ahead log, and overwrites/unlinks Mityu-managed recording artifacts before reporting success. It cannot guarantee forensic erasure from SSD wear-leveling, copy-on-write storage, filesystem or cloud snapshots, backups, swap, exported/shared copies, or residual WebView/browser-storage pages. Unknown files you add to a meeting folder are retained.
+
+Deleting only transcript text or closing the App does not remove the raw recording. To remove Mityu's managed raw audio in v1.0.4, delete the meeting through the App; independently exported or copied files remain under your control.
 
 
 ### Analytics Transparency
@@ -95,8 +115,9 @@ Your provider API keys are stored in your operating system's secure credential s
 ## Data Security
 
 ### Local Security
-- Data encrypted at rest using your device's security features
-- No transmission of sensitive meeting data
+- The local SQLite database uses SQLCipher when the operating-system credential store is available. On a fresh or already-plaintext database, Mityu has a documented local-first plaintext fallback if key acquisition or conversion fails; an existing encrypted database is never opened without its key.
+- Audio recordings, transcript/metadata JSON files, and exports are ordinary files protected by your operating system and filesystem permissions; Mityu does not currently apply application-level encryption to those files.
+- The offline capture/transcription path transmits no meeting data; content is sent only when you explicitly choose a remote provider or export/share it
 - Standard file system permissions protect your data
 
 ### Open Source Transparency
@@ -113,9 +134,14 @@ We will notify users of any material changes to this privacy policy through:
 
 ## Contact Us
 
-For privacy-related questions or concerns:
+**Data controller:** **Blue Robot Teknolojileri ve Ticaret Ltd. Şti.** (trading as "bluedev")
+- **Registered address**: İçerenköy Mah. Topçu İbrahim Sk. Quick Tower Sitesi No: 8-10d, Ataşehir/İstanbul, Türkiye
+- **MERSİS No**: 0178185796600001 · **VKN**: 1781857966 (Kozyatağı Vergi Dairesi) · **Ticaret Sicil No**: İstanbul-1125891
+- **Phone**: +90 530 721 0036
+
+For privacy-related questions or concerns (including KVKK data-subject requests):
 - **GitHub Issues**: [Create an issue](https://github.com/aydogandagidir/mityu/issues)
-- **Email**: info@bluedev.dev
+- **Email**: info@bluedev.dev · **Support**: support@bluedev.dev
 - **Website**: [bluedev.dev](https://bluedev.dev)
 
 ## Open Source Commitment
@@ -128,4 +154,4 @@ As an open-source project under MIT license, you can:
 
 ---
 
-*This privacy policy applies to Mityu v0.4.0 and later versions. For enterprise deployments, additional privacy controls may be available.*
+*This privacy policy describes Mityu v1.0.4. For enterprise deployments, additional privacy controls may be available.*

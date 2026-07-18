@@ -1,4 +1,4 @@
-//! End-to-end mining (ADR-0024 §8, phase C1).
+//! End-to-end mining (ADR-0030 §8, phase C1).
 //!
 //! `learning::miner`'s own unit tests pin the mining LOGIC over synthetic events.
 //! This file proves the part they cannot: that real corrections, written by the

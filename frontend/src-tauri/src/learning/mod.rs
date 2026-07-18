@@ -1,5 +1,5 @@
 //! Local learning: turning the human-in-the-loop correction signal into
-//! plain-language rules that shape the next summary (ADR-0024).
+//! plain-language rules that shape the next summary (ADR-0030).
 //!
 //! The whole system in one line: **learning is data, not weights.** Corrections
 //! are captured append-only (`database/repositories/correction_event.rs`), mined

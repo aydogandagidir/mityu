@@ -1,449 +1,655 @@
 /**
- * IndexedDB Service for Transcript Recovery
- * Provides browser-based persistence for meeting transcripts and metadata
- * to enable recovery after app crashes or unexpected closures.
+ * Tenant-scoped IndexedDB persistence for crash-recovery transcripts.
+ *
+ * Identity is never accepted from the renderer. Every operation resolves the
+ * current workspace through Rust `context::current()` and uses compound keys or
+ * indexes beginning with that trusted workspace id.
  */
 
-// Database schema interfaces
+export const RECOVERY_DB_VERSION = 2;
+
+const DB_NAME = 'MeetilyRecoveryDB'; // Frozen so the v1 database can be upgraded in place.
+const MEETINGS_STORE = 'meetingsV2';
+const TRANSCRIPTS_STORE = 'transcriptsV2';
+const LEGACY_MEETINGS_STORE = 'meetings';
+const LEGACY_TRANSCRIPTS_STORE = 'transcripts';
+
+const MEETING_WORKSPACE_INDEX = 'workspaceId';
+const MEETING_WORKSPACE_SAVED_INDEX = 'workspaceSavedState';
+const MEETING_WORKSPACE_UPDATED_INDEX = 'workspaceLastUpdated';
+const TRANSCRIPT_WORKSPACE_INDEX = 'workspaceId';
+const TRANSCRIPT_WORKSPACE_MEETING_INDEX = 'workspaceMeeting';
+const TRANSCRIPT_WORKSPACE_STORED_INDEX = 'workspaceStoredAt';
+
+type SavedState = 'pending' | 'saved';
+type UnknownRecord = Record<string, unknown>;
+
 export interface MeetingMetadata {
-  meetingId: string;          // Primary key: "meeting-{timestamp}"
-  title: string;              // Meeting title
-  startTime: number;          // Unix timestamp (ms)
-  lastUpdated: number;        // Unix timestamp (ms)
-  transcriptCount: number;    // Number of transcript segments
-  savedToSQLite: boolean;     // Flag: saved to backend DB
-  folderPath?: string;        // Path to recording folder
+  workspaceId: string;
+  meetingId: string;
+  title: string;
+  startTime: number;
+  lastUpdated: number;
+  transcriptCount: number;
+  savedToSQLite: boolean;
+  savedState: SavedState;
+  folderPath?: string;
 }
 
+export type MeetingMetadataInput = Omit<MeetingMetadata, 'workspaceId' | 'savedState'>;
+
 export interface StoredTranscript {
-  id?: number;                // Auto-increment primary key
-  meetingId: string;          // Foreign key to meetings store
-  text: string;               // Transcript text
-  timestamp: string;          // ISO 8601 timestamp
-  confidence: number;         // Whisper confidence score
-  sequenceId: number;         // Sequence number for ordering
-  storedAt: number;           // Unix timestamp when saved
-  audio_start_time?: number;  // Recording-relative start time in seconds
-  audio_end_time?: number;    // Recording-relative end time in seconds
-  duration?: number;          // Duration in seconds
-  [key: string]: any;         // Allow additional fields from TranscriptUpdate
+  workspaceId: string;
+  meetingId: string;
+  recoveryId: string;
+  id?: number | string;
+  text: string;
+  timestamp: string;
+  confidence: number;
+  sequenceId: number;
+  sequence_id: number;
+  storedAt: number;
+  audio_start_time?: number;
+  audio_end_time?: number;
+  duration?: number;
+  [key: string]: any;
+}
+
+function requireIdentifier(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function sequenceNumber(value: unknown): number | undefined {
+  const number = typeof value === 'number' ? value : Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : undefined;
+}
+
+export function meetingKey(workspaceId: string, meetingId: string): [string, string] {
+  return [
+    requireIdentifier(workspaceId, 'workspaceId'),
+    requireIdentifier(meetingId, 'meetingId'),
+  ];
+}
+
+export function workspaceMeetingKey(
+  workspaceId: string,
+  meetingId: string,
+): [string, string] {
+  return meetingKey(workspaceId, meetingId);
+}
+
+export function transcriptKey(
+  workspaceId: string,
+  meetingId: string,
+  recoveryId: string,
+): [string, string, string] {
+  return [
+    ...meetingKey(workspaceId, meetingId),
+    requireIdentifier(recoveryId, 'recoveryId'),
+  ];
+}
+
+export function recordsForWorkspace<T extends { workspaceId: string }>(
+  records: T[],
+  workspaceId: string,
+): T[] {
+  return records.filter(record => record.workspaceId === workspaceId);
+}
+
+export function buildScopedMeetingRecord(
+  metadata: MeetingMetadataInput | MeetingMetadata,
+  workspaceId: string,
+): MeetingMetadata {
+  const trustedWorkspaceId = requireIdentifier(workspaceId, 'workspaceId');
+  const meetingId = requireIdentifier(metadata.meetingId, 'meetingId');
+  const savedToSQLite = metadata.savedToSQLite === true;
+
+  return {
+    ...metadata,
+    workspaceId: trustedWorkspaceId,
+    meetingId,
+    savedToSQLite,
+    savedState: savedToSQLite ? 'saved' : 'pending',
+  };
+}
+
+function legacyRecoveryId(record: UnknownRecord, ordinal: number): string {
+  const legacyId = record.id;
+  if (typeof legacyId === 'number' || typeof legacyId === 'string') {
+    return `legacy:${typeof legacyId}:${String(legacyId)}`;
+  }
+  return `legacy:ordinal:${ordinal}`;
+}
+
+export interface TranscriptScopeOptions {
+  legacyOrdinal?: number;
+  now?: number;
+}
+
+export function buildScopedTranscriptRecord(
+  meetingIdInput: string,
+  transcript: object,
+  workspaceId: string,
+  options: TranscriptScopeOptions = {},
+): StoredTranscript {
+  const record = transcript as UnknownRecord;
+  const trustedWorkspaceId = requireIdentifier(workspaceId, 'workspaceId');
+  const meetingId = requireIdentifier(meetingIdInput, 'meetingId');
+  const legacy = options.legacyOrdinal !== undefined;
+  const sequenceId = sequenceNumber(record.sequenceId ?? record.sequence_id)
+    ?? (legacy ? options.legacyOrdinal : undefined);
+
+  if (sequenceId === undefined) {
+    throw new Error('transcript sequence id must be a non-negative safe integer');
+  }
+
+  const now = options.now ?? Date.now();
+  const storedAt = legacy ? (finiteNumber(record.storedAt) ?? now) : now;
+  const recoveryId = legacy
+    ? legacyRecoveryId(record, options.legacyOrdinal!)
+    : `sequence:${sequenceId}`;
+
+  return {
+    ...record,
+    workspaceId: trustedWorkspaceId,
+    meetingId,
+    recoveryId,
+    sequenceId,
+    sequence_id: sequenceId,
+    storedAt,
+  } as StoredTranscript;
+}
+
+export function migrateLegacyMeetingRecord(
+  record: UnknownRecord,
+  workspaceId: string,
+  now = Date.now(),
+): MeetingMetadata {
+  const meetingId = requireIdentifier(record.meetingId, 'legacy meetingId');
+  const startTime = finiteNumber(record.startTime) ?? now;
+  const lastUpdated = finiteNumber(record.lastUpdated) ?? startTime;
+  const transcriptCount = sequenceNumber(record.transcriptCount) ?? 0;
+
+  return buildScopedMeetingRecord({
+    ...record,
+    meetingId,
+    title: typeof record.title === 'string' ? record.title : 'Recovered meeting',
+    startTime,
+    lastUpdated,
+    transcriptCount,
+    savedToSQLite: record.savedToSQLite === true,
+    folderPath: typeof record.folderPath === 'string' ? record.folderPath : undefined,
+  } as MeetingMetadataInput, workspaceId);
+}
+
+async function resolveCurrentWorkspaceId(): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const workspaceId = await invoke<unknown>('api_get_current_workspace_id');
+  return requireIdentifier(workspaceId, 'current workspace id');
+}
+
+function createV2Stores(db: IDBDatabase): void {
+  if (!db.objectStoreNames.contains(MEETINGS_STORE)) {
+    const meetings = db.createObjectStore(MEETINGS_STORE, {
+      keyPath: ['workspaceId', 'meetingId'],
+    });
+    meetings.createIndex(MEETING_WORKSPACE_INDEX, 'workspaceId', { unique: false });
+    meetings.createIndex(
+      MEETING_WORKSPACE_SAVED_INDEX,
+      ['workspaceId', 'savedState'],
+      { unique: false },
+    );
+    meetings.createIndex(
+      MEETING_WORKSPACE_UPDATED_INDEX,
+      ['workspaceId', 'lastUpdated'],
+      { unique: false },
+    );
+  }
+
+  if (!db.objectStoreNames.contains(TRANSCRIPTS_STORE)) {
+    const transcripts = db.createObjectStore(TRANSCRIPTS_STORE, {
+      keyPath: ['workspaceId', 'meetingId', 'recoveryId'],
+    });
+    transcripts.createIndex(TRANSCRIPT_WORKSPACE_INDEX, 'workspaceId', { unique: false });
+    transcripts.createIndex(
+      TRANSCRIPT_WORKSPACE_MEETING_INDEX,
+      ['workspaceId', 'meetingId'],
+      { unique: false },
+    );
+    transcripts.createIndex(
+      TRANSCRIPT_WORKSPACE_STORED_INDEX,
+      ['workspaceId', 'storedAt'],
+      { unique: false },
+    );
+  }
+}
+
+/**
+ * Copy v1 records into v2 inside the same versionchange transaction. If any
+ * read/write fails, IndexedDB rolls the whole upgrade back and v1 remains
+ * intact. On success the legacy stores are deleted, so migration cannot repeat.
+ */
+function migrateLegacyV1Stores(
+  db: IDBDatabase,
+  transaction: IDBTransaction,
+  workspaceId: string,
+): void {
+  const hasMeetings = db.objectStoreNames.contains(LEGACY_MEETINGS_STORE);
+  const hasTranscripts = db.objectStoreNames.contains(LEGACY_TRANSCRIPTS_STORE);
+  if (!hasMeetings && !hasTranscripts) return;
+
+  let legacyMeetings: UnknownRecord[] = [];
+  let legacyTranscripts: UnknownRecord[] = [];
+  let pendingReads = Number(hasMeetings) + Number(hasTranscripts);
+
+  const abort = () => {
+    try {
+      transaction.abort();
+    } catch {
+      // The transaction may already have failed; the open request will surface it.
+    }
+  };
+
+  const finish = () => {
+    pendingReads -= 1;
+    if (pendingReads !== 0) return;
+
+    try {
+      const now = Date.now();
+      const meetingsStore = transaction.objectStore(MEETINGS_STORE);
+      const transcriptsStore = transaction.objectStore(TRANSCRIPTS_STORE);
+      const migratedMeetingIds = new Set<string>();
+      const orphanCounts = new Map<string, { count: number; oldest: number; newest: number }>();
+
+      for (const record of legacyMeetings) {
+        const scoped = migrateLegacyMeetingRecord(record, workspaceId, now);
+        migratedMeetingIds.add(scoped.meetingId);
+        meetingsStore.put(scoped);
+      }
+
+      legacyTranscripts.forEach((record, ordinal) => {
+        const meetingId = requireIdentifier(record.meetingId, 'legacy transcript meetingId');
+        const scoped = buildScopedTranscriptRecord(meetingId, record, workspaceId, {
+          legacyOrdinal: ordinal,
+          now,
+        });
+        transcriptsStore.put(scoped);
+
+        if (!migratedMeetingIds.has(meetingId)) {
+          const prior = orphanCounts.get(meetingId);
+          orphanCounts.set(meetingId, {
+            count: (prior?.count ?? 0) + 1,
+            oldest: Math.min(prior?.oldest ?? scoped.storedAt, scoped.storedAt),
+            newest: Math.max(prior?.newest ?? scoped.storedAt, scoped.storedAt),
+          });
+        }
+      });
+
+      // Preserve otherwise-orphaned transcript records as recoverable meetings.
+      for (const [meetingId, stats] of orphanCounts) {
+        meetingsStore.put(buildScopedMeetingRecord({
+          meetingId,
+          title: 'Recovered meeting',
+          startTime: stats.oldest,
+          lastUpdated: stats.newest,
+          transcriptCount: stats.count,
+          savedToSQLite: false,
+        }, workspaceId));
+      }
+
+      if (hasMeetings) db.deleteObjectStore(LEGACY_MEETINGS_STORE);
+      if (hasTranscripts) db.deleteObjectStore(LEGACY_TRANSCRIPTS_STORE);
+    } catch {
+      abort();
+    }
+  };
+
+  if (hasMeetings) {
+    const request = transaction.objectStore(LEGACY_MEETINGS_STORE).getAll();
+    request.onsuccess = () => {
+      legacyMeetings = request.result as UnknownRecord[];
+      finish();
+    };
+    request.onerror = abort;
+  }
+
+  if (hasTranscripts) {
+    const request = transaction.objectStore(LEGACY_TRANSCRIPTS_STORE).getAll();
+    request.onsuccess = () => {
+      legacyTranscripts = request.result as UnknownRecord[];
+      finish();
+    };
+    request.onerror = abort;
+  }
 }
 
 class IndexedDBService {
   private db: IDBDatabase | null = null;
-  private readonly DB_NAME = 'MeetilyRecoveryDB';
-  private readonly DB_VERSION = 1;
   private initPromise: Promise<void> | null = null;
 
-  /**
-   * Initialize database connection
-   */
   async init(): Promise<void> {
-    // Return existing promise if initialization is in progress
-    if (this.initPromise) {
-      return this.initPromise;
-    }
+    if (this.db) return;
+    if (this.initPromise) return this.initPromise;
 
-    // Return immediately if already initialized
-    if (this.db) {
-      return Promise.resolve();
-    }
-
-    this.initPromise = new Promise((resolve, reject) => {
-      try {
-        const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
-
-        request.onerror = () => {
-          console.error('Failed to open IndexedDB:', request.error);
-          reject(request.error);
-        };
-
-        request.onsuccess = () => {
-          this.db = request.result;
-          resolve();
-        };
-
-        request.onupgradeneeded = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-
-          // Create meetings store
-          if (!db.objectStoreNames.contains('meetings')) {
-            const meetingsStore = db.createObjectStore('meetings', { keyPath: 'meetingId' });
-            meetingsStore.createIndex('lastUpdated', 'lastUpdated', { unique: false });
-            meetingsStore.createIndex('savedToSQLite', 'savedToSQLite', { unique: false });
-          }
-
-          // Create transcripts store
-          if (!db.objectStoreNames.contains('transcripts')) {
-            const transcriptsStore = db.createObjectStore('transcripts', {
-              keyPath: 'id',
-              autoIncrement: true
-            });
-            transcriptsStore.createIndex('meetingId', 'meetingId', { unique: false });
-            transcriptsStore.createIndex('storedAt', 'storedAt', { unique: false });
-          }
-        };
-      } catch (error) {
-        console.error('Exception during IndexedDB initialization:', error);
-        reject(error);
-      }
+    this.initPromise = this.initialize().catch(error => {
+      this.initPromise = null;
+      throw error;
     });
-
     return this.initPromise;
   }
 
-  // Meeting operations
+  private async initialize(): Promise<void> {
+    // This trusted value is used only to assign legacy v1 records during the
+    // versionchange transaction. Normal operations resolve current() again.
+    const migrationWorkspaceId = await resolveCurrentWorkspaceId();
 
-  /**
-   * Save or update meeting metadata
-   */
-  async saveMeetingMetadata(metadata: MeetingMetadata): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      let request: IDBOpenDBRequest;
+      try {
+        request = indexedDB.open(DB_NAME, RECOVERY_DB_VERSION);
+      } catch (error) {
+        reject(error);
+        return;
+      }
+
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('IndexedDB upgrade is blocked by another window'));
+      request.onsuccess = () => {
+        this.db = request.result;
+        this.db.onversionchange = () => {
+          this.db?.close();
+          this.db = null;
+          this.initPromise = null;
+        };
+        resolve();
+      };
+      request.onupgradeneeded = event => {
+        const db = request.result;
+        const transaction = request.transaction;
+        if (!transaction) {
+          reject(new Error('IndexedDB upgrade transaction is unavailable'));
+          return;
+        }
+
+        try {
+          createV2Stores(db);
+          if (event.oldVersion < RECOVERY_DB_VERSION) {
+            migrateLegacyV1Stores(db, transaction, migrationWorkspaceId);
+          }
+        } catch {
+          transaction.abort();
+        }
+      };
+    });
+  }
+
+  private async scopedDatabase(): Promise<{ db: IDBDatabase; workspaceId: string }> {
+    await this.init();
+    const workspaceId = await resolveCurrentWorkspaceId();
+    if (!this.db) throw new Error('IndexedDB is not initialized');
+    return { db: this.db, workspaceId };
+  }
+
+  async saveMeetingMetadata(metadata: MeetingMetadataInput | MeetingMetadata): Promise<void> {
     try {
-      if (!this.db) await this.init();
-
-      const transaction = this.db!.transaction(['meetings'], 'readwrite');
-      const store = transaction.objectStore('meetings');
-
-      await new Promise<void>((resolve, reject) => {
-        const request = store.put(metadata);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+      const { db, workspaceId } = await this.scopedDatabase();
+      const transaction = db.transaction(MEETINGS_STORE, 'readwrite');
+      transaction.objectStore(MEETINGS_STORE).put(buildScopedMeetingRecord(metadata, workspaceId));
+      await this.waitForTransaction(transaction);
     } catch (error) {
       console.warn('Failed to save meeting metadata to IndexedDB:', error);
-      // Fail silently - don't interrupt recording
     }
   }
 
-  /**
-   * Get meeting metadata by ID
-   */
   async getMeetingMetadata(meetingId: string): Promise<MeetingMetadata | null> {
     try {
-      if (!this.db) await this.init();
-
-      const transaction = this.db!.transaction(['meetings'], 'readonly');
-      const store = transaction.objectStore('meetings');
-
-      return new Promise((resolve, reject) => {
-        const request = store.get(meetingId);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error);
-      });
+      const { db, workspaceId } = await this.scopedDatabase();
+      const transaction = db.transaction(MEETINGS_STORE, 'readonly');
+      const request = transaction.objectStore(MEETINGS_STORE).get(meetingKey(workspaceId, meetingId));
+      const result = await this.waitForRequest<MeetingMetadata | undefined>(request);
+      return result?.workspaceId === workspaceId ? result : null;
     } catch (error) {
       console.error('Failed to get meeting metadata from IndexedDB:', error);
       return null;
     }
   }
 
-  /**
-   * Get all unsaved meetings (savedToSQLite = false)
-   */
   async getAllMeetings(): Promise<MeetingMetadata[]> {
     try {
-      if (!this.db) await this.init();
-
-      const transaction = this.db!.transaction(['meetings'], 'readonly');
-      const store = transaction.objectStore('meetings');
-
-      return new Promise((resolve, reject) => {
-        const request = store.getAll();
-        request.onsuccess = () => {
-          const allMeetings = request.result as MeetingMetadata[];
-          // Filter for unsaved meetings (savedToSQLite = false)
-          const unsavedMeetings = allMeetings.filter(m => m.savedToSQLite === false);
-
-          // Sort by most recent first
-          unsavedMeetings.sort((a, b) => b.lastUpdated - a.lastUpdated);
-          resolve(unsavedMeetings);
-        };
-        request.onerror = () => reject(request.error);
-      });
+      const { db, workspaceId } = await this.scopedDatabase();
+      const transaction = db.transaction(MEETINGS_STORE, 'readonly');
+      const index = transaction.objectStore(MEETINGS_STORE).index(MEETING_WORKSPACE_SAVED_INDEX);
+      const request = index.getAll(IDBKeyRange.only([workspaceId, 'pending']));
+      const meetings = recordsForWorkspace(
+        await this.waitForRequest<MeetingMetadata[]>(request),
+        workspaceId,
+      );
+      return meetings.sort((a, b) => b.lastUpdated - a.lastUpdated);
     } catch (error) {
       console.error('Failed to get meetings from IndexedDB:', error);
       return [];
     }
   }
 
-  /**
-   * Mark meeting as saved to SQLite
-   */
   async markMeetingSaved(meetingId: string): Promise<void> {
+    const { db, workspaceId } = await this.scopedDatabase();
     try {
-      if (!this.db) await this.init();
+      const transaction = db.transaction(MEETINGS_STORE, 'readwrite');
+      const transactionComplete = this.waitForTransaction(transaction);
+      const store = transaction.objectStore(MEETINGS_STORE);
+      const request = store.get(meetingKey(workspaceId, meetingId));
 
-      const transaction = this.db!.transaction(['meetings'], 'readwrite');
-      const store = transaction.objectStore('meetings');
+      request.onsuccess = () => {
+        const meeting = request.result as MeetingMetadata | undefined;
+        if (meeting?.workspaceId === workspaceId) {
+          store.put(buildScopedMeetingRecord({
+            ...meeting,
+            savedToSQLite: true,
+            lastUpdated: Date.now(),
+          }, workspaceId));
+        }
+      };
 
-      return new Promise((resolve, reject) => {
-        const getRequest = store.get(meetingId);
-        getRequest.onsuccess = () => {
-          const meeting = getRequest.result;
-          if (meeting) {
-            meeting.savedToSQLite = true;
-            meeting.lastUpdated = Date.now();
-            const putRequest = store.put(meeting);
-            putRequest.onsuccess = () => resolve();
-            putRequest.onerror = () => reject(putRequest.error);
-          } else {
-            resolve();
-          }
-        };
-        getRequest.onerror = () => reject(getRequest.error);
-      });
+      await transactionComplete;
+      await this.deleteMeetingForWorkspace(db, workspaceId, meetingId);
     } catch (error) {
       console.warn('Failed to mark meeting as saved:', error);
-    }
-  }
-
-  /**
-   * Delete meeting and all its transcripts
-   */
-  async deleteMeeting(meetingId: string): Promise<void> {
-    try {
-      if (!this.db) await this.init();
-
-      const transaction = this.db!.transaction(['meetings', 'transcripts'], 'readwrite');
-      const meetingsStore = transaction.objectStore('meetings');
-      const transcriptsStore = transaction.objectStore('transcripts');
-
-      // Delete transcripts
-      await this.deleteTranscriptsForMeetingInternal(transcriptsStore, meetingId);
-
-      // Delete meeting
-      await new Promise<void>((resolve, reject) => {
-        const request = meetingsStore.delete(meetingId);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
-    } catch (error) {
-      console.error('Failed to delete meeting from IndexedDB:', error);
       throw error;
     }
   }
 
-  // Transcript operations
+  async deleteMeeting(meetingId: string): Promise<void> {
+    const { db, workspaceId } = await this.scopedDatabase();
+    await this.deleteMeetingForWorkspace(db, workspaceId, meetingId);
+  }
 
-  /**
-   * Save a transcript segment
-   */
-  async saveTranscript(meetingId: string, transcript: any): Promise<void> {
+  private async deleteMeetingForWorkspace(
+    db: IDBDatabase,
+    workspaceId: string,
+    meetingId: string,
+  ): Promise<void> {
+    const transaction = db.transaction([MEETINGS_STORE, TRANSCRIPTS_STORE], 'readwrite');
+    const meetings = transaction.objectStore(MEETINGS_STORE);
+    const transcripts = transaction.objectStore(TRANSCRIPTS_STORE);
+    this.queueTranscriptDeletion(transcripts, workspaceId, meetingId);
+    meetings.delete(meetingKey(workspaceId, meetingId));
+    await this.waitForTransaction(transaction);
+  }
+
+  async saveTranscript(meetingId: string, transcript: object): Promise<void> {
     try {
-      if (!this.db) await this.init();
+      const { db, workspaceId } = await this.scopedDatabase();
+      const transaction = db.transaction([TRANSCRIPTS_STORE, MEETINGS_STORE], 'readwrite');
+      const transactionComplete = this.waitForTransaction(transaction);
+      const transcripts = transaction.objectStore(TRANSCRIPTS_STORE);
+      const meetings = transaction.objectStore(MEETINGS_STORE);
+      const meetingRequest = meetings.get(meetingKey(workspaceId, meetingId));
+      let missingMeeting = false;
 
-      const storedTranscript: StoredTranscript = {
-        ...transcript,
-        meetingId,
-        storedAt: Date.now()
+      meetingRequest.onsuccess = () => {
+        const meeting = meetingRequest.result as MeetingMetadata | undefined;
+        if (!meeting || meeting.workspaceId !== workspaceId) {
+          missingMeeting = true;
+          transaction.abort();
+          return;
+        }
+
+        const scopedTranscript = buildScopedTranscriptRecord(meetingId, transcript, workspaceId);
+        const transcriptRequest = transcripts.get(transcriptKey(
+          workspaceId,
+          meetingId,
+          scopedTranscript.recoveryId,
+        ));
+        transcriptRequest.onsuccess = () => {
+          const alreadyStored = transcriptRequest.result !== undefined;
+          transcripts.put(scopedTranscript);
+          meetings.put(buildScopedMeetingRecord({
+            ...meeting,
+            lastUpdated: Date.now(),
+            transcriptCount: meeting.transcriptCount + (alreadyStored ? 0 : 1),
+          }, workspaceId));
+        };
       };
 
-      const transaction = this.db!.transaction(['transcripts', 'meetings'], 'readwrite');
-      const transcriptsStore = transaction.objectStore('transcripts');
-      const meetingsStore = transaction.objectStore('meetings');
-
-      // Save transcript
-      await new Promise<void>((resolve, reject) => {
-        const request = transcriptsStore.add(storedTranscript);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
-
-      // Update meeting metadata
-      const meeting = await new Promise<MeetingMetadata | null>((resolve, reject) => {
-        const request = meetingsStore.get(meetingId);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error);
-      });
-
-      if (meeting) {
-        meeting.lastUpdated = Date.now();
-        meeting.transcriptCount += 1;
-        await new Promise<void>((resolve, reject) => {
-          const request = meetingsStore.put(meeting);
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error);
-        });
+      try {
+        await transactionComplete;
+      } catch (error) {
+        if (missingMeeting) throw new Error('current-workspace recovery meeting was not found');
+        throw error;
       }
     } catch (error) {
       console.warn('Failed to save transcript to IndexedDB:', error);
-      // Fail silently - don't interrupt recording
     }
   }
 
-  /**
-   * Get all transcripts for a meeting
-   */
   async getTranscripts(meetingId: string): Promise<StoredTranscript[]> {
     try {
-      if (!this.db) await this.init();
-
-      const transaction = this.db!.transaction(['transcripts'], 'readonly');
-      const store = transaction.objectStore('transcripts');
-      const index = store.index('meetingId');
-
-      return new Promise((resolve, reject) => {
-        const request = index.getAll(meetingId);
-        request.onsuccess = () => {
-          const transcripts = request.result as StoredTranscript[];
-          // Sort by sequence ID
-          transcripts.sort((a, b) => a.sequenceId - b.sequenceId);
-          resolve(transcripts);
-        };
-        request.onerror = () => reject(request.error);
-      });
+      const { db, workspaceId } = await this.scopedDatabase();
+      const transaction = db.transaction(TRANSCRIPTS_STORE, 'readonly');
+      const index = transaction
+        .objectStore(TRANSCRIPTS_STORE)
+        .index(TRANSCRIPT_WORKSPACE_MEETING_INDEX);
+      const request = index.getAll(IDBKeyRange.only(workspaceMeetingKey(workspaceId, meetingId)));
+      const transcripts = recordsForWorkspace(
+        await this.waitForRequest<StoredTranscript[]>(request),
+        workspaceId,
+      );
+      return transcripts.sort((a, b) => a.sequenceId - b.sequenceId);
     } catch (error) {
       console.error('Failed to get transcripts from IndexedDB:', error);
       return [];
     }
   }
 
-  /**
-   * Get transcript count for a meeting
-   */
   async getTranscriptCount(meetingId: string): Promise<number> {
     try {
-      if (!this.db) await this.init();
-
-      const transaction = this.db!.transaction(['transcripts'], 'readonly');
-      const store = transaction.objectStore('transcripts');
-      const index = store.index('meetingId');
-
-      return new Promise((resolve, reject) => {
-        const request = index.count(meetingId);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
+      const { db, workspaceId } = await this.scopedDatabase();
+      const transaction = db.transaction(TRANSCRIPTS_STORE, 'readonly');
+      const index = transaction
+        .objectStore(TRANSCRIPTS_STORE)
+        .index(TRANSCRIPT_WORKSPACE_MEETING_INDEX);
+      return await this.waitForRequest<number>(
+        index.count(IDBKeyRange.only(workspaceMeetingKey(workspaceId, meetingId))),
+      );
     } catch (error) {
       console.error('Failed to get transcript count from IndexedDB:', error);
       return 0;
     }
   }
 
-  // Cleanup operations
+  async purgeSavedMeetings(): Promise<number> {
+    const { db, workspaceId } = await this.scopedDatabase();
+    try {
+      const meetings = await this.getStoredMeetings(db, workspaceId, 'saved');
+      for (const meeting of meetings) {
+        await this.deleteMeetingForWorkspace(db, workspaceId, meeting.meetingId);
+      }
+      return meetings.length;
+    } catch (error) {
+      console.error('Failed to purge saved meetings from IndexedDB:', error);
+      throw error;
+    }
+  }
 
-  /**
-   * Delete meetings older than specified days
-   * @param daysOld Number of days threshold
-   * @returns Number of meetings deleted
-   */
   async deleteOldMeetings(daysOld: number): Promise<number> {
     try {
-      if (!this.db) await this.init();
-
+      const { db, workspaceId } = await this.scopedDatabase();
       const cutoffTime = Date.now() - (daysOld * 24 * 60 * 60 * 1000);
-      const transaction = this.db!.transaction(['meetings', 'transcripts'], 'readwrite');
-      const meetingsStore = transaction.objectStore('meetings');
-      const transcriptsStore = transaction.objectStore('transcripts');
+      const meetings = await this.getStoredMeetings(db, workspaceId);
+      const expired = meetings.filter(meeting => meeting.lastUpdated < cutoffTime);
 
-      // Get all meetings
-      const allMeetings = await new Promise<MeetingMetadata[]>((resolve, reject) => {
-        const request = meetingsStore.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-
-      let deletedCount = 0;
-
-      for (const meeting of allMeetings) {
-        if (meeting.lastUpdated < cutoffTime) {
-          // Delete transcripts
-          await this.deleteTranscriptsForMeetingInternal(transcriptsStore, meeting.meetingId);
-
-          // Delete meeting
-          await new Promise<void>((resolve, reject) => {
-            const request = meetingsStore.delete(meeting.meetingId);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-          });
-
-          deletedCount++;
-        }
+      for (const meeting of expired) {
+        await this.deleteMeetingForWorkspace(db, workspaceId, meeting.meetingId);
       }
-
-      console.log(`Cleaned up ${deletedCount} old meetings`);
-      return deletedCount;
+      return expired.length;
     } catch (error) {
       console.error('Failed to delete old meetings:', error);
       return 0;
     }
   }
 
-  /**
-   * Delete saved meetings older than specified hours
-   * @param hoursOld Number of hours threshold after save
-   * @returns Number of meetings deleted
-   */
-  async deleteSavedMeetings(hoursOld: number): Promise<number> {
-    try {
-      if (!this.db) await this.init();
-
-      const cutoffTime = Date.now() - (hoursOld * 60 * 60 * 1000);
-      const transaction = this.db!.transaction(['meetings', 'transcripts'], 'readwrite');
-      const meetingsStore = transaction.objectStore('meetings');
-      const transcriptsStore = transaction.objectStore('transcripts');
-
-      // Get all meetings and filter for saved ones
-      const allMeetings = await new Promise<MeetingMetadata[]>((resolve, reject) => {
-        const request = meetingsStore.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-
-      // Filter for saved meetings (savedToSQLite = true)
-      const savedMeetings = allMeetings.filter(m => m.savedToSQLite === true);
-
-      let deletedCount = 0;
-
-      for (const meeting of savedMeetings) {
-        if (meeting.lastUpdated < cutoffTime) {
-          // Delete transcripts
-          await this.deleteTranscriptsForMeetingInternal(transcriptsStore, meeting.meetingId);
-
-          // Delete meeting
-          await new Promise<void>((resolve, reject) => {
-            const request = meetingsStore.delete(meeting.meetingId);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-          });
-
-          deletedCount++;
-        }
-      }
-
-      console.log(`Cleaned up ${deletedCount} saved meetings`);
-      return deletedCount;
-    } catch (error) {
-      console.error('Failed to delete saved meetings:', error);
-      return 0;
-    }
+  async deleteSavedMeetings(_hoursOld: number): Promise<number> {
+    return this.purgeSavedMeetings();
   }
 
-  /**
-   * Helper to delete all transcripts for a meeting
-   */
-  private async deleteTranscriptsForMeetingInternal(
+  private queueTranscriptDeletion(
     transcriptsStore: IDBObjectStore,
-    meetingId: string
-  ): Promise<void> {
-    const index = transcriptsStore.index('meetingId');
+    workspaceId: string,
+    meetingId: string,
+  ): void {
+    const index = transcriptsStore.index(TRANSCRIPT_WORKSPACE_MEETING_INDEX);
+    const request = index.openCursor(IDBKeyRange.only(workspaceMeetingKey(workspaceId, meetingId)));
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+  }
 
+  private async getStoredMeetings(
+    db: IDBDatabase,
+    workspaceId: string,
+    savedState?: SavedState,
+  ): Promise<MeetingMetadata[]> {
+    const transaction = db.transaction(MEETINGS_STORE, 'readonly');
+    const store = transaction.objectStore(MEETINGS_STORE);
+    const request = savedState
+      ? store.index(MEETING_WORKSPACE_SAVED_INDEX)
+        .getAll(IDBKeyRange.only([workspaceId, savedState]))
+      : store.index(MEETING_WORKSPACE_INDEX).getAll(IDBKeyRange.only(workspaceId));
+    return recordsForWorkspace(
+      await this.waitForRequest<MeetingMetadata[]>(request),
+      workspaceId,
+    );
+  }
+
+  private waitForRequest<T>(request: IDBRequest): Promise<T> {
     return new Promise((resolve, reject) => {
-      const request = index.openCursor(IDBKeyRange.only(meetingId));
-
-      request.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-        if (cursor) {
-          cursor.delete();
-          cursor.continue();
-        } else {
-          resolve();
-        }
-      };
-
+      request.onsuccess = () => resolve(request.result as T);
       request.onerror = () => reject(request.error);
+    });
+  }
+
+  private waitForTransaction(transaction: IDBTransaction): Promise<void> {
+    return new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(
+        transaction.error ?? new Error('IndexedDB transaction failed'),
+      );
+      transaction.onabort = () => reject(
+        transaction.error ?? new Error('IndexedDB transaction was aborted'),
+      );
     });
   }
 }
 
-// Export singleton instance
 export const indexedDBService = new IndexedDBService();

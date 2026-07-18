@@ -589,7 +589,7 @@ impl RecordingManager {
                 }
             }
         } else {
-            warn!("❌ Device '{}' not yet available", device_name);
+            warn!("Recording device is not yet available for reconnection");
             Ok(false)
         }
     }
@@ -601,10 +601,7 @@ impl RecordingManager {
         device_name: String,
         device_type: DeviceMonitorType,
     ) {
-        warn!(
-            "📱 Device disconnected: {} ({:?})",
-            device_name, device_type
-        );
+        warn!("Recording device disconnected (type: {:?})", device_type);
 
         // Mark state as reconnecting (keeps recording alive but in waiting state)
         let device = match device_type {
