@@ -506,6 +506,15 @@ impl ActionItemsRepository {
             source_chunk_id: Some(source_chunk_id.as_str()),
         };
 
+        // ADR-0030 §7: record a correction only when the workspace has learning
+        // ON. Off suppresses the `correction_events` row, not the status change.
+        // Read before the transaction opens so the append below can be gated.
+        let capture =
+            crate::database::repositories::setting::SettingsRepository::learning_capture_enabled(
+                pool, ctx,
+            )
+            .await;
+
         // One transaction: theirs' compare-and-swap verdict and ours' record of it
         // land together, or not at all (ADR-0030 §2). Approval keeps theirs'
         // `EXISTS` predicate, which re-validates an active same-meeting source at
@@ -566,9 +575,12 @@ impl ActionItemsRepository {
             return Ok(false);
         }
 
-        // The verdict landed in this transaction; record it in the same one so the
-        // learning signal can never diverge from the state it describes.
-        CorrectionEventsRepository::append_tx(&mut transaction, ctx, &event).await?;
+        // The verdict landed in this transaction; record it in the same one (when
+        // learning is on) so the signal can never diverge from the state it
+        // describes.
+        if capture {
+            CorrectionEventsRepository::append_tx(&mut transaction, ctx, &event).await?;
+        }
         transaction.commit().await?;
         Ok(true)
     }
@@ -684,6 +696,14 @@ impl ActionItemsRepository {
             source_chunk_id: source_chunk_id.as_deref(),
         });
 
+        // ADR-0030 §7: only record when learning is ON (off suppresses capture,
+        // not the edit). Read before the transaction so the append can be gated.
+        let capture =
+            crate::database::repositories::setting::SettingsRepository::learning_capture_enabled(
+                pool, ctx,
+            )
+            .await;
+
         // One transaction: theirs' compare-and-swap edit and ours' correction
         // record (only for a real text change) land together (ADR-0030 §2).
         let mut transaction = pool.begin().await?;
@@ -713,8 +733,10 @@ impl ActionItemsRepository {
             );
             return Ok(false);
         }
-        if let Some(event) = &event {
-            CorrectionEventsRepository::append_tx(&mut transaction, ctx, event).await?;
+        if capture {
+            if let Some(event) = &event {
+                CorrectionEventsRepository::append_tx(&mut transaction, ctx, event).await?;
+            }
         }
         transaction.commit().await?;
         Ok(true)

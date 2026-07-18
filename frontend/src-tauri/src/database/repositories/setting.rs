@@ -632,6 +632,23 @@ impl SettingsRepository {
         }
     }
 
+    /// Whether correction CAPTURE is on for this workspace — the ADR-0030 §7
+    /// master switch (`learningConfig.enabled`). The HITL mutation paths call this
+    /// before appending a `correction_events` row, so that turning learning off
+    /// means the app stops recording meeting text, exactly as the setting's copy
+    /// promises ("behaves as it did before ADR-0030"), not just stops mining it.
+    ///
+    /// Fails safe to **OFF** on a read error: never record content a workspace may
+    /// have opted out of because a query hiccuped. (A corrupt blob already yields
+    /// [`LearningConfig::disabled`] inside [`Self::get_learning_config`], so that
+    /// path is off too; an absent row is the fresh-install default, which is on.)
+    pub async fn learning_capture_enabled(pool: &SqlitePool, ctx: &AuthContext) -> bool {
+        Self::get_learning_config(pool, ctx)
+            .await
+            .map(|config| config.enabled)
+            .unwrap_or(false)
+    }
+
     /// Upserts the workspace's [`LearningConfig`] as JSON into the
     /// `settings.learningConfig` column. Mirrors [`Self::set_redaction_config`]:
     /// legacy single-row (`id = '1'`) with the

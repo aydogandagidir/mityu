@@ -705,6 +705,15 @@ impl SummariesRepository {
         let approved_source = approved_source_chunk_id
             .as_deref()
             .map(|source_chunk_id| (meeting_id, source_chunk_id));
+        // ADR-0030 §7: record a correction only when the workspace has learning
+        // ON. Off means no `correction_events` row — the status change itself
+        // still lands (the CAS write is unconditional); only the recording of
+        // meeting text is suppressed, as the setting's copy promises.
+        let capture =
+            crate::database::repositories::setting::SettingsRepository::learning_capture_enabled(
+                pool, ctx,
+            )
+            .await;
         let updated = Self::write_sections_as_draft_if_current(
             pool,
             ctx,
@@ -712,7 +721,7 @@ impl SummariesRepository {
             current_rev,
             &sections_json,
             approved_source,
-            Some(&event),
+            capture.then_some(&event),
         )
         .await?;
         if !updated {
@@ -835,7 +844,13 @@ impl SummariesRepository {
 
         // An edit is not an approve, so no source re-validation (`None`); ours'
         // correction event rides theirs' compare-and-swap write in one
-        // transaction, appended only if the CAS wins (ADR-0030 §2).
+        // transaction, appended only if the CAS wins (ADR-0030 §2) AND the
+        // workspace has learning ON (§7 — off suppresses capture, not the edit).
+        let capture =
+            crate::database::repositories::setting::SettingsRepository::learning_capture_enabled(
+                pool, ctx,
+            )
+            .await;
         let updated = Self::write_sections_as_draft_if_current(
             pool,
             ctx,
@@ -843,7 +858,7 @@ impl SummariesRepository {
             current_rev,
             &sections_json,
             None,
-            Some(&event),
+            capture.then_some(&event),
         )
         .await?;
         if !updated {

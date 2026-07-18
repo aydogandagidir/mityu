@@ -441,20 +441,37 @@ impl Drop for InFlightGuard {
     }
 }
 
-/// Reduce raw correction events to the model→human deltas the LLM miner reads.
+/// Reduce raw correction events to the model→human deltas the LLM miner reads,
+/// collapsed to the LAST verdict per `(meeting_id, subject_id)`.
 ///
-/// Only [`CorrectionAction::Edit`] and [`CorrectionAction::Reject`] carry a
-/// preference signal. An `Approve` of an untouched block is the model getting it
-/// right — nothing to learn — and a `Restore` retracts an earlier reject, a
-/// signal the user took back; both are dropped. An event with no `original_text`
-/// (nothing the model wrote) cannot show a delta and is skipped.
+/// The collapse mirrors the deterministic miner's "one subject, one vote"
+/// (`learning::miner::last_verdict_per_subject`): a block rejected and then
+/// restored, or edited three times, must count as its FINAL state, never an
+/// intermediate one the user moved past — otherwise the model is asked to learn
+/// from a preference the user retracted. `events` arrives newest-first
+/// (`list_recent` orders `created_at DESC, id DESC`), so the first sighting of a
+/// subject IS its latest verdict; older events for it are skipped.
+///
+/// Of the surviving verdicts, only [`CorrectionAction::Edit`] and
+/// [`CorrectionAction::Reject`] carry a preference signal. An `Approve` (the
+/// model got it right, or an edit the user then accepted) and a `Restore` (a
+/// reject taken back) are dropped — exactly as `mine_term_substitutions` /
+/// `mine_section_rejections` drop them. An event with no `original_text` (nothing
+/// the model wrote) cannot show a delta and is skipped.
 ///
 /// Pure and borrowing: [`CorrectionSummary`] holds `&str` into `events`, so the
 /// caller keeps `events` alive while it builds the prompt. This is the one piece
 /// worth unit-testing without a provider.
 fn summaries_from_events(events: &[CorrectionEventRow]) -> Vec<CorrectionSummary<'_>> {
+    let mut resolved: HashSet<(&str, &str)> = HashSet::new();
     let mut out = Vec::new();
     for event in events {
+        // Newest-first, so the first sighting of a subject is its final verdict;
+        // every older event for it was superseded (a re-edit, or a restore that
+        // cancelled a reject).
+        if !resolved.insert((event.meeting_id.as_str(), event.subject_id.as_str())) {
+            continue;
+        }
         match event.action {
             CorrectionAction::Edit => {
                 let Some(original) = event.original_text.as_deref() else {
@@ -745,18 +762,21 @@ mod llm_glue_tests {
     use crate::database::repositories::correction_event::CorrectionSubject;
 
     /// One correction event with only the fields the miner reads set; the rest are
-    /// the never-synced insert-time baseline.
+    /// the never-synced insert-time baseline. `subject` + `created_at` are
+    /// explicit so tests can exercise the last-verdict-per-subject collapse.
     fn event(
+        subject: &str,
+        created_at: &str,
         action: CorrectionAction,
         original: Option<&str>,
         final_text: Option<&str>,
         section: Option<&str>,
     ) -> CorrectionEventRow {
         CorrectionEventRow {
-            id: "e1".to_string(),
+            id: format!("e-{subject}-{created_at}"),
             meeting_id: "m1".to_string(),
             subject_kind: CorrectionSubject::SummaryBlock,
-            subject_id: "b1".to_string(),
+            subject_id: subject.to_string(),
             action,
             original_text: original.map(str::to_string),
             final_text: final_text.map(str::to_string),
@@ -765,23 +785,47 @@ mod llm_glue_tests {
             section_title: section.map(str::to_string),
             template_id: None,
             model: None,
-            created_at: "2026-01-01T00:00:00Z".to_string(),
+            created_at: created_at.to_string(),
         }
     }
 
     #[test]
     fn only_edits_and_rejects_become_summaries() {
+        // Distinct subjects, so this exercises the action filter, not the collapse.
         let events = vec![
             event(
+                "b1",
+                "2026-01-04T00:00:00Z",
                 CorrectionAction::Edit,
                 Some("3 aksiyon çıktı"),
                 Some("3 takip çıktı"),
                 Some("Kararlar"),
             ),
-            event(CorrectionAction::Reject, Some("dolgu cümlesi"), None, None),
-            // Signal-free: the model got it right, then a reject was taken back.
-            event(CorrectionAction::Approve, Some("x"), Some("x"), None),
-            event(CorrectionAction::Restore, Some("y"), None, None),
+            event(
+                "b2",
+                "2026-01-03T00:00:00Z",
+                CorrectionAction::Reject,
+                Some("dolgu cümlesi"),
+                None,
+                None,
+            ),
+            // Signal-free: the model got it right, and a reject taken back.
+            event(
+                "b3",
+                "2026-01-02T00:00:00Z",
+                CorrectionAction::Approve,
+                Some("x"),
+                Some("x"),
+                None,
+            ),
+            event(
+                "b4",
+                "2026-01-01T00:00:00Z",
+                CorrectionAction::Restore,
+                Some("y"),
+                None,
+                None,
+            ),
         ];
         let summaries = summaries_from_events(&events);
         assert_eq!(summaries.len(), 2, "approve + restore carry no signal");
@@ -801,7 +845,14 @@ mod llm_glue_tests {
     #[test]
     fn an_event_without_original_text_is_skipped() {
         // Nothing the model wrote ⇒ no delta to show a model.
-        let events = vec![event(CorrectionAction::Edit, None, Some("takip"), None)];
+        let events = vec![event(
+            "b1",
+            "2026-01-01T00:00:00Z",
+            CorrectionAction::Edit,
+            None,
+            Some("takip"),
+            None,
+        )];
         assert!(summaries_from_events(&events).is_empty());
     }
 
@@ -809,11 +860,82 @@ mod llm_glue_tests {
     fn an_edit_with_no_final_text_shows_an_empty_human_side() {
         // Defensive: an edit should carry both sides, but a missing final must map
         // to "" rather than drop the correction or panic.
-        let events = vec![event(CorrectionAction::Edit, Some("aksiyon"), None, None)];
+        let events = vec![event(
+            "b1",
+            "2026-01-01T00:00:00Z",
+            CorrectionAction::Edit,
+            Some("aksiyon"),
+            None,
+            None,
+        )];
         let summaries = summaries_from_events(&events);
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].final_text, "");
         assert!(!summaries[0].rejected);
+    }
+
+    #[test]
+    fn a_reject_later_restored_collapses_to_no_signal() {
+        // Newest-first, as `list_recent` returns: the Restore is more recent than
+        // the Reject for the SAME subject, so the subject's final verdict is
+        // Restore — dropped. A retracted reject must never reach the model.
+        let events = vec![
+            event(
+                "b1",
+                "2026-01-02T00:00:00Z",
+                CorrectionAction::Restore,
+                Some("müşteri memnun"),
+                None,
+                None,
+            ),
+            event(
+                "b1",
+                "2026-01-01T00:00:00Z",
+                CorrectionAction::Reject,
+                Some("müşteri memnun"),
+                None,
+                None,
+            ),
+        ];
+        assert!(
+            summaries_from_events(&events).is_empty(),
+            "a restored reject carries no signal (mirrors the deterministic miner)",
+        );
+    }
+
+    #[test]
+    fn re_edits_of_one_subject_collapse_to_the_latest() {
+        // Three edits of one block are ONE correction refined — the latest wins,
+        // not an intermediate the user moved past.
+        let events = vec![
+            event(
+                "b1",
+                "2026-01-03T00:00:00Z",
+                CorrectionAction::Edit,
+                Some("aksiyon"),
+                Some("takip"),
+                None,
+            ),
+            event(
+                "b1",
+                "2026-01-02T00:00:00Z",
+                CorrectionAction::Edit,
+                Some("aksiyon"),
+                Some("aksiyon maddesi"),
+                None,
+            ),
+            event(
+                "b1",
+                "2026-01-01T00:00:00Z",
+                CorrectionAction::Edit,
+                Some("aksiyon"),
+                Some("iş"),
+                None,
+            ),
+        ];
+        let summaries = summaries_from_events(&events);
+        assert_eq!(summaries.len(), 1, "one subject, one vote");
+        assert_eq!(summaries[0].final_text, "takip", "the latest edit wins");
     }
 }
 
