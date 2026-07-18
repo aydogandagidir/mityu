@@ -1259,7 +1259,7 @@ async fn generation_forces_summary_blocks_and_action_items_to_draft() {
             ],
         )
     };
-    SummariesRepository::upsert_draft(&pool, &local, &generated_summary, None, None)
+    SummariesRepository::upsert_draft(&pool, &local, &generated_summary, None, None, &[])
         .await
         .expect("insert untrusted summary generation");
     let summary = SummariesRepository::get_by_meeting(&pool, &local, &meeting)
@@ -1366,6 +1366,7 @@ async fn action_item_write_and_approval_gates_require_active_evidence() {
             &local,
             "approval-target",
             BlockStatus::Approved,
+            None,
         )
         .await
         .expect("approval with deleted source returns a decision"),
@@ -1389,6 +1390,7 @@ async fn action_item_write_and_approval_gates_require_active_evidence() {
             &local,
             "approval-target",
             BlockStatus::Approved,
+            None,
         )
         .await
         .expect("approval with deleted meeting returns a decision"),
@@ -1476,7 +1478,7 @@ async fn approved_action_center_filters_untrusted_states_and_preserves_source_li
         "soft-deleted-source",
     ] {
         assert!(
-            ActionItemsRepository::set_status(&pool, &local, id, BlockStatus::Approved)
+            ActionItemsRepository::set_status(&pool, &local, id, BlockStatus::Approved, None)
                 .await
                 .unwrap_or_else(|error| panic!("approve {id}: {error}")),
             "{id} should approve while its original source is active"
@@ -1492,11 +1494,15 @@ async fn approved_action_center_filters_untrusted_states_and_preserves_source_li
     )
     .await
     .expect("edit action"));
-    assert!(
-        ActionItemsRepository::set_status(&pool, &local, "rejected", BlockStatus::Rejected)
-            .await
-            .expect("reject action")
-    );
+    assert!(ActionItemsRepository::set_status(
+        &pool,
+        &local,
+        "rejected",
+        BlockStatus::Rejected,
+        None
+    )
+    .await
+    .expect("reject action"));
     assert!(
         ActionItemsRepository::soft_delete(&pool, &local, "soft-deleted-item")
             .await
@@ -1516,6 +1522,7 @@ async fn approved_action_center_filters_untrusted_states_and_preserves_source_li
         &local,
         "approved-older",
         BlockStatus::Approved,
+        None,
     )
     .await
     .expect("approve older action"));
@@ -1533,6 +1540,7 @@ async fn approved_action_center_filters_untrusted_states_and_preserves_source_li
         &local,
         "approved-deleted-meeting",
         BlockStatus::Approved,
+        None,
     )
     .await
     .expect("approve deleted-meeting action"));
@@ -1550,6 +1558,7 @@ async fn approved_action_center_filters_untrusted_states_and_preserves_source_li
         &other,
         "approved-other",
         BlockStatus::Approved,
+        None,
     )
     .await
     .expect("approve other-workspace action"));
