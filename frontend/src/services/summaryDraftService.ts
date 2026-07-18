@@ -199,10 +199,14 @@ export class SummaryDraftService {
 
   /**
    * Human REJECT of one summary block.
+   * @param reason OPTIONAL rationale, recorded on the correction log so the
+   *   rejection is teachable — "this was wrong" is not a signal, "wrong because
+   *   X" is. Never gates the reject; empty/whitespace is normalized away
+   *   backend-side, so callers may pass whatever the user left in the field.
    * @returns `false` for an illegal transition / unknown block (soft no-op).
    */
-  async rejectBlock(meetingId: string, blockId: string): Promise<boolean> {
-    return invoke<boolean>('api_reject_summary_block', { meetingId, blockId });
+  async rejectBlock(meetingId: string, blockId: string, reason?: string): Promise<boolean> {
+    return invoke<boolean>('api_reject_summary_block', { meetingId, blockId, reason });
   }
 
   /**
@@ -251,10 +255,11 @@ export class SummaryDraftService {
 
   /**
    * Human REJECT of one action item.
+   * @param reason OPTIONAL rationale — see {@link rejectBlock}.
    * @returns `false` for an illegal transition / unknown item (soft no-op).
    */
-  async rejectActionItem(itemId: string): Promise<boolean> {
-    return invoke<boolean>('api_reject_action_item', { itemId });
+  async rejectActionItem(itemId: string, reason?: string): Promise<boolean> {
+    return invoke<boolean>('api_reject_action_item', { itemId, reason });
   }
 
   /**

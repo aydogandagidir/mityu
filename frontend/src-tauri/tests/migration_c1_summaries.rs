@@ -37,7 +37,11 @@ const NEW_VERSION: i64 = 20260706000000;
 
 /// Exact expected `summaries` column order (PRAGMA table_info order =
 /// declaration order in the migration).
-const SUMMARIES_COLS: [&str; 15] = [
+///
+/// `applied_rules` trails the original C1 set because `20260716000000`
+/// (ADR-0024) appends it with `ALTER TABLE ... ADD COLUMN`, and SQLite puts an
+/// added column last regardless of where it would read best.
+const SUMMARIES_COLS: [&str; 16] = [
     "id",
     "meeting_id",
     "workspace_id",
@@ -53,6 +57,7 @@ const SUMMARIES_COLS: [&str; 15] = [
     "updated_by",
     "rev",
     "deleted_at",
+    "applied_rules",
 ];
 
 /// Exact expected `action_items` column order.
@@ -206,6 +211,10 @@ async fn assert_new_tables_shape(pool: &SqlitePool) {
     assert_col(t, &cols, "updated_by", "TEXT", false, None, false);
     assert_col(t, &cols, "rev", "INTEGER", true, Some("1"), false);
     assert_col(t, &cols, "deleted_at", "TEXT", false, None, false);
+    // ADR-0024 §5: nullable, no default — NULL means "generated before the
+    // learning system, or with no active rules", which must stay distinguishable
+    // from an empty snapshot.
+    assert_col(t, &cols, "applied_rules", "TEXT", false, None, false);
 
     let cols = table_columns(pool, "action_items").await;
     let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();

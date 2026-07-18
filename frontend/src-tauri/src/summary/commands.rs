@@ -556,6 +556,17 @@ fn summary_draft_err(
     err.to_string()
 }
 
+/// Normalizes an optional human rationale on its way to the correction log
+/// (ADR-0024 §3): trimmed, and empty-after-trim collapsed to `None`.
+///
+/// The UI offers the reason field on every reject and lets the user submit it
+/// untouched, so `Some("")` and `Some("   ")` are the COMMON case, not an edge
+/// one — storing them would litter the log with rows that look explained and are
+/// not, and the miner would have to re-derive this distinction later.
+fn normalize_reason(reason: Option<&str>) -> Option<&str> {
+    reason.map(str::trim).filter(|r| !r.is_empty())
+}
+
 /// The read-side payload for one meeting's structured, source-linked summary
 /// draft plus its extracted action items (C1.5).
 ///
@@ -668,22 +679,36 @@ pub async fn api_approve_summary_block(
     );
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
-    SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Approved)
-        .await
-        .map_err(summary_draft_err)
+    SummariesRepository::set_block_status(
+        pool,
+        &ctx,
+        &meeting_id,
+        &block_id,
+        BlockStatus::Approved,
+        None,
+    )
+    .await
+    .map_err(summary_draft_err)
 }
 
 /// Human REJECT of one summary block. `Ok(false)` = illegal transition,
 /// unknown block, or no summary in this workspace.
 ///
-/// TS binding: `invoke("api_reject_summary_block", { meetingId, blockId })
+/// `reason` is the human's OPTIONAL rationale, recorded on the correction event
+/// (ADR-0024 §3): "this was wrong" teaches nothing, "wrong because X" teaches.
+/// It never gates the reject — an absent, empty, or whitespace-only reason is
+/// normalized to `None` and the verdict lands either way.
+///
+/// TS binding: `invoke("api_reject_summary_block", { meetingId, blockId, reason })
 ///   -> boolean`.
 #[tauri::command]
 pub async fn api_reject_summary_block(
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     block_id: String,
+    reason: Option<String>,
 ) -> Result<bool, String> {
+    // ids only — a rejection rationale is meeting content (§0.6).
     log_info!(
         "api_reject_summary_block called for meeting_id: {}, block_id: {}",
         meeting_id,
@@ -691,9 +716,16 @@ pub async fn api_reject_summary_block(
     );
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
-    SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Rejected)
-        .await
-        .map_err(summary_draft_err)
+    SummariesRepository::set_block_status(
+        pool,
+        &ctx,
+        &meeting_id,
+        &block_id,
+        BlockStatus::Rejected,
+        normalize_reason(reason.as_deref()),
+    )
+    .await
+    .map_err(summary_draft_err)
 }
 
 /// Human EDIT of one summary block's content. NEVER touches `source_chunk_id`
@@ -742,9 +774,16 @@ pub async fn api_restore_summary_block(
     );
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
-    SummariesRepository::set_block_status(pool, &ctx, &meeting_id, &block_id, BlockStatus::Draft)
-        .await
-        .map_err(summary_draft_err)
+    SummariesRepository::set_block_status(
+        pool,
+        &ctx,
+        &meeting_id,
+        &block_id,
+        BlockStatus::Draft,
+        None,
+    )
+    .await
+    .map_err(summary_draft_err)
 }
 
 /// The explicit HUMAN approval of a whole summary (docs/CONTRACTS.md §4). The
@@ -753,18 +792,59 @@ pub async fn api_restore_summary_block(
 /// `source_chunk_id` still resolves (ADR-0019). `Ok(false)` on any gate
 /// failure; on success the row is stamped `approved_at`/`approved_by`.
 ///
+/// On success this also runs the rule miners (ADR-0024 §8). Approving is the
+/// natural trigger: it is the moment a human has finished reviewing, so it is
+/// exactly when new corrections exist to learn from — and it keeps learning out
+/// of the hot path of every keystroke.
+///
+/// Two passes, deliberately different in how they run:
+/// - The **deterministic** miner is arithmetic over text the user already
+///   produced — instant — so it runs inline, and its new rules are ready at once.
+/// - The **LLM** miner (opt-in, `llmMinerEnabled`) is a full model inference that
+///   takes seconds even on local Ollama, so it runs **fire-and-forget** in a
+///   background task: the approval returns NOW and any new `Proposed` rules appear
+///   on the next rules-screen load (ADR-0024 §8, C2 trigger). It is a no-op unless
+///   the toggle is on.
+///
+/// A mining failure — from either pass — NEVER fails the approval. The user
+/// approved their summary; losing that because a rule could not be written would
+/// trade the thing they asked for against a thing they did not.
+///
 /// TS binding: `invoke("api_approve_summary", { meetingId }) -> boolean`.
 #[tauri::command]
-pub async fn api_approve_summary(
+pub async fn api_approve_summary<R: Runtime>(
+    app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
 ) -> Result<bool, String> {
     log_info!("api_approve_summary called for meeting_id: {}", meeting_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
-    SummariesRepository::approve_summary(pool, &ctx, &meeting_id)
+    let approved = SummariesRepository::approve_summary(pool, &ctx, &meeting_id)
         .await
-        .map_err(summary_draft_err)
+        .map_err(summary_draft_err)?;
+
+    if approved {
+        // Deterministic pass: cheap, inline, results ready immediately.
+        if let Err(e) = crate::learning::commands::mine_and_persist(pool, &ctx).await {
+            log_error!("Rule mining after approval failed (approval stands): {}", e);
+        }
+
+        // LLM pass: background, never on the approve's critical path. The context
+        // is captured HERE (at command time) and moved into the task — never
+        // re-resolved inside — per the ADR-0010 note on the summary spawn above.
+        let app_bg = app.clone();
+        let pool_bg = pool.clone();
+        let ctx_bg = ctx.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) =
+                crate::learning::commands::mine_llm_and_persist(&app_bg, &pool_bg, &ctx_bg).await
+            {
+                log_error!("Background LLM rule mining failed (approval stands): {}", e);
+            }
+        });
+    }
+    Ok(approved)
 }
 
 /// Human APPROVE of one action item. The repository re-validates the item's
@@ -780,7 +860,7 @@ pub async fn api_approve_action_item(
     log_info!("api_approve_action_item called for item_id: {}", item_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
-    ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Approved)
+    ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Approved, None)
         .await
         .map_err(summary_draft_err)
 }
@@ -833,18 +913,29 @@ pub async fn api_get_open_action_items(
 /// Human REJECT of one action item. `Ok(false)` = illegal transition or
 /// unknown item in this workspace.
 ///
-/// TS binding: `invoke("api_reject_action_item", { itemId }) -> boolean`.
+/// `reason` is the human's OPTIONAL rationale — see
+/// [`api_reject_summary_block`]. It never gates the reject.
+///
+/// TS binding: `invoke("api_reject_action_item", { itemId, reason }) -> boolean`.
 #[tauri::command]
 pub async fn api_reject_action_item(
     state: tauri::State<'_, AppState>,
     item_id: String,
+    reason: Option<String>,
 ) -> Result<bool, String> {
+    // id only — a rejection rationale is meeting content (§0.6).
     log_info!("api_reject_action_item called for item_id: {}", item_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
-    ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Rejected)
-        .await
-        .map_err(summary_draft_err)
+    ActionItemsRepository::set_status(
+        pool,
+        &ctx,
+        &item_id,
+        BlockStatus::Rejected,
+        normalize_reason(reason.as_deref()),
+    )
+    .await
+    .map_err(summary_draft_err)
 }
 
 /// Human RESTORE of one rejected action item back to draft (`rejected ->
@@ -859,7 +950,7 @@ pub async fn api_restore_action_item(
     log_info!("api_restore_action_item called for item_id: {}", item_id);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
-    ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Draft)
+    ActionItemsRepository::set_status(pool, &ctx, &item_id, BlockStatus::Draft, None)
         .await
         .map_err(summary_draft_err)
 }
@@ -955,6 +1046,32 @@ pub async fn api_edit_action_item(
     )
     .await
     .map_err(summary_draft_err)
+}
+
+#[cfg(test)]
+mod reason_normalization_tests {
+    use super::normalize_reason;
+
+    /// The UI offers the reason field on EVERY reject and lets the user submit
+    /// it untouched, so blank is the common path, not an edge case — it must not
+    /// reach the log looking like an explanation.
+    #[test]
+    fn blank_reasons_collapse_to_none() {
+        assert_eq!(normalize_reason(None), None);
+        assert_eq!(normalize_reason(Some("")), None);
+        assert_eq!(normalize_reason(Some("   ")), None);
+        assert_eq!(normalize_reason(Some("\t\n  \r\n")), None);
+    }
+
+    #[test]
+    fn real_reasons_survive_trimmed() {
+        assert_eq!(
+            normalize_reason(Some("  bu bir karar değil, sohbetti  ")),
+            Some("bu bir karar değil, sohbetti"),
+        );
+        // Inner whitespace is the user's, not ours.
+        assert_eq!(normalize_reason(Some("iki  boşluk")), Some("iki  boşluk"));
+    }
 }
 
 #[cfg(test)]

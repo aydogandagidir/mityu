@@ -247,14 +247,21 @@ async fn upserts_and_reads_are_workspace_scoped_both_directions() {
             vec![block("b1", "c-l1", BlockStatus::Draft)],
         )
     };
-    SummariesRepository::upsert_draft(&pool, &local, &local_draft, Some("llama3.2"), Some("std"))
-        .await
-        .expect("local upsert_draft");
+    SummariesRepository::upsert_draft(
+        &pool,
+        &local,
+        &local_draft,
+        Some("llama3.2"),
+        Some("std"),
+        &[],
+    )
+    .await
+    .expect("local upsert_draft");
     let other_draft = notes(
         &other_meeting,
         vec![block("b-o1", "c-o1", BlockStatus::Draft)],
     );
-    SummariesRepository::upsert_draft(&pool, &other, &other_draft, None, None)
+    SummariesRepository::upsert_draft(&pool, &other, &other_draft, None, None, &[])
         .await
         .expect("other upsert_draft");
 
@@ -343,6 +350,7 @@ async fn foreign_context_writes_are_refused_and_rows_stay_byte_identical() {
         &notes(&meeting, vec![block("b1", "c-1", BlockStatus::Draft)]),
         None,
         None,
+        &[],
     )
     .await
     .expect("local upsert_draft");
@@ -360,6 +368,7 @@ async fn foreign_context_writes_are_refused_and_rows_stay_byte_identical() {
         &notes(&meeting, vec![block("b-x", "c-1", BlockStatus::Draft)]),
         None,
         None,
+        &[],
     )
     .await;
     assert!(
@@ -380,7 +389,8 @@ async fn foreign_context_writes_are_refused_and_rows_stay_byte_identical() {
         &other,
         &meeting,
         "b1",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("foreign set_block_status runs"));
@@ -403,7 +413,7 @@ async fn foreign_context_writes_are_refused_and_rows_stay_byte_identical() {
         .await
         .expect("foreign summary soft_delete runs"));
     assert!(
-        !ActionItemsRepository::set_status(&pool, &other, "a1", BlockStatus::Approved)
+        !ActionItemsRepository::set_status(&pool, &other, "a1", BlockStatus::Approved, None)
             .await
             .expect("foreign set_status runs")
     );
@@ -462,6 +472,7 @@ async fn writes_bump_rev_and_stamp_updated_by_and_rfc3339_timestamps() {
         &notes(&meeting, vec![block("b1", "c-1", BlockStatus::Draft)]),
         None,
         None,
+        &[],
     )
     .await
     .expect("upsert_draft");
@@ -488,7 +499,8 @@ async fn writes_bump_rev_and_stamp_updated_by_and_rfc3339_timestamps() {
         &reviewer,
         &meeting,
         "b1",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("reviewer set_block_status"));
@@ -509,6 +521,7 @@ async fn writes_bump_rev_and_stamp_updated_by_and_rfc3339_timestamps() {
         &notes(&meeting, vec![block("b2", "c-1", BlockStatus::Draft)]),
         Some("claude-3-5"),
         None,
+        &[],
     )
     .await
     .expect("regeneration upsert");
@@ -573,7 +586,7 @@ async fn cross_tenant_source_injection_is_rejected_at_write_time() {
             block("b2", "c-foreign", BlockStatus::Draft),
         ],
     );
-    match SummariesRepository::upsert_draft(&pool, &local, &injected, None, None).await {
+    match SummariesRepository::upsert_draft(&pool, &local, &injected, None, None, &[]).await {
         Err(SummaryDraftError::UnresolvableSources { count }) => assert_eq!(count, 1),
         other => panic!("expected UnresolvableSources, got {other:?}"),
     }
@@ -586,7 +599,7 @@ async fn cross_tenant_source_injection_is_rejected_at_write_time() {
             block("b2", "c-nonexistent", BlockStatus::Draft),
         ],
     );
-    match SummariesRepository::upsert_draft(&pool, &local, &doubly_bad, None, None).await {
+    match SummariesRepository::upsert_draft(&pool, &local, &doubly_bad, None, None, &[]).await {
         Err(SummaryDraftError::UnresolvableSources { count }) => assert_eq!(count, 2),
         other => panic!("expected UnresolvableSources, got {other:?}"),
     }
@@ -597,7 +610,7 @@ async fn cross_tenant_source_injection_is_rejected_at_write_time() {
         &local_meeting,
         vec![block("b1", "c-local2", BlockStatus::Draft)],
     );
-    match SummariesRepository::upsert_draft(&pool, &local, &wrong_meeting, None, None).await {
+    match SummariesRepository::upsert_draft(&pool, &local, &wrong_meeting, None, None, &[]).await {
         Err(SummaryDraftError::UnresolvableSources { count }) => assert_eq!(count, 1),
         other => panic!("expected UnresolvableSources, got {other:?}"),
     }
@@ -656,6 +669,7 @@ async fn approvals_refuse_when_cited_segment_is_gone() {
         ),
         None,
         None,
+        &[],
     )
     .await
     .expect("upsert_draft");
@@ -669,7 +683,8 @@ async fn approvals_refuse_when_cited_segment_is_gone() {
         &local,
         &meeting,
         "b1",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("approve b1"));
@@ -686,14 +701,15 @@ async fn approvals_refuse_when_cited_segment_is_gone() {
             &local,
             &meeting,
             "b2",
-            BlockStatus::Approved
+            BlockStatus::Approved,
+            None
         )
         .await
         .expect("stale block approve runs"),
         "approving a block whose segment is gone must refuse"
     );
     assert!(
-        !ActionItemsRepository::set_status(&pool, &local, "a1", BlockStatus::Approved)
+        !ActionItemsRepository::set_status(&pool, &local, "a1", BlockStatus::Approved, None)
             .await
             .expect("stale item approve runs"),
         "approving an item whose segment is gone must refuse"
@@ -706,7 +722,8 @@ async fn approvals_refuse_when_cited_segment_is_gone() {
         &local,
         &meeting,
         "b2",
-        BlockStatus::Rejected
+        BlockStatus::Rejected,
+        None
     )
     .await
     .expect("reject b2"));
@@ -762,6 +779,7 @@ async fn happy_path_approve_summary_then_edit_drops_back_to_draft() {
         ),
         Some("llama3.2"),
         None,
+        &[],
     )
     .await
     .expect("upsert_draft");
@@ -779,7 +797,8 @@ async fn happy_path_approve_summary_then_edit_drops_back_to_draft() {
         &local,
         &meeting,
         "b1",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("approve b1"));
@@ -788,7 +807,8 @@ async fn happy_path_approve_summary_then_edit_drops_back_to_draft() {
         &local,
         &meeting,
         "b2",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("approve b2"));
@@ -797,7 +817,8 @@ async fn happy_path_approve_summary_then_edit_drops_back_to_draft() {
         &local,
         &meeting,
         "b3",
-        BlockStatus::Rejected
+        BlockStatus::Rejected,
+        None
     )
     .await
     .expect("reject b3"));
@@ -808,7 +829,8 @@ async fn happy_path_approve_summary_then_edit_drops_back_to_draft() {
             &local,
             &meeting,
             "b1",
-            BlockStatus::Approved
+            BlockStatus::Approved,
+            None
         )
         .await
         .expect("re-approve runs"),
@@ -899,7 +921,8 @@ async fn happy_path_approve_summary_then_edit_drops_back_to_draft() {
         &local,
         &meeting,
         "b2",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("approve edited b2"));
@@ -935,6 +958,7 @@ async fn retranscription_triggers_downgrade_of_summary_and_items() {
         ),
         None,
         None,
+        &[],
     )
     .await
     .expect("upsert_draft");
@@ -944,7 +968,8 @@ async fn retranscription_triggers_downgrade_of_summary_and_items() {
             &local,
             &meeting,
             id,
-            BlockStatus::Approved
+            BlockStatus::Approved,
+            None
         )
         .await
         .expect("approve block"));
@@ -958,7 +983,7 @@ async fn retranscription_triggers_downgrade_of_summary_and_items() {
         .await
         .expect("insert_drafts");
     assert!(
-        ActionItemsRepository::set_status(&pool, &local, "a1", BlockStatus::Approved)
+        ActionItemsRepository::set_status(&pool, &local, "a1", BlockStatus::Approved, None)
             .await
             .expect("approve a1")
     );
@@ -1080,7 +1105,7 @@ async fn action_item_regeneration_preserves_human_touched_items() {
 
     // Human touches: approve a1, edit a2 (with assignee patch), reject a4.
     assert!(
-        ActionItemsRepository::set_status(&pool, &local, "a1", BlockStatus::Approved)
+        ActionItemsRepository::set_status(&pool, &local, "a1", BlockStatus::Approved, None)
             .await
             .expect("approve a1")
     );
@@ -1095,7 +1120,7 @@ async fn action_item_regeneration_preserves_human_touched_items() {
     .await
     .expect("edit a2"));
     assert!(
-        ActionItemsRepository::set_status(&pool, &local, "a4", BlockStatus::Rejected)
+        ActionItemsRepository::set_status(&pool, &local, "a4", BlockStatus::Rejected, None)
             .await
             .expect("reject a4")
     );

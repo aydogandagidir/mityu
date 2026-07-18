@@ -1,4 +1,6 @@
 pub mod action_item;
+pub mod correction_event;
+pub mod learned_rule;
 pub mod meeting;
 pub mod setting;
 pub mod summary;

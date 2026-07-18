@@ -176,6 +176,7 @@ async fn approve_blocks_then_approve_summary_succeeds_and_stamps_approver() {
         &notes(&meeting, vec![block("b1", "c-1"), block("b2", "c-2")]),
         Some("llama3.2"),
         Some("daily_standup"),
+        &[],
     )
     .await
     .expect("upsert_draft");
@@ -183,9 +184,16 @@ async fn approve_blocks_then_approve_summary_succeeds_and_stamps_approver() {
     // api_approve_summary_block -> set_block_status(Approved) for each block.
     for id in ["b1", "b2"] {
         assert!(
-            SummariesRepository::set_block_status(&pool, &ctx, &meeting, id, BlockStatus::Approved)
-                .await
-                .expect("approve block runs"),
+            SummariesRepository::set_block_status(
+                &pool,
+                &ctx,
+                &meeting,
+                id,
+                BlockStatus::Approved,
+                None
+            )
+            .await
+            .expect("approve block runs"),
             "approving a draft block with resolvable evidence must succeed"
         );
     }
@@ -229,6 +237,7 @@ async fn approve_summary_refused_while_a_nonrejected_block_is_unapproved() {
         &notes(&meeting, vec![block("b1", "c-1"), block("b2", "c-2")]),
         None,
         None,
+        &[],
     )
     .await
     .expect("upsert_draft");
@@ -247,7 +256,8 @@ async fn approve_summary_refused_while_a_nonrejected_block_is_unapproved() {
         &ctx,
         &meeting,
         "b1",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("approve b1"));
@@ -287,6 +297,7 @@ async fn edit_after_approve_drops_summary_back_to_draft() {
         &notes(&meeting, vec![block("b1", "c-1")]),
         None,
         None,
+        &[],
     )
     .await
     .expect("upsert_draft");
@@ -295,7 +306,8 @@ async fn edit_after_approve_drops_summary_back_to_draft() {
         &ctx,
         &meeting,
         "b1",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("approve b1"));
@@ -360,6 +372,7 @@ async fn reject_then_restore_returns_block_and_item_to_draft() {
         &notes(&meeting, vec![block("b1", "c-1")]),
         None,
         None,
+        &[],
     )
     .await
     .expect("upsert_draft");
@@ -373,7 +386,8 @@ async fn reject_then_restore_returns_block_and_item_to_draft() {
         &ctx,
         &meeting,
         "b1",
-        BlockStatus::Rejected
+        BlockStatus::Rejected,
+        None
     )
     .await
     .expect("reject b1"));
@@ -385,9 +399,16 @@ async fn reject_then_restore_returns_block_and_item_to_draft() {
 
     // api_restore_summary_block -> set_block_status(Draft).
     assert!(
-        SummariesRepository::set_block_status(&pool, &ctx, &meeting, "b1", BlockStatus::Draft)
-            .await
-            .expect("restore b1 runs"),
+        SummariesRepository::set_block_status(
+            &pool,
+            &ctx,
+            &meeting,
+            "b1",
+            BlockStatus::Draft,
+            None
+        )
+        .await
+        .expect("restore b1 runs"),
         "rejected -> draft (restore) must be legal for a block"
     );
     let row = SummariesRepository::get_by_meeting(&pool, &ctx, &meeting)
@@ -406,7 +427,8 @@ async fn reject_then_restore_returns_block_and_item_to_draft() {
         &ctx,
         &meeting,
         "b1",
-        BlockStatus::Approved
+        BlockStatus::Approved,
+        None
     )
     .await
     .expect("re-approve restored b1"));
@@ -414,7 +436,7 @@ async fn reject_then_restore_returns_block_and_item_to_draft() {
     // Item: draft -> rejected -> draft (api_reject_action_item /
     // api_restore_action_item -> set_status).
     assert!(
-        ActionItemsRepository::set_status(&pool, &ctx, "a1", BlockStatus::Rejected)
+        ActionItemsRepository::set_status(&pool, &ctx, "a1", BlockStatus::Rejected, None)
             .await
             .expect("reject a1")
     );
@@ -426,7 +448,7 @@ async fn reject_then_restore_returns_block_and_item_to_draft() {
         BlockStatus::Rejected
     );
     assert!(
-        ActionItemsRepository::set_status(&pool, &ctx, "a1", BlockStatus::Draft)
+        ActionItemsRepository::set_status(&pool, &ctx, "a1", BlockStatus::Draft, None)
             .await
             .expect("restore a1 runs"),
         "rejected -> draft (restore) must be legal for an action item"
@@ -463,6 +485,7 @@ async fn every_mutation_under_foreign_workspace_is_a_noop() {
         &notes(&meeting, vec![block("b1", "c-1")]),
         None,
         None,
+        &[],
     )
     .await
     .expect("local upsert_draft");
@@ -477,7 +500,7 @@ async fn every_mutation_under_foreign_workspace_is_a_noop() {
         BlockStatus::Draft,
     ] {
         assert!(
-            !SummariesRepository::set_block_status(&pool, &other, &meeting, "b1", new)
+            !SummariesRepository::set_block_status(&pool, &other, &meeting, "b1", new, None)
                 .await
                 .expect("foreign set_block_status runs"),
             "foreign block status change ({new:?}) must be a no-op"
@@ -503,7 +526,7 @@ async fn every_mutation_under_foreign_workspace_is_a_noop() {
         BlockStatus::Draft,
     ] {
         assert!(
-            !ActionItemsRepository::set_status(&pool, &other, "a1", new)
+            !ActionItemsRepository::set_status(&pool, &other, "a1", new, None)
                 .await
                 .expect("foreign set_status runs"),
             "foreign item status change ({new:?}) must be a no-op"
