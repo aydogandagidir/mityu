@@ -242,7 +242,12 @@ interface BlockRowProps {
   /** Whole-review lock: approved/in-flight summaries cannot be mutated. */
   reviewLocked: boolean;
   onApprove: () => void;
-  onReject: () => void;
+  /**
+   * `reason` is the user's optional rationale. It may be empty or absent — the
+   * backend normalizes blank away and rejects either way; a refusal to explain
+   * must never cost the user their verdict.
+   */
+  onReject: (reason?: string) => void;
   onRestore: () => void;
   onEdit: (content: string) => Promise<boolean>;
   onJumpToSource?: (sourceChunkId: string) => void;
@@ -276,6 +281,8 @@ function BlockRow({
   const [draftContent, setDraftContent] = useState(block.content);
   const [isSaving, setIsSaving] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   const isRejected = block.status === 'rejected';
   const isEdited = block.status === 'edited';
@@ -288,6 +295,28 @@ function BlockRow({
   const cancelEdit = () => {
     setIsEditing(false);
     setDraftContent(block.content);
+  };
+
+  const startReject = () => {
+    setRejectReason('');
+    setIsRejecting(true);
+  };
+
+  const cancelReject = () => {
+    setIsRejecting(false);
+    setRejectReason('');
+  };
+
+  /**
+   * Rejects with whatever is in the field, blank included. The reason is asked
+   * for because "this was wrong" teaches nothing while "wrong because X" does —
+   * but it is never a gate, so Enter on an empty field is a complete, valid
+   * reject and costs one keystroke.
+   */
+  const confirmReject = () => {
+    setIsRejecting(false);
+    onReject(rejectReason);
+    setRejectReason('');
   };
 
   const saveEdit = async () => {
@@ -359,6 +388,27 @@ function BlockRow({
               </span>
             </div>
           )}
+
+          {isRejecting && (
+            <input
+              type="text"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  confirmReject();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancelReject();
+                }
+              }}
+              placeholder="Why is this wrong? (optional — press Enter to reject)"
+              aria-label="Reason for rejecting this block (optional)"
+              className="mt-2 w-full px-3 py-2 border border-red-300 dark:border-red-500/40 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500"
+              autoFocus
+            />
+          )}
         </div>
 
         {/* Per-block actions */}
@@ -387,6 +437,34 @@ function BlockRow({
                 title="Cancel edit"
               >
                 <X className="h-4 w-4" />
+              </Button>
+            </>
+          ) : isRejecting ? (
+            <>
+              <Button
+                variant="red"
+                size="sm"
+                onClick={confirmReject}
+                disabled={isPending}
+                title="Reject block"
+                aria-label="Confirm reject"
+              >
+                {isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}
+                <span className="hidden lg:inline">Reject</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={cancelReject}
+                disabled={isPending}
+                title="Cancel"
+                aria-label="Cancel reject"
+              >
+                Cancel
               </Button>
             </>
           ) : isRejected ? (
@@ -433,7 +511,7 @@ function BlockRow({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={onReject}
+                onClick={startReject}
                 disabled={isPending || reviewLocked}
                 title="Reject block"
                 aria-label="Reject block"
@@ -456,7 +534,8 @@ interface ActionItemRowProps {
   item: ActionItemDraft;
   isPending: boolean;
   onApprove: () => void;
-  onReject: () => void;
+  /** `reason` is optional and never gates the reject — see {@link BlockRowProps}. */
+  onReject: (reason?: string) => void;
   onRestore: () => void;
   onEditText: (text: string) => Promise<boolean>;
   onJumpToSource?: (sourceChunkId: string) => void;
@@ -474,6 +553,8 @@ function ActionItemRow({
   const [isEditing, setIsEditing] = useState(false);
   const [draftText, setDraftText] = useState(item.text);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   const isRejected = item.status === 'rejected';
 
@@ -485,6 +566,23 @@ function ActionItemRow({
   const cancelEdit = () => {
     setIsEditing(false);
     setDraftText(item.text);
+  };
+
+  const startReject = () => {
+    setRejectReason('');
+    setIsRejecting(true);
+  };
+
+  const cancelReject = () => {
+    setIsRejecting(false);
+    setRejectReason('');
+  };
+
+  /** Rejects with whatever is in the field, blank included — see `BlockRow`. */
+  const confirmReject = () => {
+    setIsRejecting(false);
+    onReject(rejectReason);
+    setRejectReason('');
   };
 
   const saveEdit = async () => {
@@ -541,6 +639,27 @@ function ActionItemRow({
               onJumpToSource={onJumpToSource}
             />
           </div>
+
+          {isRejecting && (
+            <input
+              type="text"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  confirmReject();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancelReject();
+                }
+              }}
+              placeholder="Why is this wrong? (optional — press Enter to reject)"
+              aria-label="Reason for rejecting this action item (optional)"
+              className="mt-2 w-full px-3 py-2 border border-red-300 dark:border-red-500/40 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500"
+              autoFocus
+            />
+          )}
         </div>
 
         <div className="flex-shrink-0 flex items-center gap-1">
@@ -568,6 +687,34 @@ function ActionItemRow({
                 title="Cancel edit"
               >
                 <X className="h-4 w-4" />
+              </Button>
+            </>
+          ) : isRejecting ? (
+            <>
+              <Button
+                variant="red"
+                size="sm"
+                onClick={confirmReject}
+                disabled={isPending}
+                title="Reject action item"
+                aria-label="Confirm reject"
+              >
+                {isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}
+                <span className="hidden lg:inline">Reject</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={cancelReject}
+                disabled={isPending}
+                title="Cancel"
+                aria-label="Cancel reject"
+              >
+                Cancel
               </Button>
             </>
           ) : isRejected ? (
@@ -614,7 +761,7 @@ function ActionItemRow({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={onReject}
+                onClick={startReject}
                 disabled={isPending}
                 title="Reject action item"
                 aria-label="Reject action item"
@@ -780,13 +927,13 @@ export function DraftSummaryView({
     });
   };
 
-  const rejectBlock = (block: DraftBlock) => {
+  const rejectBlock = (block: DraftBlock, reason?: string) => {
     const prevStatus = block.status;
     void blockAction.run({
       key: block.id,
       optimistic: () => patchBlock(block.id, (b) => ({ ...b, status: 'rejected' })),
       revert: () => patchBlock(block.id, (b) => ({ ...b, status: prevStatus })),
-      command: () => summaryDraftService.rejectBlock(meetingId, block.id),
+      command: () => summaryDraftService.rejectBlock(meetingId, block.id, reason),
       softFailMessage: "Couldn't reject this block.",
     });
   };
@@ -839,13 +986,13 @@ export function DraftSummaryView({
     });
   };
 
-  const rejectItem = (item: ActionItemDraft) => {
+  const rejectItem = (item: ActionItemDraft, reason?: string) => {
     const prevStatus = item.status;
     void itemAction.run({
       key: item.id,
       optimistic: () => patchItem(item.id, (i) => ({ ...i, status: 'rejected' })),
       revert: () => patchItem(item.id, (i) => ({ ...i, status: prevStatus })),
-      command: () => summaryDraftService.rejectActionItem(item.id),
+      command: () => summaryDraftService.rejectActionItem(item.id, reason),
       softFailMessage: "Couldn't reject this action item.",
     });
   };
@@ -1095,7 +1242,7 @@ export function DraftSummaryView({
                   isPending={blockAction.pendingId === block.id}
                   reviewLocked={blockReviewLocked}
                   onApprove={() => approveBlock(block)}
-                  onReject={() => rejectBlock(block)}
+                  onReject={(reason) => rejectBlock(block, reason)}
                   onRestore={() => restoreBlock(block)}
                   onEdit={(content) => editBlock(block, content)}
                   onJumpToSource={onJumpToSource}
@@ -1116,7 +1263,7 @@ export function DraftSummaryView({
                   item={item}
                   isPending={itemAction.pendingId === item.id}
                   onApprove={() => approveItem(item)}
-                  onReject={() => rejectItem(item)}
+                  onReject={(reason) => rejectItem(item, reason)}
                   onRestore={() => restoreItem(item)}
                   onEditText={(text) => editItemText(item, text)}
                   onJumpToSource={onJumpToSource}

@@ -578,6 +578,112 @@ impl SettingsRepository {
         Ok(())
     }
 
+    // ===== LEARNING CONFIG (per-workspace learning policy, ADR-0030 §7) =====
+
+    /// Reads the workspace's [`LearningConfig`] from the `settings.learningConfig`
+    /// JSON column. Scoped by `workspace_id = ctx.tenant_id`; holds no secret, so
+    /// it is a plain column.
+    ///
+    /// Mirrors [`Self::get_redaction_config`] with ONE deliberate difference, and
+    /// it is the important one. Redaction's safe fallback happens to equal its
+    /// default (disabled); learning's does not — its default has auto-activation
+    /// ON. So absent and corrupt are handled differently:
+    ///
+    /// - **absent** (no row / no value) → [`LearningConfig::default`]: no
+    ///   preference was ever expressed, so the fresh-install product default
+    ///   applies.
+    /// - **corrupt** (a stored blob that will not parse) →
+    ///   [`LearningConfig::disabled`]: the user HAD preferences and we cannot read
+    ///   them, so falling back to the default could silently re-enable
+    ///   auto-activation for someone who deliberately switched it off. Same
+    ///   principle as "never silently enable redaction from a bad blob"; the
+    ///   fallback differs only because the two features' safe states differ.
+    ///
+    /// Every field of the blob carries a serde default, so an older or partial
+    /// blob parses (filling gaps from the product default) rather than tripping
+    /// the corrupt path.
+    pub async fn get_learning_config(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+    ) -> std::result::Result<crate::learning::config::LearningConfig, sqlx::Error> {
+        let json: Option<String> = sqlx::query_scalar(
+            "SELECT learningConfig FROM settings WHERE id = '1' AND workspace_id = ? LIMIT 1",
+        )
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+
+        match json {
+            Some(raw) if !raw.trim().is_empty() => match serde_json::from_str(&raw) {
+                Ok(cfg) => Ok(cfg),
+                Err(e) => {
+                    // Never log the blob itself.
+                    tracing::warn!(
+                        workspace_id = %ctx.tenant_id,
+                        error = %e,
+                        "learningConfig failed to parse; falling back to the DISABLED config \
+                         (not the default — a lost preference must not become an implicit yes)"
+                    );
+                    Ok(crate::learning::config::LearningConfig::disabled())
+                }
+            },
+            _ => Ok(crate::learning::config::LearningConfig::default()),
+        }
+    }
+
+    /// Whether correction CAPTURE is on for this workspace — the ADR-0030 §7
+    /// master switch (`learningConfig.enabled`). The HITL mutation paths call this
+    /// before appending a `correction_events` row, so that turning learning off
+    /// means the app stops recording meeting text, exactly as the setting's copy
+    /// promises ("behaves as it did before ADR-0030"), not just stops mining it.
+    ///
+    /// Fails safe to **OFF** on a read error: never record content a workspace may
+    /// have opted out of because a query hiccuped. (A corrupt blob already yields
+    /// [`LearningConfig::disabled`] inside [`Self::get_learning_config`], so that
+    /// path is off too; an absent row is the fresh-install default, which is on.)
+    pub async fn learning_capture_enabled(pool: &SqlitePool, ctx: &AuthContext) -> bool {
+        Self::get_learning_config(pool, ctx)
+            .await
+            .map(|config| config.enabled)
+            .unwrap_or(false)
+    }
+
+    /// Upserts the workspace's [`LearningConfig`] as JSON into the
+    /// `settings.learningConfig` column. Mirrors [`Self::set_redaction_config`]:
+    /// legacy single-row (`id = '1'`) with the
+    /// `WHERE workspace_id = excluded.workspace_id` guard so a foreign workspace
+    /// cannot clobber another's row.
+    pub async fn set_learning_config(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        config: &crate::learning::config::LearningConfig,
+    ) -> std::result::Result<(), sqlx::Error> {
+        let config_json = serde_json::to_string(config).map_err(|e| {
+            sqlx::Error::Protocol(format!("Failed to serialize LearningConfig to JSON: {}", e))
+        })?;
+
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            INSERT INTO settings (id, workspace_id, provider, model, whisperModel, learningConfig, created_at, updated_at)
+            VALUES ('1', ?, 'ollama', 'llama3.2:latest', 'large-v3', ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                learningConfig = excluded.learningConfig,
+                updated_at = excluded.updated_at
+            WHERE workspace_id = excluded.workspace_id
+            "#,
+        )
+        .bind(ctx.tenant_id.as_str())
+        .bind(config_json)
+        .bind(now)
+        .bind(now)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
     // ===== KEYCHAIN MIGRATION (legacy plaintext columns → OS credential store) =====
 
     /// `(provider, column)` pairs for summary (`settings`) key columns. Drives

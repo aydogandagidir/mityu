@@ -12,6 +12,9 @@
 //! (sync-class table).
 
 use crate::context::AuthContext;
+use crate::database::repositories::correction_event::{
+    CorrectionAction, CorrectionEventsRepository, CorrectionSubject, NewCorrectionEvent,
+};
 use crate::database::repositories::summary_draft::{
     block_status_from_db, block_status_to_db, block_transition_allowed, ensure_sources_resolve,
     SummaryDraftError,
@@ -412,15 +415,35 @@ impl ActionItemsRepository {
     /// `Ok(false)` when the item is not visible in this workspace, the
     /// transition is illegal, the row changed concurrently, or approve-time
     /// evidence no longer resolves.
+    ///
+    /// Every human verdict also appends ONE `correction_events` row inside the
+    /// SAME transaction as the compare-and-swap write (ADR-0030 §2): its
+    /// `original_text` is the MODEL's text (`original_text` once an edit has
+    /// happened, else the current text), never a prior human revision. `reason`
+    /// is the human's optional rationale, recorded on the event (ADR-0030 §3) and
+    /// never a gate — see
+    /// [`SummariesRepository::set_block_status`](super::summary_draft::SummariesRepository::set_block_status).
+    /// `model`/`template_id` come from the meeting's `summaries` row via LEFT
+    /// JOIN: action items carry no generation context of their own, but they are
+    /// produced by the same `run_structured_generation` pass, and the miner needs
+    /// it to scope a rule to a template. The join is LEFT so a soft-deleted or
+    /// absent summary must not hide the item.
     pub async fn set_status(
         pool: &SqlitePool,
         ctx: &AuthContext,
         item_id: &str,
         new: BlockStatus,
+        reason: Option<&str>,
     ) -> Result<bool, SummaryDraftError> {
         let row = sqlx::query(
-            "SELECT status, rev FROM action_items \
-             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL",
+            "SELECT ai.meeting_id AS meeting_id, ai.status AS status, ai.rev AS rev, \
+                    ai.source_chunk_id AS source_chunk_id, ai.text AS text, \
+                    ai.original_text AS original_text, \
+                    s.model AS model, s.template_id AS template_id \
+             FROM action_items ai \
+             LEFT JOIN summaries s \
+                    ON s.meeting_id = ai.meeting_id AND s.workspace_id = ai.workspace_id \
+             WHERE ai.id = ? AND ai.workspace_id = ? AND ai.deleted_at IS NULL",
         )
         .bind(item_id)
         .bind(ctx.tenant_id.as_str())
@@ -447,6 +470,56 @@ impl ActionItemsRepository {
             return Ok(false);
         }
 
+        let meeting_id: String = row.get("meeting_id");
+        let source_chunk_id: String = row.get("source_chunk_id");
+
+        // What the MODEL wrote: `original_text` once an edit has happened,
+        // otherwise the text itself (ADR-0030 §2 — always model→human).
+        let current_text: String = row.get("text");
+        let original_text: Option<String> = row.get("original_text");
+        let model_text = original_text.unwrap_or_else(|| current_text.clone());
+        let model: Option<String> = row.get("model");
+        let template_id: Option<String> = row.get("template_id");
+
+        let action = match new {
+            BlockStatus::Approved => CorrectionAction::Approve,
+            BlockStatus::Rejected => CorrectionAction::Reject,
+            BlockStatus::Draft => CorrectionAction::Restore,
+            BlockStatus::Edited => CorrectionAction::Edit,
+        };
+        let event = NewCorrectionEvent {
+            meeting_id: &meeting_id,
+            subject_kind: CorrectionSubject::ActionItem,
+            subject_id: item_id,
+            action,
+            original_text: Some(model_text.as_str()),
+            final_text: match new {
+                BlockStatus::Approved | BlockStatus::Edited => Some(current_text.as_str()),
+                BlockStatus::Rejected | BlockStatus::Draft => None,
+            },
+            reason,
+            // Action items have neither a §4 block kind nor a section.
+            block_type: None,
+            section_title: None,
+            template_id: template_id.as_deref(),
+            model: model.as_deref(),
+            source_chunk_id: Some(source_chunk_id.as_str()),
+        };
+
+        // ADR-0030 §7: record a correction only when the workspace has learning
+        // ON. Off suppresses the `correction_events` row, not the status change.
+        // Read before the transaction opens so the append below can be gated.
+        let capture =
+            crate::database::repositories::setting::SettingsRepository::learning_capture_enabled(
+                pool, ctx,
+            )
+            .await;
+
+        // One transaction: theirs' compare-and-swap verdict and ours' record of it
+        // land together, or not at all (ADR-0030 §2). Approval keeps theirs'
+        // `EXISTS` predicate, which re-validates an active same-meeting source at
+        // write time (ADR-0019) instead of a separate pre-check.
+        let mut transaction = pool.begin().await?;
         let result = if new == BlockStatus::Approved {
             sqlx::query(
                 "UPDATE action_items SET status = ?, updated_at = ?, updated_by = ?, \
@@ -473,7 +546,7 @@ impl ActionItemsRepository {
             .bind(current_rev)
             .bind(ctx.tenant_id.as_str())
             .bind(ctx.tenant_id.as_str())
-            .execute(pool)
+            .execute(&mut *transaction)
             .await?
         } else {
             sqlx::query(
@@ -489,7 +562,7 @@ impl ActionItemsRepository {
             .bind(ctx.tenant_id.as_str())
             .bind(block_status_to_db(current))
             .bind(current_rev)
-            .execute(pool)
+            .execute(&mut *transaction)
             .await?
         };
 
@@ -502,6 +575,13 @@ impl ActionItemsRepository {
             return Ok(false);
         }
 
+        // The verdict landed in this transaction; record it in the same one (when
+        // learning is on) so the signal can never diverge from the state it
+        // describes.
+        if capture {
+            CorrectionEventsRepository::append_tx(&mut transaction, ctx, &event).await?;
+        }
+        transaction.commit().await?;
         Ok(true)
     }
 
@@ -534,8 +614,14 @@ impl ActionItemsRepository {
         }
 
         let row = sqlx::query(
-            "SELECT text, assignee, due, status, original_text, rev FROM action_items \
-             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL",
+            "SELECT ai.meeting_id AS meeting_id, ai.text AS text, ai.assignee AS assignee, \
+                    ai.due AS due, ai.status AS status, ai.original_text AS original_text, \
+                    ai.rev AS rev, ai.source_chunk_id AS source_chunk_id, \
+                    s.model AS model, s.template_id AS template_id \
+             FROM action_items ai \
+             LEFT JOIN summaries s \
+                    ON s.meeting_id = ai.meeting_id AND s.workspace_id = ai.workspace_id \
+             WHERE ai.id = ? AND ai.workspace_id = ? AND ai.deleted_at IS NULL",
         )
         .bind(item_id)
         .bind(ctx.tenant_id.as_str())
@@ -563,12 +649,18 @@ impl ActionItemsRepository {
 
         let current_text: String = row.get("text");
         let original_text: Option<String> = row.get("original_text");
+        // What the MODEL wrote — captured before `original_text` is consumed
+        // below (ADR-0030 §2: the delta is always model→human, never
+        // human→human, or a re-edit would understate the burden).
+        let model_text = original_text
+            .clone()
+            .unwrap_or_else(|| current_text.clone());
         let new_original = if text.is_some() && original_text.is_none() {
             Some(current_text.clone())
         } else {
             original_text
         };
-        let new_text = text.map_or(current_text, str::to_string);
+        let new_text = text.map_or_else(|| current_text.clone(), str::to_string);
         let new_assignee: Option<String> = match assignee {
             None => row.get("assignee"),
             Some(patch) => patch.map(str::to_string),
@@ -578,6 +670,43 @@ impl ActionItemsRepository {
             Some(patch) => patch.map(str::to_string),
         };
 
+        let meeting_id: String = row.get("meeting_id");
+        let source_chunk_id: Option<String> = row.get("source_chunk_id");
+        let model: Option<String> = row.get("model");
+        let template_id: Option<String> = row.get("template_id");
+
+        // ONLY a text change is a language correction, which is what the miner
+        // learns from. An assignee/due-only patch is a genuine correction of the
+        // model's extraction, but it produces no model→human TEXT delta: recorded
+        // as an edit it would enter the burden metric (E1) as a zero-cost one and
+        // dilute it. Capturing structured-field corrections needs its own event
+        // shape — owed, and recorded in ADR-0030 rather than faked here.
+        let event = (new_text != current_text).then(|| NewCorrectionEvent {
+            meeting_id: &meeting_id,
+            subject_kind: CorrectionSubject::ActionItem,
+            subject_id: item_id,
+            action: CorrectionAction::Edit,
+            original_text: Some(model_text.as_str()),
+            final_text: Some(new_text.as_str()),
+            reason: None,
+            block_type: None,
+            section_title: None,
+            template_id: template_id.as_deref(),
+            model: model.as_deref(),
+            source_chunk_id: source_chunk_id.as_deref(),
+        });
+
+        // ADR-0030 §7: only record when learning is ON (off suppresses capture,
+        // not the edit). Read before the transaction so the append can be gated.
+        let capture =
+            crate::database::repositories::setting::SettingsRepository::learning_capture_enabled(
+                pool, ctx,
+            )
+            .await;
+
+        // One transaction: theirs' compare-and-swap edit and ours' correction
+        // record (only for a real text change) land together (ADR-0030 §2).
+        let mut transaction = pool.begin().await?;
         let result = sqlx::query(
             "UPDATE action_items SET text = ?, assignee = ?, due = ?, original_text = ?, \
              status = 'edited', updated_at = ?, updated_by = ?, rev = rev + 1 \
@@ -594,7 +723,7 @@ impl ActionItemsRepository {
         .bind(ctx.tenant_id.as_str())
         .bind(block_status_to_db(current))
         .bind(current_rev)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
         if result.rows_affected() != 1 {
             warn!(
@@ -604,6 +733,12 @@ impl ActionItemsRepository {
             );
             return Ok(false);
         }
+        if capture {
+            if let Some(event) = &event {
+                CorrectionEventsRepository::append_tx(&mut transaction, ctx, event).await?;
+            }
+        }
+        transaction.commit().await?;
         Ok(true)
     }
 

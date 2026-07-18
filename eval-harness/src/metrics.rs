@@ -1,15 +1,14 @@
-//! WER / CER / jargon term-recall with Turkish-aware normalization.
+//! WER / CER / jargon term-recall over Turkish-aware normalized text.
 //!
 //! Documented decisions (surfaced in the Phase-0 report):
-//! - Normalization pipeline: Unicode NFC → Turkish-aware lowercase (`I`→`ı`,
-//!   `İ`→`i`, everything else via `char::to_lowercase`) → apostrophes deleted
-//!   (`Ankara'da`→`ankarada`), all other punctuation mapped to a space →
-//!   whitespace collapsed.
-//! - Diacritic folding is NOT applied to the strict metrics. A folded variant
-//!   (`ç`→`c`, `ğ`→`g`, `ı`→`i`, `ö`→`o`, `ş`→`s`, `ü`→`u`, `â`→`a`, … via NFD
-//!   combining-mark stripping) is reported alongside, because Turkish diacritic
-//!   loss ("konveyor arizali" for "konveyör arızalı") is an orthographic — not
-//!   lexical — error. Both numbers go into the report; the human weighs them.
+//! - Normalization now lives in the app core, `app_lib::text` — the learning
+//!   miner (ADR-0030 §8) needs the same folding, and two Turkish lowercases
+//!   would be two answers to "are these the same word?". The pipeline and the
+//!   strict/folded rationale are documented there.
+//! - Diacritic folding is NOT applied to the strict metrics. A folded variant is
+//!   reported alongside, because Turkish diacritic loss ("konveyor arizali" for
+//!   "konveyör arızalı") is an orthographic — not lexical — error. Both numbers
+//!   go into the report; the human weighs them.
 //! - Term recall uses folded matching (term identity matters, not orthography)
 //!   and plain substring containment on the normalized text, so a term can
 //!   match inside a longer word (e.g. "dok" in "doktor") — acceptable for a
@@ -18,15 +17,8 @@
 //!   0.0 against an empty hypothesis and 1.0 otherwise; values may exceed 1.0
 //!   when the hypothesis inserts many extra words.
 
-use unicode_normalization::UnicodeNormalization;
-
-/// Both normalization variants of one text.
-pub struct Normalized {
-    /// Diacritics preserved (strict metrics).
-    pub strict: String,
-    /// Diacritics folded (folded metrics + term matching).
-    pub folded: String,
-}
+use app_lib::text::levenshtein;
+pub use app_lib::text::normalize;
 
 /// Per-clip scores for one (reference, hypothesis) pair.
 pub struct Score {
@@ -36,18 +28,6 @@ pub struct Score {
     pub cer_folded: f64,
     /// `None` when no jargon term occurs in the reference.
     pub term_recall: Option<f64>,
-}
-
-const APOSTROPHES: [char; 5] = ['\'', '\u{2019}', '\u{2018}', '\u{02BC}', '\u{00B4}'];
-
-/// Normalize raw text into strict + diacritic-folded forms.
-pub fn normalize(text: &str) -> Normalized {
-    let nfc: String = text.nfc().collect();
-    let lowered = tr_lowercase(&nfc);
-    let stripped = strip_punct(&lowered);
-    let strict = collapse_ws(&stripped);
-    let folded = fold_diacritics(&strict);
-    Normalized { strict, folded }
 }
 
 /// Score a hypothesis against a human reference. `jargon_folded` must already
@@ -100,74 +80,6 @@ fn ratio(dist: usize, ref_len: usize, hyp_len: usize) -> f64 {
         return if hyp_len == 0 { 0.0 } else { 1.0 };
     }
     dist as f64 / ref_len as f64
-}
-
-/// Turkish-aware lowercasing: `I`→`ı`, `İ`→`i` (explicit map), rest via Unicode.
-fn tr_lowercase(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
-        match ch {
-            'I' => out.push('ı'),
-            'İ' => out.push('i'),
-            _ => out.extend(ch.to_lowercase()),
-        }
-    }
-    out
-}
-
-/// Apostrophes deleted (Turkish suffix apostrophe), other punctuation → space.
-fn strip_punct(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
-        if APOSTROPHES.contains(&ch) {
-            // drop entirely: "Ankara'da" → "ankarada"
-        } else if ch.is_alphanumeric() || ch.is_whitespace() {
-            out.push(ch);
-        } else {
-            out.push(' ');
-        }
-    }
-    out
-}
-
-fn collapse_ws(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// Fold diacritics: NFD-decompose, drop combining marks (U+0300–U+036F), and
-/// map the dotless `ı` (which has no decomposition) to `i`. Covers Turkish
-/// ç/ğ/ı/ö/ş/ü and circumflexed â/î/û.
-fn fold_diacritics(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for ch in s.nfd() {
-        match ch {
-            '\u{0300}'..='\u{036F}' => {}
-            'ı' => out.push('i'),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-/// Levenshtein distance (two-row DP) over any comparable token slice.
-fn levenshtein<T: PartialEq>(a: &[T], b: &[T]) -> usize {
-    if a.is_empty() {
-        return b.len();
-    }
-    if b.is_empty() {
-        return a.len();
-    }
-    let mut prev: Vec<usize> = (0..=b.len()).collect();
-    let mut curr = vec![0usize; b.len() + 1];
-    for (i, ai) in a.iter().enumerate() {
-        curr[0] = i + 1;
-        for (j, bj) in b.iter().enumerate() {
-            let cost = usize::from(ai != bj);
-            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
-        }
-        std::mem::swap(&mut prev, &mut curr);
-    }
-    prev[b.len()]
 }
 
 #[cfg(test)]

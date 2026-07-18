@@ -1,7 +1,9 @@
 use crate::database::repositories::{
-    action_item::ActionItemsRepository, meeting::MeetingsRepository, setting::SettingsRepository,
-    summary::SummaryProcessesRepository, summary_draft::SummariesRepository,
+    action_item::ActionItemsRepository, learned_rule::LearnedRulesRepository,
+    meeting::MeetingsRepository, setting::SettingsRepository, summary::SummaryProcessesRepository,
+    summary_draft::SummariesRepository,
 };
+use crate::learning::rule::{applicable_rules, AppliedRule, LearnedRule};
 use crate::ollama::metadata::ModelMetadataCache;
 use crate::summary::draft::{BlockType, MeetingNotesDraft};
 use crate::summary::language_detection::detect_summary_language;
@@ -11,7 +13,7 @@ use crate::summary::processor::{
     extract_meeting_name_from_markdown, generate_meeting_summary, language_name_from_code,
 };
 use crate::summary::structured::{
-    generate_structured_draft, ProviderParams, SegmentInput, StructuredMode,
+    generate_structured_draft, ProviderParams, SegmentInput, StructuredMode, SummaryGuidance,
 };
 use crate::summary::templates::{self, Template};
 use once_cell::sync::Lazy;
@@ -233,6 +235,58 @@ fn extract_cached_english_markdown(
     }
 }
 
+/// A summary provider fully resolved from the workspace's saved settings —
+/// everything a call needs except the prompts. **Owned, not borrowed**, so it can
+/// cross an `await`/`spawn` boundary; [`AssembledProvider::call`] re-borrows it
+/// into a [`ProviderParams`] at the point of the request.
+///
+/// Extracted from `process_transcript_background`'s inline assembly so the LLM
+/// rule miner (ADR-0030 §8, C2) resolves the provider the SAME way summarization
+/// does — one definition of "which model, which key, which endpoint", not two
+/// that drift.
+pub(crate) struct AssembledProvider {
+    pub provider: LLMProvider,
+    pub model_name: String,
+    pub api_key: String,
+    pub ollama_endpoint: Option<String>,
+    pub custom_openai_endpoint: Option<String>,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f32>,
+    pub top_p: Option<f32>,
+}
+
+impl AssembledProvider {
+    /// One prompt-only call to the resolved provider — no `response_format`, no
+    /// cancellation token — mirroring the windowed/legacy call shape. The LLM rule
+    /// miner needs a plain `(system, user) -> text` round-trip, not the
+    /// schema-mode machinery `generate_structured_draft` wraps.
+    ///
+    /// `app_data_dir` is only consulted for the BuiltInAI sidecar; every other
+    /// provider ignores it.
+    pub(crate) async fn call(
+        &self,
+        app_data_dir: Option<&PathBuf>,
+        system_prompt: &str,
+        user_prompt: &str,
+    ) -> Result<String, String> {
+        let client = reqwest::Client::new();
+        let params = ProviderParams {
+            client: &client,
+            provider: &self.provider,
+            model_name: &self.model_name,
+            api_key: &self.api_key,
+            ollama_endpoint: self.ollama_endpoint.as_deref(),
+            custom_openai_endpoint: self.custom_openai_endpoint.as_deref(),
+            max_tokens: self.max_tokens,
+            temperature: self.temperature,
+            top_p: self.top_p,
+            app_data_dir,
+            cancellation_token: None,
+        };
+        params.call(system_prompt, user_prompt, None).await
+    }
+}
+
 /// Summary service - handles all summary generation logic
 pub struct SummaryService;
 
@@ -329,6 +383,116 @@ impl SummaryService {
         detection.language
     }
 
+    /// Resolve the workspace's summary provider from settings: the provider enum,
+    /// the API key (from the OS keychain for cloud providers; empty for
+    /// Ollama/BuiltInAI/CustomOpenAI, whose keys travel differently), and the
+    /// provider-specific endpoints and sampling knobs.
+    ///
+    /// This is the exact assembly `process_transcript_background` performed inline;
+    /// it lives here now so the LLM rule miner (ADR-0030 §8, C2) resolves the
+    /// provider the SAME way rather than duplicating ~80 lines that could drift.
+    /// Errors are content-free strings; the caller decides whether a failure is
+    /// terminal for a user-facing process (mark it failed) or is swallowed by a
+    /// background pass (the miner logs and returns).
+    ///
+    /// `model_name` is taken as-is from the caller: the summary path passes the
+    /// request's model, the miner passes the saved `settings.model`.
+    pub(crate) async fn assemble_provider(
+        pool: &SqlitePool,
+        ctx: &crate::context::AuthContext,
+        model_provider: &str,
+        model_name: &str,
+    ) -> Result<AssembledProvider, String> {
+        let provider = LLMProvider::from_str(model_provider)?;
+
+        // Cloud providers need a keychain key; Ollama / BuiltInAI / CustomOpenAI
+        // do not (CustomOpenAI's optional key travels inside its JSON config).
+        let api_key = if provider == LLMProvider::Ollama
+            || provider == LLMProvider::BuiltInAI
+            || provider == LLMProvider::CustomOpenAI
+        {
+            String::new()
+        } else {
+            match SettingsRepository::get_api_key(pool, ctx, model_provider).await {
+                Ok(Some(key)) if !key.is_empty() => key,
+                Ok(None) | Ok(Some(_)) => {
+                    return Err(format!("API key not found for {}", model_provider));
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to retrieve API key for {}: {}",
+                        model_provider, e
+                    ));
+                }
+            }
+        };
+
+        // Get Ollama endpoint if provider is Ollama (non-fatal: fall back to
+        // default on a read error, exactly as the inline path did).
+        let ollama_endpoint = if provider == LLMProvider::Ollama {
+            match SettingsRepository::get_model_config(pool, ctx).await {
+                Ok(Some(config)) => config.ollama_endpoint,
+                Ok(None) => None,
+                Err(e) => {
+                    info!("Failed to retrieve Ollama endpoint: {}, using default", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Get CustomOpenAI config if provider is CustomOpenAI
+        let (
+            custom_openai_endpoint,
+            custom_openai_api_key,
+            custom_openai_max_tokens,
+            custom_openai_temperature,
+            custom_openai_top_p,
+        ) = if provider == LLMProvider::CustomOpenAI {
+            match SettingsRepository::get_custom_openai_config(pool, ctx).await {
+                Ok(Some(config)) => {
+                    info!("✓ Using custom OpenAI endpoint: {}", config.endpoint);
+                    (
+                        Some(config.endpoint),
+                        config.api_key,
+                        config.max_tokens.map(|t| t as u32),
+                        config.temperature,
+                        config.top_p,
+                    )
+                }
+                Ok(None) => {
+                    return Err(
+                        "Custom OpenAI provider selected but no configuration found".to_string()
+                    );
+                }
+                Err(e) => {
+                    return Err(format!("Failed to retrieve custom OpenAI config: {}", e));
+                }
+            }
+        } else {
+            (None, None, None, None, None)
+        };
+
+        // For CustomOpenAI, use its API key (if any) instead of the empty string.
+        let final_api_key = if provider == LLMProvider::CustomOpenAI {
+            custom_openai_api_key.unwrap_or_default()
+        } else {
+            api_key
+        };
+
+        Ok(AssembledProvider {
+            provider,
+            model_name: model_name.to_string(),
+            api_key: final_api_key,
+            ollama_endpoint,
+            custom_openai_endpoint,
+            max_tokens: custom_openai_max_tokens,
+            temperature: custom_openai_temperature,
+            top_p: custom_openai_top_p,
+        })
+    }
+
     /// Processes transcript in the background and generates summary
     ///
     /// This function is designed to be spawned as an async task and does not block
@@ -397,92 +561,27 @@ impl SummaryService {
         // Register cancellation token for this meeting
         let cancellation_token = Self::register_cancellation_token(&meeting_id);
 
-        // Parse provider
-        let provider = match LLMProvider::from_str(&model_provider) {
-            Ok(p) => p,
-            Err(e) => {
-                Self::update_process_failed(&pool, &ctx, &meeting_id, &e).await;
+        // Resolve the provider (enum, key, endpoints, sampling knobs) from the
+        // workspace settings. The `model_name` field is ignored here — this path
+        // already has it as a request argument and uses it below for the metadata
+        // cache and the generation call; the field exists so the LLM miner, which
+        // has no request, gets a self-contained provider. A resolution failure is
+        // terminal for a user-facing summary: mark the process failed and stop.
+        let AssembledProvider {
+            provider,
+            model_name: _,
+            api_key: final_api_key,
+            ollama_endpoint,
+            custom_openai_endpoint,
+            max_tokens: custom_openai_max_tokens,
+            temperature: custom_openai_temperature,
+            top_p: custom_openai_top_p,
+        } = match Self::assemble_provider(&pool, &ctx, &model_provider, &model_name).await {
+            Ok(assembled) => assembled,
+            Err(err_msg) => {
+                Self::update_process_failed(&pool, &ctx, &meeting_id, &err_msg).await;
                 return;
             }
-        };
-
-        // Validate and setup api_key, Flexible for Ollama, BuiltInAI, and CustomOpenAI
-        let api_key = if provider == LLMProvider::Ollama
-            || provider == LLMProvider::BuiltInAI
-            || provider == LLMProvider::CustomOpenAI
-        {
-            // These providers don't require API keys from the standard database column
-            String::new()
-        } else {
-            match SettingsRepository::get_api_key(&pool, &ctx, &model_provider).await {
-                Ok(Some(key)) if !key.is_empty() => key,
-                Ok(None) | Ok(Some(_)) => {
-                    let err_msg = format!("API key not found for {}", &model_provider);
-                    Self::update_process_failed(&pool, &ctx, &meeting_id, &err_msg).await;
-                    return;
-                }
-                Err(e) => {
-                    let err_msg =
-                        format!("Failed to retrieve API key for {}: {}", &model_provider, e);
-                    Self::update_process_failed(&pool, &ctx, &meeting_id, &err_msg).await;
-                    return;
-                }
-            }
-        };
-
-        // Get Ollama endpoint if provider is Ollama
-        let ollama_endpoint = if provider == LLMProvider::Ollama {
-            match SettingsRepository::get_model_config(&pool, &ctx).await {
-                Ok(Some(config)) => config.ollama_endpoint,
-                Ok(None) => None,
-                Err(e) => {
-                    info!("Failed to retrieve Ollama endpoint: {}, using default", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        // Get CustomOpenAI config if provider is CustomOpenAI
-        let (
-            custom_openai_endpoint,
-            custom_openai_api_key,
-            custom_openai_max_tokens,
-            custom_openai_temperature,
-            custom_openai_top_p,
-        ) = if provider == LLMProvider::CustomOpenAI {
-            match SettingsRepository::get_custom_openai_config(&pool, &ctx).await {
-                Ok(Some(config)) => {
-                    info!("✓ Using custom OpenAI endpoint: {}", config.endpoint);
-                    (
-                        Some(config.endpoint),
-                        config.api_key,
-                        config.max_tokens.map(|t| t as u32),
-                        config.temperature,
-                        config.top_p,
-                    )
-                }
-                Ok(None) => {
-                    let err_msg = "Custom OpenAI provider selected but no configuration found";
-                    Self::update_process_failed(&pool, &ctx, &meeting_id, err_msg).await;
-                    return;
-                }
-                Err(e) => {
-                    let err_msg = format!("Failed to retrieve custom OpenAI config: {}", e);
-                    Self::update_process_failed(&pool, &ctx, &meeting_id, &err_msg).await;
-                    return;
-                }
-            }
-        } else {
-            (None, None, None, None, None)
-        };
-
-        // For CustomOpenAI, use its API key (if any) instead of the empty string
-        let final_api_key = if provider == LLMProvider::CustomOpenAI {
-            custom_openai_api_key.unwrap_or_default()
-        } else {
-            api_key
         };
 
         // Dynamically fetch context size based on provider and model
@@ -580,6 +679,7 @@ impl SummaryService {
                 &final_api_key,
                 &template,
                 &template_id,
+                &custom_prompt,
                 token_threshold,
                 ollama_endpoint.as_deref(),
                 custom_openai_endpoint.as_deref(),
@@ -792,6 +892,10 @@ impl SummaryService {
         api_key: &str,
         template: &Template,
         template_id: &str,
+        // Empty means "none": `api_process_transcript` already collapses its
+        // `Option<String>` with `unwrap_or_default()`, so that is this path's
+        // existing convention rather than a second `Option`.
+        custom_prompt: &str,
         token_threshold: usize,
         ollama_endpoint: Option<&str>,
         custom_openai_endpoint: Option<&str>,
@@ -866,10 +970,53 @@ impl SummaryService {
         // a user-facing setting.
         let mode = StructuredMode::for_provider(provider);
 
+        // ADR-0030 §6. Scope filtering happens HERE, not in `structured`: it
+        // needs the `template_id`, which travels beside the `Template` rather
+        // than inside it, and `structured` is a pure orchestration layer that
+        // never reads the database.
+        //
+        // A failure to read rules must NOT fail the summary: the user asked for
+        // a summary, not for a learning system, and losing the whole generation
+        // because a preference could not be loaded trades a large thing for a
+        // small one. Degrade to no guidance and say so in the log.
+        let config = SettingsRepository::get_learning_config(pool, ctx)
+            .await
+            .unwrap_or_else(|e| {
+                warn!(
+                    meeting_id = %meeting_id,
+                    "could not read the learning config; generating without guidance: {}",
+                    e
+                );
+                crate::learning::config::LearningConfig::disabled()
+            });
+        let learned_rules: Vec<LearnedRule> =
+            match LearnedRulesRepository::list_active(pool, ctx, &config).await {
+                Ok(rules) => rules,
+                Err(e) => {
+                    warn!(
+                        meeting_id = %meeting_id,
+                        "could not read learned rules; generating without them: {}",
+                        e
+                    );
+                    Vec::new()
+                }
+            };
+        let guidance = SummaryGuidance {
+            rules: applicable_rules(&learned_rules, Some(template_id)),
+            custom_prompt: Some(custom_prompt).filter(|p| !p.trim().is_empty()),
+        };
+        info!(
+            meeting_id = %meeting_id,
+            active_rules = learned_rules.len(),
+            applied_rules = guidance.rules.len(),
+            "learned-rule guidance resolved for this generation"
+        );
+
         match generate_structured_draft(
             meeting_id,
             &segment_inputs,
             template,
+            &guidance,
             &params,
             mode,
             token_threshold,
@@ -886,12 +1033,26 @@ impl SummaryService {
                     "structured draft generated"
                 );
 
+                // ADR-0030 §5. Snapshotted from `guidance.rules` — the very list
+                // that was rendered into the prompt above, not a re-read of the
+                // table: a second read could return a different answer (the user
+                // may have edited a rule while the provider call was in flight)
+                // and the snapshot would then describe a generation that never
+                // happened.
+                let applied_rules: Vec<AppliedRule> = guidance
+                    .rules
+                    .iter()
+                    .copied()
+                    .map(AppliedRule::from_rule)
+                    .collect();
+
                 if let Err(e) = SummariesRepository::upsert_draft(
                     pool,
                     ctx,
                     &draft,
                     Some(model_name),
                     Some(template_id),
+                    &applied_rules,
                 )
                 .await
                 {

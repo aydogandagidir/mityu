@@ -49,6 +49,11 @@ pub mod console_utils;
 pub mod context;
 pub mod database;
 pub mod groq;
+/// Local learning (ADR-0030): the human-in-the-loop correction signal becomes
+/// plain-language rules that shape the next summary. Learning is DATA, never
+/// weights — an unwanted rule is one `DELETE`, which is what makes KVKK/GDPR
+/// erasure satisfiable at all. Nothing leaves the device to make it work.
+pub mod learning;
 /// Licensing & trial (ADR-0023): Polar.sh license keys + client-side 14-day
 /// trial. Local-first: status reads never touch the network, validation is
 /// lazy/fail-open, and expiry gates ONLY new capture (recording/import) — never
@@ -73,6 +78,7 @@ pub mod summary;
 /// Tauri command or the capture→transcript→summary→store path. Sync is off by
 /// default and has no network dependency (see `sync::client`).
 pub mod sync;
+pub mod text;
 pub mod tray;
 pub mod utils;
 pub mod whisper_engine;
@@ -729,6 +735,19 @@ pub fn run() {
             summary::commands::api_reject_action_item,
             summary::commands::api_restore_action_item,
             summary::commands::api_edit_action_item,
+            // Learned-rule commands (ADR-0030 §9) — the surface that makes
+            // auto-activation defensible: every rule visible, editable, deletable.
+            learning::commands::api_list_learned_rules,
+            learning::commands::api_create_learned_rule,
+            learning::commands::api_activate_learned_rule,
+            learning::commands::api_dismiss_learned_rule,
+            learning::commands::api_edit_learned_rule,
+            learning::commands::api_delete_learned_rule,
+            learning::commands::api_get_rule_evidence,
+            learning::commands::api_mine_learned_rules,
+            learning::commands::api_get_learning_stats,
+            learning::commands::api_get_learning_config,
+            learning::commands::api_set_learning_config,
             // Template commands
             summary::template_commands::api_list_templates,
             summary::template_commands::api_get_template_details,

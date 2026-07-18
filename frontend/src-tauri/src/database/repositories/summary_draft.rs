@@ -46,6 +46,11 @@
 //! makes approval return `Ok(false)` instead of approving stale content.
 
 use crate::context::AuthContext;
+use crate::database::repositories::correction_event::{
+    block_type_to_db, CorrectionAction, CorrectionEventsRepository, CorrectionSubject,
+    NewCorrectionEvent,
+};
+use crate::learning::rule::AppliedRule;
 use crate::summary::draft::{BlockStatus, DraftSection, MeetingNotesDraft, SummaryStatus};
 use chrono::Utc;
 use serde::Serialize;
@@ -98,6 +103,15 @@ pub enum SummaryDraftError {
         /// The offending stored token.
         token: String,
     },
+    /// A `correction_events.subject_kind` or `.action` column held a token
+    /// outside the ADR-0030 §2 vocabulary (corrupt or hand-edited row). Like
+    /// [`Self::InvalidStatus`], these tokens are a closed vocabulary, not user
+    /// content, so echoing one leaks nothing.
+    #[error("unknown correction token in database: {token}")]
+    InvalidCorrectionToken {
+        /// The offending stored token.
+        token: String,
+    },
     /// A bounded compare-and-swap retry loop could not obtain a stable
     /// revision. Callers must surface/retry instead of treating a stale
     /// approval downgrade as a successful no-op.
@@ -133,6 +147,15 @@ pub struct SummaryDraftRow {
     pub template_id: Option<String>,
     /// The §4 draft reconstructed from the stored sections JSON + status.
     pub draft: MeetingNotesDraft,
+    /// The learned rules that shaped this draft, snapshotted at generation
+    /// (ADR-0030 §5).
+    ///
+    /// `None` and `Some(vec![])` are DIFFERENT answers and must stay that way:
+    /// `None` means nothing was ever recorded here (a pre-migration row, the
+    /// first-run sample, or a summary from the legacy markdown path), while
+    /// `Some(vec![])` means the learning system ran for this summary and applied
+    /// nothing. "We do not know" is not "no".
+    pub applied_rules: Option<Vec<AppliedRule>>,
     /// When the draft was (re)generated (RFC 3339, as stored).
     pub generated_at: Option<String>,
     /// When a human approved the summary (RFC 3339, as stored).
@@ -288,12 +311,22 @@ impl SummariesRepository {
     /// not survive a regeneration), `generated_at` is re-stamped, `rev` bumps,
     /// and a soft-deleted row is revived (`deleted_at = NULL`) — regeneration
     /// is the designated way to bring a meeting's summary back.
+    ///
+    /// `applied_rules` is the ADR-0030 §5 snapshot of the learned rules that
+    /// shaped THIS draft — a parameter of this method, not a later `UPDATE`, so
+    /// that a draft can never exist without the record of what shaped it. An
+    /// empty slice is written as `'[]'`, which is a claim ("the learning system
+    /// ran and applied nothing") and is deliberately distinct from the column's
+    /// `NULL` ("nothing was ever recorded"); regeneration REPLACES the snapshot,
+    /// because the snapshot describes the draft now in the row, not the history
+    /// of that meeting.
     pub async fn upsert_draft(
         pool: &SqlitePool,
         ctx: &AuthContext,
         draft: &MeetingNotesDraft,
         model: Option<&str>,
         template_id: Option<&str>,
+        applied_rules: &[AppliedRule],
     ) -> Result<String, SummaryDraftError> {
         let meeting_id = draft.meeting_id.as_str();
 
@@ -341,7 +374,12 @@ impl SummariesRepository {
             .collect();
         ensure_sources_resolve(pool, ctx, meeting_id, &required).await?;
 
+        // Serialize the FORCED sections (theirs' `generated_sections`, every block
+        // reset to `draft`), never the raw `draft.sections`, or the HITL invariant
+        // above would be undone in the JSON. `applied_rules_json` is ours' §5
+        // snapshot, written as a parameter of the same INSERT/UPDATE below.
         let sections_json = serde_json::to_string(&generated_sections)?;
+        let applied_rules_json = serde_json::to_string(applied_rules)?;
         let now = Utc::now();
 
         let mut transaction = pool.begin().await?;
@@ -357,13 +395,15 @@ impl SummariesRepository {
             Some((id,)) => {
                 sqlx::query(
                     "UPDATE summaries SET status = 'draft', model = ?, template_id = ?, \
-                     sections = ?, generated_at = ?, approved_at = NULL, approved_by = NULL, \
-                     deleted_at = NULL, updated_at = ?, updated_by = ?, rev = rev + 1 \
+                     sections = ?, applied_rules = ?, generated_at = ?, approved_at = NULL, \
+                     approved_by = NULL, deleted_at = NULL, updated_at = ?, updated_by = ?, \
+                     rev = rev + 1 \
                      WHERE id = ? AND workspace_id = ?",
                 )
                 .bind(model)
                 .bind(template_id)
                 .bind(&sections_json)
+                .bind(&applied_rules_json)
                 .bind(now)
                 .bind(now)
                 .bind(ctx.user_id.as_str())
@@ -378,8 +418,8 @@ impl SummariesRepository {
                 sqlx::query(
                     "INSERT INTO summaries \
                      (id, meeting_id, workspace_id, status, model, template_id, sections, \
-                      generated_at, created_at, updated_at, updated_by, rev) \
-                     VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 1)",
+                      applied_rules, generated_at, created_at, updated_at, updated_by, rev) \
+                     VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, 1)",
                 )
                 .bind(&id)
                 .bind(meeting_id)
@@ -387,6 +427,7 @@ impl SummariesRepository {
                 .bind(model)
                 .bind(template_id)
                 .bind(&sections_json)
+                .bind(&applied_rules_json)
                 .bind(now)
                 .bind(now)
                 .bind(now)
@@ -468,8 +509,8 @@ impl SummariesRepository {
         meeting_id: &str,
     ) -> Result<Option<SummaryDraftRow>, SummaryDraftError> {
         let row = sqlx::query(
-            "SELECT id, status, model, template_id, sections, generated_at, approved_at, \
-             approved_by, rev FROM summaries \
+            "SELECT id, status, model, template_id, sections, applied_rules, generated_at, \
+             approved_at, approved_by, rev FROM summaries \
              WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
         )
         .bind(meeting_id)
@@ -483,6 +524,14 @@ impl SummariesRepository {
 
         let status = summary_status_from_db(&row.get::<String, _>("status"))?;
         let sections: Vec<DraftSection> = serde_json::from_str(&row.get::<String, _>("sections"))?;
+        // `Option` all the way out: `NULL` ("never recorded") and `[]` ("recorded,
+        // nothing applied") are different answers to an audit, and collapsing them
+        // here would throw away the distinction the column exists to preserve
+        // (ADR-0030 §5).
+        let applied_rules: Option<Vec<AppliedRule>> = row
+            .get::<Option<String>, _>("applied_rules")
+            .map(|json| serde_json::from_str(&json))
+            .transpose()?;
 
         Ok(Some(SummaryDraftRow {
             id: row.get("id"),
@@ -495,6 +544,7 @@ impl SummariesRepository {
                 status,
                 sections,
             },
+            applied_rules,
             generated_at: row.get("generated_at"),
             approved_at: row.get("approved_at"),
             approved_by: row.get("approved_by"),
@@ -516,15 +566,21 @@ impl SummariesRepository {
     /// reachable transition on a block of an approved summary (`approved →
     /// edited|rejected`, `rejected → draft`) breaks or alters the approved set,
     /// so the whole summary must be re-approved by a human.
+    /// `reason` is the human's optional rationale, recorded on the correction
+    /// event (ADR-0030 §3). It is most meaningful on a reject — "this was wrong"
+    /// teaches nothing, "wrong because X" teaches — but is accepted on any
+    /// transition and NEVER gates one: a refusal to explain must never cost the
+    /// user their verdict.
     pub async fn set_block_status(
         pool: &SqlitePool,
         ctx: &AuthContext,
         meeting_id: &str,
         block_id: &str,
         new: BlockStatus,
+        reason: Option<&str>,
     ) -> Result<bool, SummaryDraftError> {
         let row = sqlx::query(
-            "SELECT id, sections, rev FROM summaries \
+            "SELECT id, sections, model, template_id, rev FROM summaries \
              WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
         )
         .bind(meeting_id)
@@ -541,15 +597,21 @@ impl SummariesRepository {
             return Ok(false);
         };
         let summary_id: String = row.get("id");
+        let model: Option<String> = row.get("model");
+        let template_id: Option<String> = row.get("template_id");
         let current_rev: i64 = row.get("rev");
         let mut sections: Vec<DraftSection> =
             serde_json::from_str(&row.get::<String, _>("sections"))?;
 
-        let Some(block) = sections
-            .iter_mut()
-            .flat_map(|section| section.blocks.iter_mut())
-            .find(|block| block.id == block_id)
-        else {
+        // Located by index rather than by `flat_map(..).find(..)` so the owning
+        // section stays reachable: its title scopes the correction event, and
+        // `sections` will not survive a regeneration to be asked later.
+        let Some((section_index, block_index)) = sections.iter().enumerate().find_map(|(si, s)| {
+            s.blocks
+                .iter()
+                .position(|b| b.id == block_id)
+                .map(|bi| (si, bi))
+        }) else {
             info!(
                 meeting_id = %meeting_id,
                 block_id = %block_id,
@@ -559,11 +621,17 @@ impl SummariesRepository {
             return Ok(false);
         };
 
-        if !block_transition_allowed(block.status, new) {
+        let section_title = sections[section_index].title.clone();
+        let block = &sections[section_index].blocks[block_index];
+        let current = block.status;
+        let block_type = block_type_to_db(block.block_type);
+        let source_chunk_id = block.source_chunk_id.clone();
+
+        if !block_transition_allowed(current, new) {
             info!(
                 meeting_id = %meeting_id,
                 block_id = %block_id,
-                from = block_status_to_db(block.status),
+                from = block_status_to_db(current),
                 to = block_status_to_db(new),
                 reason_code = "illegal_transition",
                 "set_block_status refused"
@@ -572,7 +640,7 @@ impl SummariesRepository {
         }
 
         if new == BlockStatus::Approved {
-            let required = HashSet::from([block.source_chunk_id.clone()]);
+            let required = HashSet::from([source_chunk_id.clone()]);
             let resolved = resolve_source_chunk_ids(pool, ctx, meeting_id, &required).await?;
             if resolved.len() != required.len() {
                 warn!(
@@ -585,14 +653,67 @@ impl SummariesRepository {
             }
         }
 
+        // What the MODEL wrote: `original_content` once an edit has happened,
+        // otherwise the content itself (ADR-0030 §2 — the signal is always
+        // model→human, never human→human). `approved_source_chunk_id` (theirs)
+        // feeds the write-time `EXISTS` re-validation below.
         let approved_source_chunk_id =
-            (new == BlockStatus::Approved).then(|| block.source_chunk_id.clone());
+            (new == BlockStatus::Approved).then(|| source_chunk_id.clone());
+        let block = &mut sections[section_index].blocks[block_index];
+        let model_text = block
+            .original_content
+            .clone()
+            .unwrap_or_else(|| block.content.clone());
+        let surviving_text = block.content.clone();
         block.status = new;
+
         let sections_json = serde_json::to_string(&sections)?;
 
+        let action = match new {
+            BlockStatus::Approved => CorrectionAction::Approve,
+            BlockStatus::Rejected => CorrectionAction::Reject,
+            BlockStatus::Draft => CorrectionAction::Restore,
+            // Not reached from the commands (`edit_block` owns edits), but the
+            // status machine permits `draft|approved → edited`, so map it rather
+            // than record an approve that never happened.
+            BlockStatus::Edited => CorrectionAction::Edit,
+        };
+        let event = NewCorrectionEvent {
+            meeting_id,
+            subject_kind: CorrectionSubject::SummaryBlock,
+            subject_id: block_id,
+            action,
+            original_text: Some(model_text.as_str()),
+            // Text survives an approve; a reject leaves nothing standing, and a
+            // restore only retracts an earlier verdict.
+            final_text: match new {
+                BlockStatus::Approved | BlockStatus::Edited => Some(surviving_text.as_str()),
+                BlockStatus::Rejected | BlockStatus::Draft => None,
+            },
+            reason,
+            block_type: Some(block_type),
+            section_title: Some(section_title.as_str()),
+            template_id: template_id.as_deref(),
+            model: model.as_deref(),
+            source_chunk_id: Some(source_chunk_id.as_str()),
+        };
+
+        // Theirs' compare-and-swap write (its `EXISTS` predicate re-validates the
+        // approved block's cited source at write time); ours' correction event
+        // rides the SAME transaction inside the helper, appended only if the CAS
+        // wins (ADR-0030 §2).
         let approved_source = approved_source_chunk_id
             .as_deref()
             .map(|source_chunk_id| (meeting_id, source_chunk_id));
+        // ADR-0030 §7: record a correction only when the workspace has learning
+        // ON. Off means no `correction_events` row — the status change itself
+        // still lands (the CAS write is unconditional); only the recording of
+        // meeting text is suppressed, as the setting's copy promises.
+        let capture =
+            crate::database::repositories::setting::SettingsRepository::learning_capture_enabled(
+                pool, ctx,
+            )
+            .await;
         let updated = Self::write_sections_as_draft_if_current(
             pool,
             ctx,
@@ -600,6 +721,7 @@ impl SummariesRepository {
             current_rev,
             &sections_json,
             approved_source,
+            capture.then_some(&event),
         )
         .await?;
         if !updated {
@@ -631,7 +753,7 @@ impl SummariesRepository {
         content: &str,
     ) -> Result<bool, SummaryDraftError> {
         let row = sqlx::query(
-            "SELECT id, sections, rev FROM summaries \
+            "SELECT id, sections, model, template_id, rev FROM summaries \
              WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
         )
         .bind(meeting_id)
@@ -648,15 +770,20 @@ impl SummariesRepository {
             return Ok(false);
         };
         let summary_id: String = row.get("id");
+        let model: Option<String> = row.get("model");
+        let template_id: Option<String> = row.get("template_id");
         let current_rev: i64 = row.get("rev");
         let mut sections: Vec<DraftSection> =
             serde_json::from_str(&row.get::<String, _>("sections"))?;
 
-        let Some(block) = sections
-            .iter_mut()
-            .flat_map(|section| section.blocks.iter_mut())
-            .find(|block| block.id == block_id)
-        else {
+        // By index, so the owning section's title stays reachable for the
+        // correction event (see `set_block_status`).
+        let Some((section_index, block_index)) = sections.iter().enumerate().find_map(|(si, s)| {
+            s.blocks
+                .iter()
+                .position(|b| b.id == block_id)
+                .map(|bi| (si, bi))
+        }) else {
             info!(
                 meeting_id = %meeting_id,
                 block_id = %block_id,
@@ -665,6 +792,9 @@ impl SummariesRepository {
             );
             return Ok(false);
         };
+
+        let section_title = sections[section_index].title.clone();
+        let block = &mut sections[section_index].blocks[block_index];
 
         if block.status == BlockStatus::Rejected {
             info!(
@@ -676,6 +806,18 @@ impl SummariesRepository {
             return Ok(false);
         }
 
+        // Capture what the MODEL wrote BEFORE mutating — order matters here: on a
+        // re-edit that is `original_content`, but on the FIRST edit it is
+        // `content`, which the very next lines are about to move into
+        // `original_content` and overwrite. Reading it afterwards would record a
+        // human→human delta on every re-edit and understate the burden (E1).
+        let model_text = block
+            .original_content
+            .clone()
+            .unwrap_or_else(|| block.content.clone());
+        let block_type = block_type_to_db(block.block_type);
+        let source_chunk_id = block.source_chunk_id.clone();
+
         if block.original_content.is_none() {
             block.original_content = Some(block.content.clone());
         }
@@ -683,6 +825,32 @@ impl SummariesRepository {
         block.status = BlockStatus::Edited;
         let sections_json = serde_json::to_string(&sections)?;
 
+        let event = NewCorrectionEvent {
+            meeting_id,
+            subject_kind: CorrectionSubject::SummaryBlock,
+            subject_id: block_id,
+            action: CorrectionAction::Edit,
+            original_text: Some(model_text.as_str()),
+            final_text: Some(content),
+            // Edits speak for themselves — the delta IS the rationale. `reason`
+            // earns its keep on rejects (ADR-0030 §3).
+            reason: None,
+            block_type: Some(block_type),
+            section_title: Some(section_title.as_str()),
+            template_id: template_id.as_deref(),
+            model: model.as_deref(),
+            source_chunk_id: Some(source_chunk_id.as_str()),
+        };
+
+        // An edit is not an approve, so no source re-validation (`None`); ours'
+        // correction event rides theirs' compare-and-swap write in one
+        // transaction, appended only if the CAS wins (ADR-0030 §2) AND the
+        // workspace has learning ON (§7 — off suppresses capture, not the edit).
+        let capture =
+            crate::database::repositories::setting::SettingsRepository::learning_capture_enabled(
+                pool, ctx,
+            )
+            .await;
         let updated = Self::write_sections_as_draft_if_current(
             pool,
             ctx,
@@ -690,6 +858,7 @@ impl SummariesRepository {
             current_rev,
             &sections_json,
             None,
+            capture.then_some(&event),
         )
         .await?;
         if !updated {
@@ -912,6 +1081,7 @@ impl SummariesRepository {
                 current_rev,
                 &sections_json,
                 None,
+                None,
             )
             .await?
             {
@@ -924,6 +1094,10 @@ impl SummariesRepository {
             }
         }
 
+        // The bounded retry loop above is the only writer; reaching here means a
+        // concurrent human mutation won every attempt. Retranscription is the APP
+        // resetting its own bookkeeping, so the in-loop write passes `None` and
+        // records NO correction event (ADR-0030 §2) — the user judged nothing.
         warn!(
             meeting_id = %meeting_id,
             reason_code = "concurrent_change_retry_exhausted",
@@ -959,6 +1133,19 @@ impl SummariesRepository {
     /// stores the new sections JSON and enforces the "any block mutation
     /// de-approves the summary" invariant (`status = 'draft'`, approval stamps
     /// cleared), bumping `rev` and stamping `updated_by`/`updated_at`.
+    ///
+    /// Compare-and-swap: the UPDATE lands only while the row is still at
+    /// `expected_rev` (and, for an approve, its cited source is still active via
+    /// the `EXISTS` predicate — ADR-0019), so a concurrent human mutation is never
+    /// clobbered; the returned `bool` says whether exactly one row changed.
+    ///
+    /// `event` is `Some` for a HUMAN correction and `None` for system-driven
+    /// writes — notably the ADR-0019 retranscription downgrade, where nobody
+    /// said anything and a recorded "correction" would teach the miner about the
+    /// app's own bookkeeping (ADR-0030 §2). When present AND the CAS write wins,
+    /// the event is appended to `correction_events` in the SAME transaction as
+    /// the sections write: both land or neither does, so the learning signal can
+    /// never silently diverge from the state it describes.
     async fn write_sections_as_draft_if_current(
         pool: &SqlitePool,
         ctx: &AuthContext,
@@ -966,8 +1153,14 @@ impl SummariesRepository {
         expected_rev: i64,
         sections_json: &str,
         approved_source: Option<(&str, &str)>,
+        event: Option<&NewCorrectionEvent<'_>>,
     ) -> Result<bool, SummaryDraftError> {
         let now = Utc::now();
+        // A transaction so ours' correction event and theirs' compare-and-swap
+        // sections write land together (ADR-0030 §2). Theirs used a bare
+        // `execute(pool)`; wrapping the single UPDATE in a transaction is
+        // behaviour-equivalent and lets the event ride along atomically.
+        let mut transaction = pool.begin().await?;
         let result = if let Some((meeting_id, source_chunk_id)) = approved_source {
             sqlx::query(
                 "UPDATE summaries SET sections = ?, status = 'draft', approved_at = NULL, \
@@ -992,7 +1185,7 @@ impl SummariesRepository {
             .bind(meeting_id)
             .bind(ctx.tenant_id.as_str())
             .bind(ctx.tenant_id.as_str())
-            .execute(pool)
+            .execute(&mut *transaction)
             .await?
         } else {
             sqlx::query(
@@ -1006,10 +1199,22 @@ impl SummariesRepository {
             .bind(summary_id)
             .bind(ctx.tenant_id.as_str())
             .bind(expected_rev)
-            .execute(pool)
+            .execute(&mut *transaction)
             .await?
         };
-        Ok(result.rows_affected() == 1)
+
+        let updated = result.rows_affected() == 1;
+        // Record the human verdict ONLY when the CAS write actually won: a lost
+        // race changed nothing, so there is nothing to describe (ADR-0030 §2).
+        if updated {
+            if let Some(event) = event {
+                CorrectionEventsRepository::append_tx(&mut transaction, ctx, event).await?;
+            }
+            transaction.commit().await?;
+        } else {
+            transaction.rollback().await?;
+        }
+        Ok(updated)
     }
 }
 

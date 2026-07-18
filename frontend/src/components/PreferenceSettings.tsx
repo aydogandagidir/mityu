@@ -9,6 +9,7 @@ import { useTour } from "@/components/tour"
 import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch"
 import RecordingConsentSettings from "./RecordingConsentSettings"
 import RedactionSettings from "./RedactionSettings"
+import LearningSettings from "./LearningSettings"
 import { ThemeToggle } from "./ThemeToggle"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 
@@ -270,6 +271,11 @@ export function PreferenceSettings() {
       {/* Redaction Section */}
       <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
         <RedactionSettings />
+      </div>
+
+      {/* Learning Section */}
+      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
+        <LearningSettings />
       </div>
 
       {/* Analytics Section */}
