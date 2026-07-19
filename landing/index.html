@@ -78,32 +78,6 @@ a{color:inherit;text-decoration:none}
 .js .hero-sub{opacity:0;transform:translateY(10px);transition:opacity .7s ease,transform .7s ease}
 .js .hero-sub.show{opacity:1;transform:none}
 
-/* ---------- product window mock ---------- */
-.mock{padding:0 24px}
-.window{max-width:1120px;margin:0 auto;background:#fff;border:1px solid var(--hair);border-radius:24px;display:grid;grid-template-columns:minmax(280px,340px) 1fr;overflow:hidden}
-.win-left{border-right:1px solid var(--hair);padding:26px 22px}
-.win-right{padding:26px 30px 30px}
-@media (max-width:860px){.window{grid-template-columns:1fr}.win-left{border-right:0;border-bottom:1px solid var(--hair)}}
-.pane-label{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--gray);margin-bottom:16px}
-.t-line{display:flex;gap:10px;padding:9px 10px;border-radius:12px;font-size:13px;line-height:1.55}
-.t-line p{color:var(--ink)}
-.t-time{flex:none;color:var(--gray);font-size:12px;font-variant-numeric:tabular-nums;padding-top:2px}
-.t-line.hl{background:var(--blue-bg)}
-.t-tag{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;color:var(--blue)}
-.chip-row{display:flex;flex-wrap:wrap;gap:8px}
-.chip-row+.chip-row{margin-top:10px}
-.chip{display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:999px;background:var(--soft);color:var(--gray);font-size:12px}
-.chip-ai{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:500;white-space:nowrap}
-.report-block{margin-top:24px}
-.report-block h3{font-size:15px;font-weight:600}
-.sum-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.report-block>p{margin-top:10px;color:var(--gray);font-size:13.5px;line-height:1.65;max-width:58ch}
-.item{display:flex;align-items:flex-start;gap:10px;margin-top:12px}
-.item p{font-size:13.5px;color:var(--ink);line-height:1.5}
-.box{flex:none;width:16px;height:16px;border:1.5px solid #C6CAD1;border-radius:5px;margin-top:2px}
-.src{color:var(--blue);font-weight:500;white-space:nowrap}
-.approve-row{display:flex;align-items:center;gap:14px;margin-top:26px;padding-top:22px;border-top:1px solid var(--hair);flex-wrap:wrap}
-.approved{color:var(--gray);font-size:13px}
 
 /* ---------- soft cards (features + pricing) ---------- */
 .features{margin-top:150px}
@@ -174,6 +148,150 @@ a{color:inherit;text-decoration:none}
   .nav,.btn,.faq summary::after{transition:none}
 }
 </style>
+<style id="loop-styles">
+/* ===================== Learning Loop showpiece ===================== */
+/* A dark stage (Antigravity-style) framing ONE white "screen" that slides up +
+   grows to fill; the Capture→Transcribe→Draft→Approve→Recall flow lives inside
+   the screen's own toolbar, so it reads as a single video screen. */
+.loop{position:relative;background:#0A0A0F}
+.loop-runway{position:relative;height:260vh}
+.loop-stage{position:sticky;top:0;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(1200px 680px at 50% 45%,rgba(40,96,255,.20),rgba(10,10,15,0) 60%)}
+.loop-eyebrow{position:absolute;top:clamp(46px,9vh,102px);left:0;right:0;text-align:center;padding:0 24px;pointer-events:none;will-change:opacity;z-index:2}
+.loop-eyebrow .k{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:#7CA0FF}
+.loop-eyebrow .k::before{content:"";width:6px;height:6px;border-radius:50%;background:#7CA0FF;box-shadow:0 0 12px rgba(124,160,255,.9)}
+.loop-eyebrow h2{margin-top:14px;font-size:clamp(1.5rem,3.2vw,2.6rem);font-weight:500;letter-spacing:-.03em;line-height:1.12;color:#fff}
+.loop-eyebrow p{margin:12px auto 0;max-width:50ch;color:rgba(255,255,255,.6);font-size:clamp(.95rem,1.35vw,1.1rem);line-height:1.6}
+
+/* the ONE growing screen — a white app surface that fills as it grows */
+.screen{position:relative;width:min(1360px,94vw);aspect-ratio:16/9;max-height:86vh;border-radius:18px;overflow:hidden;background:#fff;display:flex;flex-direction:column;box-shadow:0 50px 130px -30px rgba(34,90,255,.42),0 40px 90px -40px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.06);transform:scale(.5);transform-origin:center center;will-change:transform}
+
+/* toolbar — the flow, integrated into the one screen */
+.app-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:clamp(9px,1.05vw,14px) clamp(13px,1.5vw,22px);border-bottom:1px solid var(--hair);flex:none}
+.stepper{display:flex;align-items:center;gap:clamp(4px,.8vw,12px);min-width:0;overflow:hidden}
+.step{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.step .s-dot{width:26px;height:26px;flex:none;border-radius:50%;background:#fff;border:1.5px solid var(--hair);display:grid;place-items:center;color:#AEB4BE;transition:border-color .35s ease,background .35s ease,color .35s ease,box-shadow .35s ease}
+.step .s-dot svg{width:13px;height:13px}
+.step .s-label{font-size:clamp(11px,1.05vw,13px);font-weight:500;color:var(--gray);white-space:nowrap;letter-spacing:-.01em;transition:color .35s ease}
+.step.active .s-dot{border-color:var(--blue);color:var(--blue);box-shadow:0 0 0 4px rgba(30,86,255,.14)}
+.step.active .s-label{color:var(--ink);font-weight:600}
+.step.done .s-dot{border-color:var(--blue);background:var(--blue);color:#fff}
+.sep{flex:none;width:clamp(9px,1.5vw,26px);height:2px;border-radius:2px;background:var(--hair);transition:background .4s ease}
+.sep.on{background:linear-gradient(90deg,#1E56FF,#5B84FF)}
+.local-badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 11px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:11px;font-weight:600;white-space:nowrap;flex:none}
+.local-badge svg{width:12px;height:12px}
+
+/* per-stage status line */
+.app-status{display:flex;align-items:center;gap:9px;padding:clamp(7px,.85vw,11px) clamp(13px,1.5vw,22px);border-bottom:1px solid var(--hair);font-size:clamp(11px,1.1vw,13px);font-weight:500;color:var(--ink);flex:none}
+.app-status .live{width:8px;height:8px;border-radius:50%;background:var(--blue);flex:none;animation:lpulse 1.9s ease-out infinite}
+.app-status .live.rec{background:#EA4335;animation:rpulse 1.9s ease-out infinite}
+.app-status .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+@keyframes lpulse{0%{box-shadow:0 0 0 0 rgba(30,86,255,.45)}70%{box-shadow:0 0 0 8px rgba(30,86,255,0)}100%{box-shadow:0 0 0 0 rgba(30,86,255,0)}}
+@keyframes rpulse{0%{box-shadow:0 0 0 0 rgba(234,67,53,.45)}70%{box-shadow:0 0 0 8px rgba(234,67,53,0)}100%{box-shadow:0 0 0 0 rgba(234,67,53,0)}}
+
+.app-panes{position:relative;flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr}
+.pane{padding:clamp(11px,1.6vw,19px);min-width:0;overflow:hidden;display:flex;flex-direction:column}
+.pane.left{border-right:1px solid var(--hair)}
+.pane-h{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--gray);margin-bottom:11px;flex:none}
+
+.wave{display:flex;align-items:center;gap:3px;height:clamp(44px,6vw,62px);opacity:0;transition:opacity .4s ease}
+.wave i{flex:1;min-width:2px;height:100%;background:linear-gradient(180deg,#6E93FF,#1E56FF);border-radius:2px;transform:scaleY(.16)}
+.cap-note{margin-top:12px;color:var(--gray);font-size:clamp(11px,1.15vw,12.5px);line-height:1.5;max-width:34ch;opacity:0;transition:opacity .4s ease}
+.screen[data-stage="capture"] .wave{opacity:1}
+.screen[data-stage="capture"] .cap-note{opacity:1;transition-delay:.15s}
+.screen[data-stage="capture"] .wave i{animation:wv 1.05s ease-in-out infinite}
+
+.tlines{display:flex;flex-direction:column;gap:2px}
+.tline{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;padding:6px 8px;border-radius:10px;font-size:clamp(11px,1.13vw,13px);line-height:1.48;opacity:0;transform:translateY(7px);transition:opacity .5s ease,transform .5s ease,background .4s ease}
+.tline p{margin:0}
+.tline .tt{flex:none;color:var(--gray);font-variant-numeric:tabular-nums;font-size:11px;padding-top:1px}
+.tline .tag{display:block;margin-top:3px;font-size:10px;font-weight:600;color:var(--blue)}
+.tline>div{min-width:0;flex:1}
+.tlines .tline:nth-child(1){transition-delay:.05s}
+.tlines .tline:nth-child(2){transition-delay:.32s}
+.tlines .tline:nth-child(3){transition-delay:.6s}
+.tlines .tline:nth-child(4){transition-delay:.88s}
+.screen[data-stage="transcribe"] .tline,.screen[data-stage="draft"] .tline,.screen[data-stage="approve"] .tline,.screen[data-stage="recall"] .tline{opacity:1;transform:none}
+.screen[data-stage="draft"] .tline.linked,.screen[data-stage="approve"] .tline.linked,.screen[data-stage="recall"] .tline.linked{background:var(--blue-bg)}
+
+.rep{display:flex;flex-direction:column;height:100%;min-height:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;opacity:0;transform:translateY(7px);transition:.5s ease}
+.chips .c{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:var(--soft);color:var(--gray);font-size:11px;white-space:nowrap}
+.sum{margin-top:13px;opacity:0;transform:translateY(7px);transition:.5s ease}
+.sum-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sum-h h4{font-size:13px;font-weight:600;margin:0}
+.ai-chip{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:10.5px;font-weight:600;white-space:nowrap}
+.sum>p{margin:8px 0 0;color:var(--gray);font-size:clamp(11px,1.1vw,12px);line-height:1.5}
+.acts{margin-top:12px;opacity:0;transform:translateY(7px);transition:.5s ease}
+.acts h4{font-size:13px;font-weight:600;margin:0 0 6px}
+.act{display:flex;gap:8px;align-items:flex-start;margin-top:7px;font-size:clamp(11px,1.1vw,12px);line-height:1.45}
+.act p{margin:0}
+.act .bx{flex:none;width:15px;height:15px;border:1.5px solid #C6CAD1;border-radius:4px;margin-top:1px;display:grid;place-items:center;color:#fff;transition:background .3s ease,border-color .3s ease}
+.act .bx svg{width:10px;height:10px;opacity:0;transition:opacity .3s ease}
+.srcx{color:var(--blue);font-weight:500;white-space:nowrap}
+.approve{margin-top:auto;display:flex;align-items:center;gap:11px;padding-top:12px;border-top:1px solid var(--hair);opacity:0;transition:opacity .5s ease}
+.btn-mini{height:30px;padding:0 15px;border-radius:999px;background:var(--ink);color:#fff;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.approve .done{display:none;align-items:center;gap:7px;color:#1a7f37;font-size:12px;font-weight:600}
+.approve .done svg{width:15px;height:15px}
+.screen[data-stage="draft"] .chips,.screen[data-stage="approve"] .chips,.screen[data-stage="recall"] .chips{opacity:1;transform:none}
+.screen[data-stage="draft"] .sum,.screen[data-stage="approve"] .sum,.screen[data-stage="recall"] .sum{opacity:1;transform:none;transition-delay:.15s}
+.screen[data-stage="draft"] .acts,.screen[data-stage="approve"] .acts,.screen[data-stage="recall"] .acts{opacity:1;transform:none;transition-delay:.3s}
+.screen[data-stage="approve"] .approve,.screen[data-stage="recall"] .approve{opacity:1}
+.screen.is-approved .btn-mini{display:none}
+.screen.is-approved .approve .done{display:inline-flex}
+.screen.is-approved .act .bx{background:var(--blue);border-color:var(--blue)}
+.screen.is-approved .act .bx svg{opacity:1}
+
+/* recall overlay */
+.recall{position:absolute;inset:0;display:flex;flex-direction:column;gap:13px;align-items:center;justify-content:center;padding:clamp(14px,3vw,28px);background:linear-gradient(180deg,rgba(248,250,253,.9),rgba(233,240,255,.92));opacity:0;pointer-events:none;transition:opacity .45s ease}
+.screen[data-stage="recall"] .recall{opacity:1}
+.recall-bar{width:min(430px,92%);display:flex;align-items:center;gap:10px;height:42px;padding:0 15px;background:#fff;border:1px solid var(--hair);border-radius:999px;box-shadow:0 12px 26px -16px rgba(11,11,15,.22)}
+.recall-bar .rc-ic{color:var(--gray);display:grid;place-items:center}
+.recall-bar .rc-ic svg{width:16px;height:16px}
+.rc-q{font-size:13px;color:var(--ink)}
+.rc-caret{width:2px;height:16px;background:var(--blue);animation:blink 1.12s steps(1,end) infinite}
+.recall-res{width:min(430px,92%);display:flex;flex-direction:column;gap:12px;opacity:0;transform:translateY(9px);transition:.5s ease}
+.screen[data-stage="recall"] .recall-res{opacity:1;transform:none;transition-delay:.95s}
+.rc-card{background:#fff;border:1px solid var(--hair);border-radius:14px;padding:13px 16px;box-shadow:0 14px 32px -20px rgba(11,11,15,.22)}
+.rc-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rc-title{font-size:13px;font-weight:600}
+.rc-badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;border-radius:999px;background:#E7F6EC;color:#1a7f37;font-size:11px;font-weight:600;white-space:nowrap}
+.rc-badge svg{width:12px;height:12px;flex:none}
+.rc-line{margin:9px 0 0;color:var(--gray);font-size:12px;line-height:1.5}
+.rc-plus{align-self:center;display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 15px;border-radius:999px;background:var(--blue);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;opacity:0;transform:scale(.88);transition:.5s cubic-bezier(.2,1.5,.4,1)}
+.rc-plus svg{width:14px;height:14px;flex:none}
+.screen[data-stage="recall"] .rc-plus{opacity:1;transform:none;transition-delay:1.55s}
+
+.app-statusbar{display:flex;align-items:center;gap:8px;padding:clamp(7px,.85vw,11px) clamp(13px,1.5vw,22px);border-top:1px solid var(--hair);color:var(--gray);font-size:clamp(10px,1vw,12px);font-weight:500;flex:none}
+.app-statusbar .sb-lock{display:grid;place-items:center;color:var(--blue);flex:none}
+.app-statusbar .sb-lock svg{width:13px;height:13px}
+
+@keyframes wv{0%,100%{transform:scaleY(.16)}50%{transform:scaleY(1)}}
+
+/* tablet */
+@media (max-width:1024px){.screen{transform:scale(.66)}}
+
+/* mobile: drop the pin/scale, static full-width screen (stepper shows icons only) */
+@media (max-width:720px){
+  .loop-runway{height:auto}
+  .loop-stage{position:static;height:auto;flex-direction:column;padding:44px 0;overflow:visible;background:radial-gradient(900px 520px at 50% 28%,rgba(40,96,255,.18),rgba(10,10,15,0) 60%)}
+  .loop-eyebrow{position:static;opacity:1!important;margin-bottom:26px;max-width:34ch;margin-left:auto;margin-right:auto}
+  .screen{transform:none!important;width:94vw;aspect-ratio:auto;max-height:none;height:748px;border-radius:16px}
+  .step .s-label{display:none}
+  .app-panes{grid-template-columns:1fr}
+  .pane.left{border-right:0;border-bottom:1px solid var(--hair)}
+}
+
+/* reduced motion: static, full size, resolved (approved) frame */
+@media (prefers-reduced-motion:reduce){
+  .loop-runway{height:auto}
+  .loop-stage{position:static;height:auto;flex-direction:column;padding:56px 0;overflow:visible}
+  .loop-eyebrow{position:static;opacity:1!important;margin-bottom:28px}
+  .screen{transform:none!important}
+  .app-status .live{animation:none}
+  .screen[data-stage] .wave i{animation:none}
+  .sep,.step .s-dot,.tline,.chips,.sum,.acts,.approve,.recall,.recall-res,.rc-plus{transition:none}
+}
+</style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -187,7 +305,7 @@ a{color:inherit;text-decoration:none}
       <span class="wordmark">mityu</span>
     </a>
     <nav class="nav-links" aria-label="Primary">
-      <a href="#how">How it works</a>
+      <a href="#loop">How it works</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </nav>
@@ -214,44 +332,87 @@ a{color:inherit;text-decoration:none}
     </div>
   </section>
 
-  <!-- ================= product window ================= -->
-  <section class="mock" id="how">
-    <h2 class="sr-only">How it works</h2>
-    <div class="window">
-      <div class="win-left">
-        <p class="pane-label">Transcript</p>
-        <div class="t-line"><span class="t-time">12:04</span><p>Okay, let’s lock the launch. I’d rather slip a week than ship the old onboarding.</p></div>
-        <div class="t-line"><span class="t-time">12:19</span><p>Design can’t finish until the final copy lands. Friday is the real deadline.</p></div>
-        <div class="t-line hl"><span class="t-time">12:42</span><div><p>Amira will send the revised budget to finance before Thursday’s review.</p><span class="t-tag">Linked source</span></div></div>
-        <div class="t-line"><span class="t-time">13:05</span><p>Then we confirm the new date with vendors and move the check-in to Thursday.</p></div>
-      </div>
-      <div class="win-right">
-        <p class="pane-label">Report</p>
-        <div class="chip-row">
-          <span class="chip">Duration 42:18</span>
-          <span class="chip">Words 6,204</span>
-          <span class="chip">Segments 87</span>
+  <!-- ================= learning loop showpiece ================= -->
+  <section class="loop" id="loop" aria-label="How Mityu works — the private learning loop">
+    <div class="loop-runway">
+      <div class="loop-stage">
+        <div class="loop-eyebrow" id="loopEyebrow">
+          <span class="k">The loop</span>
+          <h2>One private loop, from voice to knowledge.</h2>
+          <p>Capture, transcribe, draft, approve, recall — every step runs on your device, and each meeting you approve makes your local memory sharper.</p>
         </div>
-        <div class="chip-row">
-          <span class="chip">Kickoff</span>
-          <span class="chip">Budget review</span>
-          <span class="chip">Next steps</span>
-        </div>
-        <div class="report-block">
-          <div class="sum-head">
-            <h3>Summary</h3>
-            <span class="chip-ai">AI-generated · review required</span>
+
+        <div class="screen" id="screen" data-stage="capture" role="img"
+             aria-label="Animated demo: Mityu captures a meeting from your microphone and system audio, transcribes it on-device, drafts a source-linked summary and action items, waits for your approval, then saves the meeting to searchable local memory — and loops back to the next conversation.">
+
+          <!-- toolbar: the flow, integrated into the one screen -->
+          <div class="app-bar">
+            <div class="stepper" aria-hidden="true">
+              <div class="step" data-node="capture"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4"/></svg></span><span class="s-label">Capture</span></div>
+              <span class="sep"></span>
+              <div class="step" data-node="transcribe"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h9"/></svg></span><span class="s-label">Transcribe</span></div>
+              <span class="sep"></span>
+              <div class="step" data-node="draft"><span class="s-dot"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4l1.75 4.85L18.6 9l-4.85 1.75L12 15.6l-1.75-4.85L5.4 9l4.85-1.75z"/></svg></span><span class="s-label">Draft</span></div>
+              <span class="sep"></span>
+              <div class="step" data-node="approve"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span class="s-label">Approve</span></div>
+              <span class="sep"></span>
+              <div class="step" data-node="recall"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.5 16.5"/></svg></span><span class="s-label">Recall</span></div>
+            </div>
+            <span class="local-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Local</span>
           </div>
-          <p>The team agreed to move the launch to March 21, pending vendor confirmation. The revised budget goes to finance this week, and design is blocked on final copy until Friday.</p>
-        </div>
-        <div class="report-block">
-          <h3>Action items</h3>
-          <div class="item"><span class="box"></span><p>Send the revised budget to finance — Amira <span class="src">→ 12:42 source</span></p></div>
-          <div class="item"><span class="box"></span><p>Confirm the new launch date with vendors <span class="src">→ 13:05 source</span></p></div>
-        </div>
-        <div class="approve-row">
-          <span class="btn btn-black btn-sm">Approve summary</span>
-          <span class="approved">1 of 3 approved</span>
+
+          <!-- per-stage status -->
+          <div class="app-status"><span class="live rec" id="liveDot"></span><span class="txt" id="statusTxt">Recording — mic + system, on your device</span></div>
+
+          <!-- panes -->
+          <div class="app-panes">
+            <div class="pane left">
+              <p class="pane-h">Transcript</p>
+              <div class="wave" id="wave"></div>
+              <p class="cap-note">Listening to your mic and the meeting audio. No bot joins the call.</p>
+              <div class="tlines">
+                <div class="tline"><span class="tt">12:04</span><p>Okay, let’s lock the launch. I’d rather slip a week than ship the old onboarding.</p></div>
+                <div class="tline"><span class="tt">12:19</span><p>Design can’t finish until the final copy lands. Friday is the real deadline.</p></div>
+                <div class="tline linked"><span class="tt">12:42</span><div><p>Amira will send the revised budget to finance before Thursday’s review.</p><span class="tag">Linked source</span></div></div>
+                <div class="tline"><span class="tt">13:05</span><p>Then we confirm the new date with vendors and move the check-in to Thursday.</p></div>
+              </div>
+            </div>
+            <div class="pane right">
+              <p class="pane-h">Report</p>
+              <div class="rep">
+                <div class="chips">
+                  <span class="c">Duration 42:18</span><span class="c">Words 6,204</span><span class="c">Segments 87</span>
+                </div>
+                <div class="sum">
+                  <div class="sum-h"><h4>Summary</h4><span class="ai-chip" id="aiChip">AI-generated · review required</span></div>
+                  <p>The team agreed to move the launch to March 21, pending vendor confirmation. The revised budget goes to finance this week; design is blocked on final copy until Friday.</p>
+                </div>
+                <div class="acts">
+                  <h4>Action items</h4>
+                  <div class="act"><span class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><p>Send the revised budget to finance — Amira <span class="srcx">→ 12:42 source</span></p></div>
+                  <div class="act"><span class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><p>Confirm the new launch date with vendors <span class="srcx">→ 13:05 source</span></p></div>
+                </div>
+                <div class="approve">
+                  <span class="btn-mini" id="approveBtn">Approve summary</span>
+                  <span class="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Approved by you</span>
+                </div>
+              </div>
+            </div>
+            <div class="recall" id="recall" aria-hidden="true">
+              <div class="recall-bar"><span class="rc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.5 16.5"/></svg></span><span class="rc-q" id="recallQ"></span><span class="rc-caret"></span></div>
+              <div class="recall-res">
+                <div class="rc-card">
+                  <div class="rc-top"><span class="rc-title">Q1 Launch Sync</span><span class="rc-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Approved · local</span></div>
+                  <p class="rc-line">“Amira will send the revised budget to finance…” <span class="srcx">→ 12:42</span></p>
+                </div>
+                <span class="rc-plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Added to your local memory</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- bottom statusbar -->
+          <div class="app-statusbar"><span class="sb-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span><span>Everything on your device — no upload, no account.</span></div>
+
         </div>
       </div>
     </div>
@@ -553,6 +714,122 @@ a{color:inherit;text-decoration:none}
     }
   }
   window.setTimeout(tick, 380);
+})();
+</script>
+
+<script>
+/* ===== Learning Loop: scroll-grow + integrated flow cycle ===== */
+(function () {
+  var screen = document.getElementById('screen');
+  if (!screen) return;
+  var loop = document.getElementById('loop'),
+      runway = loop.querySelector('.loop-runway'),
+      eyebrow = document.getElementById('loopEyebrow'),
+      liveDot = document.getElementById('liveDot'),
+      statusTxt = document.getElementById('statusTxt'),
+      aiChip = document.getElementById('aiChip'),
+      recallQ = document.getElementById('recallQ'),
+      wave = document.getElementById('wave'),
+      steps = Array.prototype.slice.call(screen.querySelectorAll('.step')),
+      seps = Array.prototype.slice.call(screen.querySelectorAll('.sep'));
+
+  var reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
+
+  var AI_DRAFT = 'AI-generated · review required';
+  var AI_DONE = 'AI-generated · reviewed by you';
+
+  // build waveform bars
+  if (wave) {
+    var html = '';
+    for (var b = 0; b < 34; b++) { html += '<i style="animation-delay:-' + ((b * 57) % 1050) + 'ms"></i>'; }
+    wave.innerHTML = html;
+  }
+
+  var STAGES = [
+    { id: 'capture',    txt: 'Recording — mic + system, on your device', rec: true },
+    { id: 'transcribe', txt: 'Transcribing — Whisper large-v3, offline' },
+    { id: 'draft',      txt: 'Drafting summary — AI, every line source-linked' },
+    { id: 'approve',    txt: 'Ready for your approval' },
+    { id: 'recall',     txt: 'Saved locally — searchable in your memory' }
+  ];
+  var DUR = { capture: 2700, transcribe: 3400, draft: 3900, approve: 3000, recall: 4200 };
+
+  function idxOf(name) { for (var i = 0; i < STAGES.length; i++) { if (STAGES[i].id === name) return i; } return 0; }
+
+  function applyStage(name) {
+    screen.setAttribute('data-stage', name);
+    var i = idxOf(name), s = STAGES[i];
+    if (statusTxt) statusTxt.textContent = s.txt;
+    if (liveDot) liveDot.className = 'live' + (s.rec ? ' rec' : '');
+    steps.forEach(function (n, k) { n.classList.toggle('active', k === i); n.classList.toggle('done', k < i); });
+    seps.forEach(function (sp, k) { sp.classList.toggle('on', k < i); });
+  }
+
+  var idx = 0, timer = null, subTimer = null, running = false;
+  function clearAll() { clearTimeout(timer); clearTimeout(subTimer); }
+
+  function go(i) {
+    idx = i;
+    var name = STAGES[i].id;
+    if (name === 'capture') { screen.classList.remove('is-approved'); if (aiChip) aiChip.textContent = AI_DRAFT; if (recallQ) recallQ.textContent = ''; }
+    applyStage(name);
+    if (name === 'approve') {
+      subTimer = setTimeout(function () { screen.classList.add('is-approved'); if (aiChip) aiChip.textContent = AI_DONE; }, 1300);
+    }
+    if (name === 'recall') { typeQuery('budget deadline'); }
+  }
+  function tick() { go((idx + 1) % STAGES.length); timer = setTimeout(tick, DUR[STAGES[idx].id]); }
+  function start() { if (running || reduce) return; running = true; go(0); timer = setTimeout(tick, DUR.capture); }
+  function stop() { running = false; clearAll(); }
+
+  function typeQuery(q) {
+    if (!recallQ) return;
+    recallQ.textContent = ''; var i = 0;
+    (function t() { if (!running) return; recallQ.textContent = q.slice(0, ++i); if (i < q.length) subTimer = setTimeout(t, 72); })();
+  }
+
+  // ---- scroll-driven slide-up + grow (desktop / tablet only) ----
+  function startScale() { return window.innerWidth <= 1024 ? 0.66 : 0.5; }
+  function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1 - Math.pow(1 - t, 3); }
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return; ticking = true;
+    window.requestAnimationFrame(function () {
+      ticking = false;
+      var r = runway.getBoundingClientRect();
+      var total = r.height - window.innerHeight;
+      var p = total > 0 ? (-r.top) / total : 0; p = p < 0 ? 0 : p > 1 ? 1 : p;
+      var s0 = startScale();
+      var growP = ease(p / 0.5);
+      var s = s0 + (1 - s0) * growP; if (s > 1) s = 1;
+      var ty = (1 - growP) * 100; // starts lower, slides up as it grows
+      screen.style.transform = 'translateY(' + ty.toFixed(1) + 'px) scale(' + s + ')';
+      if (eyebrow) eyebrow.style.opacity = (1 - Math.min(p / 0.34, 1)).toFixed(3);
+    });
+  }
+
+  var pinMode = !reduce && window.innerWidth > 720;
+  if (pinMode) { window.addEventListener('scroll', onScroll, { passive: true }); onScroll(); }
+  window.addEventListener('resize', function () { if (pinMode) onScroll(); }, { passive: true });
+
+  // reduced motion -> static resolved (approved) frame, no cycling
+  if (reduce) {
+    applyStage('approve');
+    screen.classList.add('is-approved');
+    if (aiChip) aiChip.textContent = AI_DONE;
+    if (statusTxt) statusTxt.textContent = 'Reviewed and saved on your device';
+    if (liveDot) liveDot.className = 'live';
+    return;
+  }
+
+  // run the cycle only while the screen is on-screen
+  try {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) start(); else stop(); });
+    }, { threshold: 0.25 });
+    io.observe(screen);
+  } catch (e) { start(); }
 })();
 </script>
 </body>
