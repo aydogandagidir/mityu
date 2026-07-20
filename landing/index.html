@@ -343,12 +343,6 @@ a{color:inherit;text-decoration:none}
 .ld-tag.active svg{width:11px;height:11px}
 .ld-rule-text{margin:10px 0 0;font-size:clamp(13px,1.3vw,14.5px);font-weight:600;color:var(--ink);line-height:1.45}
 .ld-rule-meta{margin:7px 0 0;font-size:11.5px;color:var(--gray);line-height:1.45}
-.ld-rule-actions{display:flex;align-items:center;gap:9px;margin-top:13px}
-.ld-approve{height:32px;padding:0 15px;border-radius:999px;background:var(--ink);color:#fff;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:7px}
-.ld-approve svg{width:13px;height:13px}
-.ld-dismiss{height:32px;padding:0 14px;border-radius:999px;background:#F1F3F4;color:var(--gray);font-size:12px;font-weight:500;display:inline-flex;align-items:center}
-.ld-rule-active{display:none;align-items:center;gap:8px;font-size:12px;font-weight:600;color:#1a7f37;margin-top:13px}
-.ld-rule-active svg{width:16px;height:16px;flex:none}
 
 .ld-applied{position:absolute;inset:0;padding:clamp(13px,1.8vw,18px) clamp(15px,2vw,24px);opacity:0;transform:translateY(12px);transition:opacity .55s ease,transform .55s ease;pointer-events:none}
 .ld-applied .ld-item{border-color:#CDE7D6;background:#FBFEFC}
@@ -364,9 +358,6 @@ a{color:inherit;text-decoration:none}
 .learn-demo[data-step="learn"] .ld-edited-chip,.learn-demo[data-step="approve"] .ld-edited-chip{opacity:1;transform:none}
 .learn-demo[data-step="apply"] .ld-editing{opacity:0;transform:translateY(-10px)}
 .learn-demo[data-step="apply"] .ld-applied{opacity:1;transform:none}
-.learn-demo.approved .ld-rule-actions{display:none}
-.learn-demo.approved .ld-rule-active{display:inline-flex}
-.learn-demo.approved .ld-rule-meta{display:none}
 .learn-demo.approved .ld-tag:not(.active){display:none}
 .learn-demo.approved .ld-tag.active{display:inline-flex}
 .learn-demo.approved .ld-rule{border-color:#CDE7D6;background:linear-gradient(180deg,#FBFEFC,#EFF9F2)}
@@ -569,7 +560,7 @@ a{color:inherit;text-decoration:none}
       <div class="learn-head" id="learnHead">
         <span class="learn-k">The learning loop</span>
         <h2>It gets sharper every meeting.</h2>
-        <p>Correct the same thing a few times and Mityu proposes a plain-language rule. Approve it, and your next report already follows it — your edits and rules never leave your device.</p>
+        <p>Correct the same thing a few times and Mityu turns it into a plain-language rule that shapes your next report — automatically. Every rule stays visible and editable, and the loop runs on your device by default.</p>
       </div>
 
       <div class="learn-demo" id="learnDemo" data-step="correct" role="img"
@@ -586,26 +577,21 @@ a{color:inherit;text-decoration:none}
             <div class="ld-rule">
               <div class="ld-rule-h">
                 <span class="spark"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4l1.75 4.85L18.6 9l-4.85 1.75L12 15.6l-1.75-4.85L5.4 9l4.85-1.75z"/></svg></span>
-                <span class="r-title">Suggested rule</span>
-                <span class="ld-tag">Proposed</span>
-                <span class="ld-tag active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Active</span>
+                <span class="r-title">New rule</span>
+                <span class="ld-tag">Learned from 3 edits</span>
+                <span class="ld-tag active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Auto-applied</span>
               </div>
               <p class="ld-rule-text">Add an owner and a due date to every action item.</p>
-              <p class="ld-rule-meta">Learned from your last 3 edits — nothing changes until you approve.</p>
-              <div class="ld-rule-actions">
-                <span class="ld-approve" id="ldApprove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Approve</span>
-                <span class="ld-dismiss">Dismiss</span>
-              </div>
-              <span class="ld-rule-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Active · applied to new drafts, on your device</span>
+              <p class="ld-rule-meta">Applied automatically — visible and editable on your Rules screen. Turn it off anytime.</p>
             </div>
           </div>
           <div class="ld-applied">
             <div class="ld-item"><span class="bx on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span class="it-text">Confirm the new launch date with vendors <span class="add">— Marco, due Fri</span></span></div>
-            <span class="ld-applied-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Your rule applied — no edit needed</span>
+            <span class="ld-applied-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Your rule applied automatically</span>
             <div class="ld-metric"><span class="mdot"></span><span>Corrections this report: <b>0</b> — Mityu gets sharper every meeting.</span></div>
           </div>
         </div>
-        <div class="ld-foot"><span class="lk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span><span>On your device — your edits and rules never leave.</span></div>
+        <div class="ld-foot"><span class="lk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span><span>On your device by default — every rule stays yours to edit or delete.</span></div>
       </div>
 
       <div class="learn-cycle" aria-hidden="true">
@@ -613,9 +599,9 @@ a{color:inherit;text-decoration:none}
         <span class="lc-arrow">→</span>
         <span class="lc-step" data-lc="learn"><span class="lc-dot"></span>Learn</span>
         <span class="lc-arrow">→</span>
-        <span class="lc-step" data-lc="approve"><span class="lc-dot"></span>Approve</span>
+        <span class="lc-step" data-lc="approve"><span class="lc-dot"></span>Apply</span>
         <span class="lc-arrow">→</span>
-        <span class="lc-step" data-lc="apply"><span class="lc-dot"></span>Apply</span>
+        <span class="lc-step" data-lc="apply"><span class="lc-dot"></span>Sharper</span>
         <span class="lc-loop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 0 1 14.5-6M20.5 12a8.5 8.5 0 0 1-14.5 6"/><path d="M18.5 3v3.2h-3.2M5.5 21v-3.2h3.2"/></svg></span>
       </div>
     </div>
@@ -1013,8 +999,8 @@ a{color:inherit;text-decoration:none}
 
   var STEPS = [
     { id: 'correct', cap: 'You fixed a draft' },
-    { id: 'learn',   cap: 'Mityu spotted the pattern' },
-    { id: 'approve', cap: 'You review the suggested rule' },
+    { id: 'learn',   cap: 'Mityu wrote a rule from your edits' },
+    { id: 'approve', cap: 'It becomes a rule — applied automatically' },
     { id: 'apply',   cap: 'Your next report already follows it' }
   ];
   var DUR = { correct: 3400, learn: 3400, approve: 3000, apply: 3800 };
@@ -1044,7 +1030,7 @@ a{color:inherit;text-decoration:none}
     var name = STEPS[i].id;
     if (name === 'correct') { demo.classList.remove('approved'); setRules(0); typeAdd(); }
     applyStep(name);
-    if (name === 'approve') { subTimer = setTimeout(function () { demo.classList.add('approved'); setRules(1); if (cap) cap.textContent = 'You approved it — now active'; }, 1200); }
+    if (name === 'approve') { subTimer = setTimeout(function () { demo.classList.add('approved'); setRules(1); }, 1200); }
   }
   function tick() { go((idx + 1) % STEPS.length); timer = setTimeout(tick, DUR[STEPS[idx].id]); }
   function start() { if (running || reduce) return; running = true; go(0); timer = setTimeout(tick, DUR.correct); }
@@ -1057,7 +1043,7 @@ a{color:inherit;text-decoration:none}
     reveal();
     applyStep('approve'); demo.classList.add('approved'); setRules(1);
     if (addEl) addEl.textContent = ADD;
-    if (cap) cap.textContent = 'Your rules are learned from your edits';
+    if (cap) cap.textContent = 'Learned from your edits — applied automatically, always editable';
     return;
   }
 
