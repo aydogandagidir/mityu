@@ -955,6 +955,7 @@ a{color:inherit;text-decoration:none}
     if (ticking) return; ticking = true;
     window.requestAnimationFrame(function () {
       ticking = false;
+      if (window.innerWidth <= 720) return; // mobile: no pin (CSS handles); recomputed on resize
       var r = runway.getBoundingClientRect();
       var total = r.height - window.innerHeight;
       var p = total > 0 ? (-r.top) / total : 0; p = p < 0 ? 0 : p > 1 ? 1 : p;
@@ -967,10 +968,6 @@ a{color:inherit;text-decoration:none}
     });
   }
 
-  var pinMode = !reduce && window.innerWidth > 720;
-  if (pinMode) { window.addEventListener('scroll', onScroll, { passive: true }); onScroll(); }
-  window.addEventListener('resize', function () { if (pinMode) onScroll(); }, { passive: true });
-
   // reduced motion -> static resolved (approved) frame, no cycling
   if (reduce) {
     applyStage('approve');
@@ -980,6 +977,11 @@ a{color:inherit;text-decoration:none}
     if (liveDot) liveDot.className = 'live';
     return;
   }
+
+  // listeners registered unconditionally so crossing the 720px breakpoint (resize/rotate) re-drives the grow
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+  onScroll();
 
   // run the cycle only while the screen is on-screen
   try {
@@ -1054,6 +1056,7 @@ a{color:inherit;text-decoration:none}
     if (ticking) return; ticking = true;
     window.requestAnimationFrame(function () {
       ticking = false;
+      if (window.innerWidth <= 720) return; // mobile: no pin (CSS handles); recomputed on resize
       var r = runway.getBoundingClientRect();
       var total = r.height - window.innerHeight;
       var p = total > 0 ? (-r.top) / total : 0; p = p < 0 ? 0 : p > 1 ? 1 : p;
@@ -1065,10 +1068,6 @@ a{color:inherit;text-decoration:none}
     });
   }
 
-  var pinMode = !reduce && window.innerWidth > 720;
-  if (pinMode) { window.addEventListener('scroll', onScroll, { passive: true }); onScroll(); }
-  window.addEventListener('resize', function () { if (pinMode) onScroll(); }, { passive: true });
-
   // reduced motion -> static resolved frame with an active, learned rule
   if (reduce) {
     applyStep('approve'); demo.classList.add('approved'); setRules(1);
@@ -1076,6 +1075,11 @@ a{color:inherit;text-decoration:none}
     if (cap) cap.textContent = 'Learned from your edits — applied automatically, always editable';
     return;
   }
+
+  // listeners registered unconditionally so crossing the 720px breakpoint (resize/rotate) re-drives the grow
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+  onScroll();
 
   // run the cycle only while the demo is on-screen
   try {
