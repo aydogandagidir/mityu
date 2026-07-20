@@ -292,6 +292,102 @@ a{color:inherit;text-decoration:none}
   .sep,.step .s-dot,.tline,.chips,.sum,.acts,.approve,.recall,.recall-res,.rc-plus{transition:none}
 }
 </style>
+<style id="learn-styles">
+/* ============ The learning loop — how Mityu learns from your edits ============ */
+/* Contained, self-playing demo: fix a draft -> Mityu proposes a plain-language
+   rule -> you approve -> the next report follows it. Local + human-approved. */
+.learn{position:relative;background:linear-gradient(180deg,#FFFFFF 0%,#EDF2FF 50%,#FFFFFF 100%);padding:clamp(84px,13vh,158px) 24px}
+.learn-wrap{max-width:880px;margin:0 auto}
+.learn-head{text-align:center;max-width:60ch;margin:0 auto}
+.js .learn-head{opacity:0;transform:translateY(14px);transition:opacity .7s ease,transform .7s ease}
+.js .learn.in .learn-head{opacity:1;transform:none}
+.learn-k{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--blue)}
+.learn-k::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
+.learn-head h2{margin-top:14px;font-size:clamp(1.8rem,3.6vw,2.9rem);font-weight:500;letter-spacing:-.03em;line-height:1.1;color:var(--ink)}
+.learn-head p{margin:16px auto 0;max-width:56ch;color:var(--gray);font-size:clamp(1rem,1.4vw,1.15rem);line-height:1.65}
+
+.learn-demo{position:relative;max-width:720px;margin:clamp(34px,5vw,54px) auto 0;background:#fff;border:1px solid var(--hair);border-radius:22px;box-shadow:0 44px 100px -50px rgba(30,86,255,.4),0 18px 44px -26px rgba(11,11,15,.16);display:flex;flex-direction:column;overflow:hidden}
+.js .learn-demo{opacity:0;transform:translateY(22px) scale(.97);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.7,.2,1)}
+.js .learn.in .learn-demo{opacity:1;transform:none}
+
+.ld-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:clamp(11px,1.5vw,15px) clamp(15px,2vw,22px);border-bottom:1px solid var(--hair)}
+.ld-title{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--ink)}
+.ld-title .dot{width:8px;height:8px;border-radius:50%;background:var(--blue);animation:lpulse 1.9s ease-out infinite}
+.ld-rules-pill{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 12px;border-radius:999px;background:var(--soft);color:var(--gray);font-size:12px;font-weight:500;white-space:nowrap;transition:background .45s ease,color .45s ease}
+.ld-rules-pill.has{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.ld-rules-pill svg{width:13px;height:13px}
+
+.ld-cap{display:flex;align-items:center;gap:9px;padding:clamp(12px,1.6vw,16px) clamp(15px,2vw,24px) 0;font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--blue);min-height:16px}
+.ld-cap::before{content:"";width:16px;height:1.5px;border-radius:2px;background:var(--blue);flex:none}
+
+.ld-body{position:relative;padding:clamp(13px,1.8vw,18px) clamp(15px,2vw,24px) clamp(16px,2.2vw,24px);min-height:clamp(276px,33vw,326px)}
+
+.ld-item{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;border:1px solid var(--hair);border-radius:14px;background:#fff}
+.ld-item .bx{flex:none;width:17px;height:17px;border:1.6px solid #C6CAD1;border-radius:5px;margin-top:2px;display:grid;place-items:center}
+.ld-item .bx.on{background:#1a7f37;border-color:#1a7f37;color:#fff}
+.ld-item .bx svg{width:11px;height:11px}
+.it-text{font-size:clamp(13px,1.3vw,14.5px);line-height:1.55;color:var(--ink)}
+.it-text .add{color:var(--blue);font-weight:600;white-space:nowrap}
+.ld-caret{display:inline-block;width:2px;height:1em;background:var(--blue);vertical-align:-.15em;margin-left:1px;opacity:0;animation:blink 1.12s steps(1,end) infinite}
+.learn-demo[data-step="correct"] .ld-caret{opacity:1}
+.ld-edited-chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;margin-top:12px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:11px;font-weight:600;opacity:0;transform:translateY(4px);transition:opacity .4s ease,transform .4s ease}
+.ld-edited-chip svg{width:12px;height:12px}
+
+.ld-rule{margin-top:15px;border:1px solid var(--hair);border-radius:14px;background:linear-gradient(180deg,#FBFCFE,#F3F7FF);padding:14px 15px;opacity:0;transform:translateY(12px);transition:opacity .55s ease,transform .55s ease,border-color .5s ease,background .5s ease}
+.ld-rule-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.ld-rule-h .spark{color:var(--blue);display:grid;place-items:center}
+.ld-rule-h .spark svg{width:15px;height:15px}
+.r-title{font-size:12.5px;font-weight:600;color:var(--ink)}
+.ld-tag{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 9px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:10.5px;font-weight:600}
+.ld-tag.active{display:none;background:#E7F6EC;color:#1a7f37}
+.ld-tag.active svg{width:11px;height:11px}
+.ld-rule-text{margin:10px 0 0;font-size:clamp(13px,1.3vw,14.5px);font-weight:600;color:var(--ink);line-height:1.45}
+.ld-rule-meta{margin:7px 0 0;font-size:11.5px;color:var(--gray);line-height:1.45}
+
+.ld-applied{position:absolute;inset:0;padding:clamp(13px,1.8vw,18px) clamp(15px,2vw,24px);opacity:0;transform:translateY(12px);transition:opacity .55s ease,transform .55s ease;pointer-events:none}
+.ld-applied .ld-item{border-color:#CDE7D6;background:#FBFEFC}
+.ld-applied-tag{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;margin-top:12px;border-radius:999px;background:#E7F6EC;color:#1a7f37;font-size:11px;font-weight:600}
+.ld-applied-tag svg{width:12px;height:12px}
+.ld-metric{display:flex;align-items:center;gap:8px;margin-top:18px;font-size:12.5px;color:var(--gray);line-height:1.4}
+.ld-metric b{color:#1a7f37;font-weight:600}
+.ld-metric .mdot{width:7px;height:7px;border-radius:50%;background:#1a7f37;flex:none}
+
+/* ---- step gating ---- */
+.ld-editing{transition:opacity .5s ease,transform .5s ease}
+.learn-demo[data-step="learn"] .ld-rule,.learn-demo[data-step="approve"] .ld-rule{opacity:1;transform:none}
+.learn-demo[data-step="learn"] .ld-edited-chip,.learn-demo[data-step="approve"] .ld-edited-chip{opacity:1;transform:none}
+.learn-demo[data-step="apply"] .ld-editing{opacity:0;transform:translateY(-10px)}
+.learn-demo[data-step="apply"] .ld-applied{opacity:1;transform:none}
+.learn-demo.approved .ld-tag:not(.active){display:none}
+.learn-demo.approved .ld-tag.active{display:inline-flex}
+.learn-demo.approved .ld-rule{border-color:#CDE7D6;background:linear-gradient(180deg,#FBFEFC,#EFF9F2)}
+
+.ld-foot{display:flex;align-items:center;gap:8px;padding:clamp(10px,1.4vw,13px) clamp(15px,2vw,22px);border-top:1px solid var(--hair);color:var(--gray);font-size:clamp(11px,1.05vw,12px);font-weight:500}
+.ld-foot .lk{color:var(--blue);display:grid;place-items:center}
+.ld-foot .lk svg{width:13px;height:13px}
+
+.learn-cycle{display:flex;align-items:center;justify-content:center;gap:clamp(5px,.9vw,11px);margin-top:clamp(24px,3.4vw,36px);flex-wrap:wrap}
+.lc-step{display:inline-flex;align-items:center;gap:7px;font-size:clamp(11px,1.15vw,13px);font-weight:500;color:var(--gray);transition:color .35s ease}
+.lc-step .lc-dot{width:9px;height:9px;border-radius:50%;background:var(--hair);transition:background .35s ease,box-shadow .35s ease}
+.lc-step.active{color:var(--ink);font-weight:600}
+.lc-step.active .lc-dot{background:var(--blue);box-shadow:0 0 0 4px rgba(30,86,255,.14)}
+.lc-step.done .lc-dot{background:var(--blue)}
+.lc-arrow{color:#C6CAD1;font-size:13px}
+.lc-loop{display:inline-flex;color:var(--blue);margin-left:2px}
+.lc-loop svg{width:16px;height:16px}
+
+@media (max-width:640px){
+  .learn-demo{max-width:100%}
+  .ld-body{min-height:308px}
+  .learn-cycle{gap:5px}
+}
+@media (prefers-reduced-motion:reduce){
+  .js .learn-head,.js .learn-demo{opacity:1;transform:none;transition:none}
+  .ld-title .dot{animation:none}
+  .ld-item,.ld-rule,.ld-applied,.ld-edited-chip,.ld-editing,.lc-step .lc-dot,.ld-rules-pill{transition:none}
+  .ld-caret{display:none}
+}
+</style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -455,6 +551,59 @@ a{color:inherit;text-decoration:none}
           <li><span class="ck">✓</span><span>BYOK: Ollama, OpenAI, Anthropic, Groq, OpenRouter</span></li>
         </ul>
       </article>
+    </div>
+  </section>
+
+  <!-- ================= the learning loop ================= -->
+  <section class="learn" id="learn" aria-label="How Mityu learns from your corrections">
+    <div class="learn-wrap">
+      <div class="learn-head" id="learnHead">
+        <span class="learn-k">The learning loop</span>
+        <h2>It gets sharper every meeting.</h2>
+        <p>Correct the same thing a few times and Mityu turns it into a plain-language rule that shapes your next report — automatically. Every rule stays visible and editable, and the loop runs on your device by default.</p>
+      </div>
+
+      <div class="learn-demo" id="learnDemo" data-step="correct" role="img"
+           aria-label="Animated demo: you fix an AI-drafted action item, Mityu proposes a plain-language rule learned from your edits, you approve it, and the next report is already formatted your way — all on your device.">
+        <div class="ld-bar">
+          <span class="ld-title"><span class="dot"></span>Action items</span>
+          <span class="ld-rules-pill" id="ldRules"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h10"/></svg>Local rules · <span id="ldCount">0</span></span>
+        </div>
+        <div class="ld-cap" id="ldCap">You fixed a draft</div>
+        <div class="ld-body">
+          <div class="ld-editing">
+            <div class="ld-item"><span class="bx"></span><span class="it-text">Send the revised budget to finance <span class="add" id="ldAdd"></span><span class="ld-caret"></span></span></div>
+            <span class="ld-edited-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg>You edited this</span>
+            <div class="ld-rule">
+              <div class="ld-rule-h">
+                <span class="spark"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4l1.75 4.85L18.6 9l-4.85 1.75L12 15.6l-1.75-4.85L5.4 9l4.85-1.75z"/></svg></span>
+                <span class="r-title">New rule</span>
+                <span class="ld-tag">Learned from 3 edits</span>
+                <span class="ld-tag active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Auto-applied</span>
+              </div>
+              <p class="ld-rule-text">Add an owner and a due date to every action item.</p>
+              <p class="ld-rule-meta">Applied automatically — visible and editable on your Rules screen. Turn it off anytime.</p>
+            </div>
+          </div>
+          <div class="ld-applied">
+            <div class="ld-item"><span class="bx on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span class="it-text">Confirm the new launch date with vendors <span class="add">— Marco, due Fri</span></span></div>
+            <span class="ld-applied-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Your rule applied automatically</span>
+            <div class="ld-metric"><span class="mdot"></span><span>Corrections this report: <b>0</b> — Mityu gets sharper every meeting.</span></div>
+          </div>
+        </div>
+        <div class="ld-foot"><span class="lk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span><span>On your device by default — every rule stays yours to edit or delete.</span></div>
+      </div>
+
+      <div class="learn-cycle" aria-hidden="true">
+        <span class="lc-step" data-lc="correct"><span class="lc-dot"></span>Correct</span>
+        <span class="lc-arrow">→</span>
+        <span class="lc-step" data-lc="learn"><span class="lc-dot"></span>Learn</span>
+        <span class="lc-arrow">→</span>
+        <span class="lc-step" data-lc="approve"><span class="lc-dot"></span>Apply</span>
+        <span class="lc-arrow">→</span>
+        <span class="lc-step" data-lc="apply"><span class="lc-dot"></span>Sharper</span>
+        <span class="lc-loop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 0 1 14.5-6M20.5 12a8.5 8.5 0 0 1-14.5 6"/><path d="M18.5 3v3.2h-3.2M5.5 21v-3.2h3.2"/></svg></span>
+      </div>
     </div>
   </section>
 
@@ -830,6 +979,80 @@ a{color:inherit;text-decoration:none}
     }, { threshold: 0.25 });
     io.observe(screen);
   } catch (e) { start(); }
+})();
+</script>
+
+<script>
+/* ===== The learning loop: reveal + self-playing correct→learn→approve→apply ===== */
+(function () {
+  var demo = document.getElementById('learnDemo');
+  if (!demo) return;
+  var section = document.getElementById('learn'),
+      cap = document.getElementById('ldCap'),
+      addEl = document.getElementById('ldAdd'),
+      rulesPill = document.getElementById('ldRules'),
+      countEl = document.getElementById('ldCount'),
+      cyc = Array.prototype.slice.call(section.querySelectorAll('.lc-step'));
+
+  var reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
+
+  var STEPS = [
+    { id: 'correct', cap: 'You fixed a draft' },
+    { id: 'learn',   cap: 'Mityu wrote a rule from your edits' },
+    { id: 'approve', cap: 'It becomes a rule — applied automatically' },
+    { id: 'apply',   cap: 'Your next report already follows it' }
+  ];
+  var DUR = { correct: 3400, learn: 3400, approve: 3000, apply: 3800 };
+  var ADD = '— Amira, due Thu';
+
+  function idxOf(n) { for (var i = 0; i < STEPS.length; i++) { if (STEPS[i].id === n) return i; } return 0; }
+  function setRules(n) { if (countEl) countEl.textContent = n; if (rulesPill) rulesPill.classList.toggle('has', n > 0); }
+
+  function applyStep(name) {
+    demo.setAttribute('data-step', name);
+    var i = idxOf(name);
+    if (cap) cap.textContent = STEPS[i].cap;
+    cyc.forEach(function (s, k) { s.classList.toggle('active', k === i); s.classList.toggle('done', k < i); });
+  }
+
+  var idx = 0, timer = null, subTimer = null, typeTimer = null, running = false;
+  function clearAll() { clearTimeout(timer); clearTimeout(subTimer); clearTimeout(typeTimer); }
+
+  function typeAdd() {
+    if (!addEl) return;
+    addEl.textContent = ''; var i = 0;
+    (function t() { if (!running) return; addEl.textContent = ADD.slice(0, ++i); if (i < ADD.length) typeTimer = setTimeout(t, 55); })();
+  }
+
+  function go(i) {
+    idx = i;
+    var name = STEPS[i].id;
+    if (name === 'correct') { demo.classList.remove('approved'); setRules(0); typeAdd(); }
+    applyStep(name);
+    if (name === 'approve') { subTimer = setTimeout(function () { demo.classList.add('approved'); setRules(1); }, 1200); }
+  }
+  function tick() { go((idx + 1) % STEPS.length); timer = setTimeout(tick, DUR[STEPS[idx].id]); }
+  function start() { if (running || reduce) return; running = true; go(0); timer = setTimeout(tick, DUR.correct); }
+  function stop() { running = false; clearAll(); }
+
+  function reveal() { if (section) section.classList.add('in'); }
+
+  // reduced motion -> revealed static frame with an active, learned rule
+  if (reduce) {
+    reveal();
+    applyStep('approve'); demo.classList.add('approved'); setRules(1);
+    if (addEl) addEl.textContent = ADD;
+    if (cap) cap.textContent = 'Learned from your edits — applied automatically, always editable';
+    return;
+  }
+
+  try {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { reveal(); start(); } else { stop(); } });
+    }, { threshold: 0.2 });
+    io.observe(section);
+  } catch (e) { reveal(); start(); }
 })();
 </script>
 </body>
