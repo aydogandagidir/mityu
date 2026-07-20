@@ -296,19 +296,17 @@ a{color:inherit;text-decoration:none}
 /* ============ The learning loop — how Mityu learns from your edits ============ */
 /* Contained, self-playing demo: fix a draft -> Mityu proposes a plain-language
    rule -> you approve -> the next report follows it. Local + human-approved. */
-.learn{position:relative;background:linear-gradient(180deg,#FFFFFF 0%,#EDF2FF 50%,#FFFFFF 100%);padding:clamp(84px,13vh,158px) 24px}
-.learn-wrap{max-width:880px;margin:0 auto}
+.learn{position:relative;background:linear-gradient(180deg,#FFFFFF 0%,#EDF2FF 50%,#FFFFFF 100%)}
+.learn-runway{position:relative;height:200vh}
+.learn-stage{position:sticky;top:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:clamp(60px,10vh,120px) 24px}
+.learn-wrap{max-width:880px;margin:0 auto;width:100%}
 .learn-head{text-align:center;max-width:60ch;margin:0 auto}
-.js .learn-head{opacity:0;transform:translateY(14px);transition:opacity .7s ease,transform .7s ease}
-.js .learn.in .learn-head{opacity:1;transform:none}
 .learn-k{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--blue)}
 .learn-k::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
 .learn-head h2{margin-top:14px;font-size:clamp(1.8rem,3.6vw,2.9rem);font-weight:500;letter-spacing:-.03em;line-height:1.1;color:var(--ink)}
 .learn-head p{margin:16px auto 0;max-width:56ch;color:var(--gray);font-size:clamp(1rem,1.4vw,1.15rem);line-height:1.65}
 
-.learn-demo{position:relative;max-width:720px;margin:clamp(34px,5vw,54px) auto 0;background:#fff;border:1px solid var(--hair);border-radius:22px;box-shadow:0 44px 100px -50px rgba(30,86,255,.4),0 18px 44px -26px rgba(11,11,15,.16);display:flex;flex-direction:column;overflow:hidden}
-.js .learn-demo{opacity:0;transform:translateY(22px) scale(.97);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.7,.2,1)}
-.js .learn.in .learn-demo{opacity:1;transform:none}
+.learn-demo{position:relative;max-width:720px;margin:clamp(34px,5vw,54px) auto 0;background:#fff;border:1px solid var(--hair);border-radius:22px;box-shadow:0 44px 100px -50px rgba(30,86,255,.4),0 18px 44px -26px rgba(11,11,15,.16);display:flex;flex-direction:column;overflow:hidden;transform:scale(.72);transform-origin:center center;will-change:transform}
 
 .ld-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:clamp(11px,1.5vw,15px) clamp(15px,2vw,22px);border-bottom:1px solid var(--hair)}
 .ld-title{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--ink)}
@@ -376,13 +374,20 @@ a{color:inherit;text-decoration:none}
 .lc-loop{display:inline-flex;color:var(--blue);margin-left:2px}
 .lc-loop svg{width:16px;height:16px}
 
+@media (max-width:720px){
+  .learn-runway{height:auto}
+  .learn-stage{position:static;min-height:0;padding:clamp(56px,10vh,120px) 24px}
+  .learn-demo{transform:none!important}
+}
 @media (max-width:640px){
   .learn-demo{max-width:100%}
   .ld-body{min-height:308px}
   .learn-cycle{gap:5px}
 }
 @media (prefers-reduced-motion:reduce){
-  .js .learn-head,.js .learn-demo{opacity:1;transform:none;transition:none}
+  .learn-runway{height:auto}
+  .learn-stage{position:static;min-height:0;padding:56px 24px}
+  .learn-demo{transform:none!important}
   .ld-title .dot{animation:none}
   .ld-item,.ld-rule,.ld-applied,.ld-edited-chip,.ld-editing,.lc-step .lc-dot,.ld-rules-pill{transition:none}
   .ld-caret{display:none}
@@ -556,7 +561,9 @@ a{color:inherit;text-decoration:none}
 
   <!-- ================= the learning loop ================= -->
   <section class="learn" id="learn" aria-label="How Mityu learns from your corrections">
-    <div class="learn-wrap">
+    <div class="learn-runway">
+      <div class="learn-stage">
+        <div class="learn-wrap">
       <div class="learn-head" id="learnHead">
         <span class="learn-k">The learning loop</span>
         <h2>It gets sharper every meeting.</h2>
@@ -603,6 +610,8 @@ a{color:inherit;text-decoration:none}
         <span class="lc-arrow">→</span>
         <span class="lc-step" data-lc="apply"><span class="lc-dot"></span>Sharper</span>
         <span class="lc-loop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 0 1 14.5-6M20.5 12a8.5 8.5 0 0 1-14.5 6"/><path d="M18.5 3v3.2h-3.2M5.5 21v-3.2h3.2"/></svg></span>
+      </div>
+        </div>
       </div>
     </div>
   </section>
@@ -1036,23 +1045,45 @@ a{color:inherit;text-decoration:none}
   function start() { if (running || reduce) return; running = true; go(0); timer = setTimeout(tick, DUR.correct); }
   function stop() { running = false; clearAll(); }
 
-  function reveal() { if (section) section.classList.add('in'); }
+  // ---- scroll-driven slide-up + grow (desktop / tablet), mirroring the hero loop ----
+  var runway = section.querySelector('.learn-runway');
+  function startScale() { return window.innerWidth <= 1024 ? 0.82 : 0.72; }
+  function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1 - Math.pow(1 - t, 3); }
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return; ticking = true;
+    window.requestAnimationFrame(function () {
+      ticking = false;
+      var r = runway.getBoundingClientRect();
+      var total = r.height - window.innerHeight;
+      var p = total > 0 ? (-r.top) / total : 0; p = p < 0 ? 0 : p > 1 ? 1 : p;
+      var s0 = startScale();
+      var growP = ease(p / 0.5);
+      var s = s0 + (1 - s0) * growP; if (s > 1) s = 1;
+      var ty = (1 - growP) * 60;
+      demo.style.transform = 'translateY(' + ty.toFixed(1) + 'px) scale(' + s + ')';
+    });
+  }
 
-  // reduced motion -> revealed static frame with an active, learned rule
+  var pinMode = !reduce && window.innerWidth > 720;
+  if (pinMode) { window.addEventListener('scroll', onScroll, { passive: true }); onScroll(); }
+  window.addEventListener('resize', function () { if (pinMode) onScroll(); }, { passive: true });
+
+  // reduced motion -> static resolved frame with an active, learned rule
   if (reduce) {
-    reveal();
     applyStep('approve'); demo.classList.add('approved'); setRules(1);
     if (addEl) addEl.textContent = ADD;
     if (cap) cap.textContent = 'Learned from your edits — applied automatically, always editable';
     return;
   }
 
+  // run the cycle only while the demo is on-screen
   try {
     var io = new IntersectionObserver(function (es) {
-      es.forEach(function (e) { if (e.isIntersecting) { reveal(); start(); } else { stop(); } });
-    }, { threshold: 0.2 });
-    io.observe(section);
-  } catch (e) { reveal(); start(); }
+      es.forEach(function (e) { if (e.isIntersecting) start(); else stop(); });
+    }, { threshold: 0.25 });
+    io.observe(demo);
+  } catch (e) { start(); }
 })();
 </script>
 </body>
