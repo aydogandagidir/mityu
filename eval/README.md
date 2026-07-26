@@ -50,6 +50,21 @@ tek birleşik listede prompt'a **yalnızca dosyada önce yazılan domain** girer
 skorunu belirler. Tanımsız bir set adı yazarsan `run` **model yüklemeden** durur ve tanımlı setleri
 listeler.
 
+⚠️ **Sidecar dosyası düz UTF-8 olmalı.** Windows PowerShell 5.1'de `echo legal > jl01.vocab.txt`
+dosyayı **UTF-16** yazar; harness bunu okuyamaz ve (sessizce `default`'a düşmek yerine) hata verip
+durur. Güvenli yollar:
+
+```powershell
+Set-Content -Path jl01.vocab.txt -Value legal -Encoding utf8
+```
+
+veya dosyayı editörde "UTF-8" olarak kaydet. UTF-8 BOM sorun değil, temizlenir.
+
+**Domain başına da ≥5 klip gerekir.** Jargon kovasında birden fazla domain varsa her biri kendi
+terim-yakalama eşiğiyle kapılandığı için her domain en az 5 klip ister; eksik domain `run`'ı
+model yüklemeden durdurur. Aynı nedenle `--quick N` **domain başına** uygulanır — alfabetik sıra
+(`ji*` < `jl*`) bir domaini tamamen eleyip koşuyu tek-domainli "PASS" gibi gösteremesin.
+
 Koşu ve rapor: `docs/PHASE0_VALIDATION.md` + `eval-harness` (workspace bin). Çıktılar:
 `eval/report.md` + `eval/report.json` → GO / CONDITIONAL / NO-GO kararı insana sunulur.
 Raporun multi-speaker/diyarisasyon sanity alanını bir insan doldurur. Raporlanan `wall_secs` ve RTF

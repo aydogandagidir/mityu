@@ -161,17 +161,40 @@ fn read_lang(dir: &Path, id: &str) -> Option<String> {
 /// resolves to `eval/jargon.legal.txt`. Unknown names are rejected later by
 /// [`VocabSets::validate_clips`] — never silently downgraded to `default`,
 /// because a typo would then measure the wrong domain's vocabulary.
-fn read_vocab_set(dir: &Path, id: &str) -> Option<String> {
-    let text = std::fs::read_to_string(dir.join(format!("{id}.vocab.txt"))).ok()?;
+/// A missing sidecar is the normal "use `default`" case and yields `Ok(None)`.
+/// Every *other* failure — unreadable file, or bytes that are not UTF-8, which
+/// is what a Windows PowerShell 5.1 `>` redirect produces (UTF-16LE) — is
+/// returned as an error instead of being flattened to `None`. Flattening would
+/// silently score the clip against `default`, the exact wrong-domain failure
+/// this sidecar exists to prevent.
+fn read_vocab_set(dir: &Path, id: &str) -> Result<Option<String>> {
+    let path = dir.join(format!("{id}.vocab.txt"));
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => bail!(
+            "{} UTF-8 değil ({e}). Vocab sidecar'ı düz UTF-8 olmalı — Windows PowerShell 5.1'de \
+             `>` yönlendirmesi UTF-16 üretir; `Set-Content -Encoding utf8` kullanın veya dosyayı \
+             editörde UTF-8 olarak kaydedin.",
+            path.display()
+        ),
+        Err(e) => bail!("vocab sidecar okunamadı ({}): {e}", path.display()),
+    };
+    // A UTF-8 BOM would otherwise ride along on the first line and turn a valid
+    // set name into an unknown one.
     let name = text
+        .trim_start_matches('\u{feff}')
         .lines()
         .map(str::trim)
-        .find(|l| !l.is_empty() && !l.starts_with('#'))?
-        .to_lowercase();
-    if name.is_empty() {
-        return None;
+        .find(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_lowercase);
+    match name {
+        // Present but blank/comment-only: treat as "no selection" rather than an
+        // error, matching an absent sidecar.
+        None => Ok(None),
+        Some(name) if name.is_empty() => Ok(None),
+        Some(name) => Ok(Some(name)),
     }
-    Some(name)
 }
 
 fn collect_clips(eval_dir: &Path, filter: RefFilter, quick: Option<usize>) -> Result<Vec<Clip>> {
@@ -193,11 +216,14 @@ fn collect_clips(eval_dir: &Path, filter: RefFilter, quick: Option<usize>) -> Re
             })
             .collect();
         wavs.sort();
-        let mut in_bucket = 0usize;
+        // `--quick` caps per (bucket, domain), not per bucket. Capping per bucket
+        // would let alphabetical order erase a whole domain — with `ji*`/`jl*`
+        // ids, `--quick 5` would take five `ji*` clips, still satisfy the
+        // ≥5-per-bucket rule, and report a one-domain pass while the legal
+        // domain was never measured at all. For a single-domain bucket this is
+        // identical to the old behaviour.
+        let mut per_domain: BTreeMap<String, usize> = BTreeMap::new();
         for wav in wavs {
-            if quick.is_some_and(|n| in_bucket >= n) {
-                break;
-            }
             let Some(id) = wav.file_stem().and_then(|s| s.to_str()).map(String::from) else {
                 continue;
             };
@@ -210,7 +236,14 @@ fn collect_clips(eval_dir: &Path, filter: RefFilter, quick: Option<usize>) -> Re
                 continue;
             }
             let lang = read_lang(&dir, &id);
-            let vocab = read_vocab_set(&dir, &id);
+            let vocab = read_vocab_set(&dir, &id)?;
+            let domain = vocab
+                .clone()
+                .unwrap_or_else(|| DEFAULT_VOCAB_SET.to_string());
+            let taken = per_domain.entry(domain).or_default();
+            if quick.is_some_and(|n| *taken >= n) {
+                continue;
+            }
             clips.push(Clip {
                 bucket: bucket.to_string(),
                 id,
@@ -219,7 +252,7 @@ fn collect_clips(eval_dir: &Path, filter: RefFilter, quick: Option<usize>) -> Re
                 lang,
                 vocab,
             });
-            in_bucket += 1;
+            *taken += 1;
         }
     }
     Ok(clips)
@@ -256,8 +289,44 @@ fn validate_bucket_coverage(clips: &[Clip]) -> Result<()> {
     Ok(())
 }
 
+/// Every domain vocabulary present in the `jargon` bucket is gated on its own
+/// term-recall median, so each one needs the same five-pair evidence the bucket
+/// as a whole does. Without this, a domain represented by one or two clips would
+/// still produce a PASS/FAIL cell in the threshold table off a median that is
+/// not gate-grade — and a domain that lost its clips would vanish from the
+/// report entirely rather than fail closed.
+fn validate_jargon_domain_coverage(clips: &[Clip]) -> Result<()> {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for clip in clips.iter().filter(|c| c.bucket == "jargon") {
+        *counts
+            .entry(clip.vocab.as_deref().unwrap_or(DEFAULT_VOCAB_SET))
+            .or_default() += 1;
+    }
+    // A single-domain jargon bucket is already covered by the per-bucket rule.
+    if counts.len() < 2 {
+        return Ok(());
+    }
+    let thin: Vec<String> = counts
+        .iter()
+        .filter(|(_, count)| **count < MIN_GATE_CLIPS_PER_BUCKET)
+        .map(|(domain, count)| format!("{domain}: {count}/{MIN_GATE_CLIPS_PER_BUCKET} klip"))
+        .collect();
+    if !thin.is_empty() {
+        bail!(
+            "jargon kovasında {} domain var ve her biri kendi terim-yakalama eşiğiyle \
+             kapılanıyor; bu yüzden her domain en az {MIN_GATE_CLIPS_PER_BUCKET} klip ister. \
+             Eksik: {}\nYa eksik domainin kliplerini tamamlayın ya da o domaini bu koşudan \
+             tamamen çıkarın (sidecar'ları kaldırın) — yarım domain kapı kanıtı sayılmaz.",
+            counts.len(),
+            thin.join(", ")
+        );
+    }
+    Ok(())
+}
+
 fn validate_gate_inputs(clips: &[Clip]) -> Result<()> {
     validate_bucket_coverage(clips)?;
+    validate_jargon_domain_coverage(clips)?;
 
     let mut invalid = Vec::new();
     for clip in clips {
@@ -1026,9 +1095,118 @@ mod tests {
     fn sidecar_reads_first_meaningful_line_lowercased() {
         let dir = temp_eval_dir("sidecar");
         write_file(&dir, "j01.vocab.txt", "\n# hangi set\nLEGAL\n");
-        assert_eq!(read_vocab_set(&dir, "j01").as_deref(), Some("legal"));
-        assert!(read_vocab_set(&dir, "absent").is_none());
+        let name = read_vocab_set(&dir, "j01").expect("readable sidecar");
+        assert_eq!(name.as_deref(), Some("legal"));
+        // absent sidecar is the normal "use default" case, not an error
+        assert_eq!(read_vocab_set(&dir, "absent").expect("absent is ok"), None);
+        // present but blank/comment-only behaves like absent
+        write_file(&dir, "j02.vocab.txt", "# yalnızca yorum\n\n");
+        assert_eq!(read_vocab_set(&dir, "j02").expect("comment-only"), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A Windows PowerShell 5.1 `>` redirect writes UTF-16LE. Flattening that
+    /// read error to `None` would silently score the clip against `default` —
+    /// the wrong-domain failure the sidecar exists to prevent.
+    #[test]
+    fn sidecar_that_is_not_utf8_fails_closed() {
+        let dir = temp_eval_dir("utf16");
+        // UTF-16LE BOM + "legal"
+        let utf16: Vec<u8> = vec![0xFF, 0xFE, b'l', 0, b'e', 0, b'g', 0, b'a', 0, b'l', 0];
+        std::fs::write(dir.join("j01.vocab.txt"), utf16).expect("write utf16");
+
+        let message = read_vocab_set(&dir, "j01")
+            .expect_err("UTF-16 sidecar must not be flattened to None")
+            .to_string();
+        assert!(message.contains("UTF-8 değil"));
+        assert!(message.contains("PowerShell"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sidecar_utf8_bom_does_not_break_the_set_name() {
+        let dir = temp_eval_dir("bom");
+        std::fs::write(dir.join("j01.vocab.txt"), "\u{feff}legal\n".as_bytes())
+            .expect("write bom file");
+        let name = read_vocab_set(&dir, "j01").expect("bom sidecar readable");
+        assert_eq!(name.as_deref(), Some("legal"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn make_clip_files(bucket_dir: &Path, id: &str, vocab: Option<&str>) {
+        std::fs::write(bucket_dir.join(format!("{id}.wav")), b"").expect("wav");
+        std::fs::write(bucket_dir.join(format!("{id}.ref.txt")), "metin").expect("ref");
+        if let Some(v) = vocab {
+            std::fs::write(bucket_dir.join(format!("{id}.vocab.txt")), v).expect("vocab");
+        }
+    }
+
+    /// `--quick` caps per (bucket, domain). Capping per bucket let alphabetical
+    /// order erase a domain: with `ji*`/`jl*` ids, `--quick 5` took five `ji*`
+    /// clips, still satisfied the ≥5-per-bucket rule, and reported a one-domain
+    /// pass while the legal domain was never measured.
+    #[test]
+    fn quick_sampling_cannot_erase_a_domain() {
+        let root = temp_eval_dir("quick");
+        let jargon = root.join("jargon");
+        std::fs::create_dir_all(&jargon).expect("jargon dir");
+        for i in 1..=5 {
+            make_clip_files(&jargon, &format!("ji0{i}"), None);
+            make_clip_files(&jargon, &format!("jl0{i}"), Some("legal"));
+        }
+
+        let clips = collect_clips(&root, RefFilter::HasRef, Some(5)).expect("collect");
+        let legal = clips
+            .iter()
+            .filter(|c| c.vocab.as_deref() == Some("legal"))
+            .count();
+        let default = clips.iter().filter(|c| c.vocab.is_none()).count();
+        assert_eq!(
+            legal, 5,
+            "alphabetical order must not drop the legal domain"
+        );
+        assert_eq!(default, 5);
+
+        // The cap still applies — per domain.
+        let capped = collect_clips(&root, RefFilter::HasRef, Some(2)).expect("collect capped");
+        assert_eq!(capped.len(), 4);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_thin_second_jargon_domain_fails_closed() {
+        let mut clips: Vec<Clip> = (0..MIN_GATE_CLIPS_PER_BUCKET)
+            .map(|i| clip("jargon", i))
+            .collect();
+        let mut legal = clip("jargon", 99);
+        legal.vocab = Some("legal".to_string());
+        clips.push(legal);
+
+        let message = validate_jargon_domain_coverage(&clips)
+            .expect_err("one legal clip is not gate evidence")
+            .to_string();
+        assert!(message.contains("legal: 1/5"));
+    }
+
+    #[test]
+    fn two_complete_jargon_domains_pass_coverage() {
+        let mut clips: Vec<Clip> = (0..MIN_GATE_CLIPS_PER_BUCKET)
+            .map(|i| clip("jargon", i))
+            .collect();
+        for i in 0..MIN_GATE_CLIPS_PER_BUCKET {
+            let mut legal = clip("jargon", 100 + i);
+            legal.vocab = Some("legal".to_string());
+            clips.push(legal);
+        }
+        assert!(validate_jargon_domain_coverage(&clips).is_ok());
+    }
+
+    /// A single-domain jargon bucket is already covered by the per-bucket rule;
+    /// this check must not double-report it.
+    #[test]
+    fn single_jargon_domain_is_left_to_the_bucket_rule() {
+        let clips: Vec<Clip> = (0..2).map(|i| clip("jargon", i)).collect();
+        assert!(validate_jargon_domain_coverage(&clips).is_ok());
     }
 
     #[test]

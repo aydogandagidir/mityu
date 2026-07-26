@@ -96,8 +96,14 @@ enjeksiyonu.
   Sidecar yoksa `default`.
 - **Etkilediği iki şey:** whisper `initial_prompt` bias'ı **ve** terim-recall skoru — ikisi de artık
   klibin kendi setinden gelir. Yani hukuk klibi başka domainin terimleriyle ne biaslanır ne puanlanır.
-- **Fail-closed:** tanımsız set adı, **model yüklenmeden** hata verir (`validate_clips`) ve tanımlı
-  setleri listeler. `default`'a sessiz düşüş yok — düzeltilen bug tam olarak buydu.
+- **Fail-closed (üç ayrı yerde):** (a) tanımsız set adı **model yüklenmeden** hata verir
+  (`validate_clips`) ve tanımlı setleri listeler; (b) sidecar okunamıyorsa veya **UTF-8 değilse**
+  (Windows PowerShell 5.1 `>` yönlendirmesi UTF-16 yazar) koşu durur — `default`'a sessiz düşüş yok;
+  (c) jargon kovasında birden fazla domain varsa **her domain ≥5 klip** ister
+  (`validate_jargon_domain_coverage`), çünkü her biri kendi eşiğiyle kapılanıyor.
+- **`--quick N` domain başına uygulanır.** Kova başına uygulansaydı alfabetik sıra (`ji*` < `jl*`)
+  `--quick 5` ile hukuk domainini tamamen eler, kova kapsamı yine 5/5 geçer ve rapor tek-domainli
+  bir "PASS" gibi okunurdu — hukuk hiç ölçülmemiş olmasına rağmen.
 - `jargon.default.txt` adı `default` setiyle çakıştığı için reddedilir.
 
 Dosyalar: `eval-harness/src/main.rs` (`VocabSet`/`VocabSets`, `read_vocab_set`, `load_vocab_sets`),
