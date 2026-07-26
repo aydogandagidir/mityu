@@ -23,8 +23,8 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::engines::{
-    build_vocab_prompt, load_jargon, resolve_whisper, ParakeetRunner, WhisperRunner,
-    DEFAULT_PARAKEET_MODEL, DEFAULT_WHISPER_MODEL, DEFAULT_WHISPER_TURBO_MODEL,
+    build_vocab_prompt, load_jargon_file, resolve_whisper, ParakeetRunner, WhisperRunner,
+    DEFAULT_PARAKEET_MODEL, DEFAULT_WHISPER_MODEL, DEFAULT_WHISPER_TURBO_MODEL, MAX_PROMPT_CHARS,
     PARAKEET_WINDOW_SECS,
 };
 use crate::report::{write_reports, Row, RunMeta};
@@ -107,6 +107,9 @@ struct Clip {
     wav: PathBuf,
     ref_path: PathBuf,
     lang: Option<String>,
+    /// Domain vocabulary set name from the `<id>.vocab.txt` sidecar. `None` →
+    /// the `default` set (`eval/jargon.txt`).
+    vocab: Option<String>,
 }
 
 /// Which whisper model a whisper config resolves (per-config model resolution).
@@ -153,6 +156,24 @@ fn read_lang(dir: &Path, id: &str) -> Option<String> {
     Some(lang)
 }
 
+/// Read the `<id>.vocab.txt` sidecar naming this clip's domain vocabulary set
+/// (mirrors `<id>.lang.txt`). The file holds one set name, e.g. `legal`, which
+/// resolves to `eval/jargon.legal.txt`. Unknown names are rejected later by
+/// [`VocabSets::validate_clips`] — never silently downgraded to `default`,
+/// because a typo would then measure the wrong domain's vocabulary.
+fn read_vocab_set(dir: &Path, id: &str) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(format!("{id}.vocab.txt"))).ok()?;
+    let name = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#'))?
+        .to_lowercase();
+    if name.is_empty() {
+        return None;
+    }
+    Some(name)
+}
+
 fn collect_clips(eval_dir: &Path, filter: RefFilter, quick: Option<usize>) -> Result<Vec<Clip>> {
     let mut clips = Vec::new();
     for bucket in BUCKETS {
@@ -189,12 +210,14 @@ fn collect_clips(eval_dir: &Path, filter: RefFilter, quick: Option<usize>) -> Re
                 continue;
             }
             let lang = read_lang(&dir, &id);
+            let vocab = read_vocab_set(&dir, &id);
             clips.push(Clip {
                 bucket: bucket.to_string(),
                 id,
                 wav,
                 ref_path,
                 lang,
+                vocab,
             });
             in_bucket += 1;
         }
@@ -384,18 +407,179 @@ async fn cmd_draft(
     Ok(())
 }
 
+/// Name of the fallback vocabulary set, backed by `eval/jargon.txt`.
+const DEFAULT_VOCAB_SET: &str = "default";
+
+/// One domain vocabulary: the folded terms used for term recall plus the whisper
+/// `initial_prompt` built from the same list.
+struct VocabSet {
+    /// File this set came from, relative to `eval/` — for the report note.
+    source: String,
+    terms: usize,
+    folded: Vec<String>,
+    prompt: Option<String>,
+    /// How many terms fit inside the whisper prompt budget.
+    prompt_terms: usize,
+}
+
+/// Every domain vocabulary found under `eval/`: `jargon.txt` is the `default`
+/// set and each `jargon.<name>.txt` adds the set `<name>`. A clip picks its set
+/// through the `<id>.vocab.txt` sidecar.
+///
+/// This split exists because the whisper prompt budget is ~600 chars
+/// ([`engines::MAX_PROMPT_CHARS`], ≈224 tokens). A single merged multi-domain
+/// term list would only ever bias whichever domain is listed first, so the
+/// `*_vocab` configs for every other domain would silently measure the wrong
+/// vocabulary — and the run would still look successful.
+struct VocabSets {
+    sets: BTreeMap<String, VocabSet>,
+}
+
+fn build_vocab_set(source: &str, terms: &[String]) -> VocabSet {
+    let folded: Vec<String> = terms
+        .iter()
+        .map(|t| metrics::normalize(t).folded)
+        .filter(|t| !t.is_empty())
+        .collect();
+    let prompt_info = build_vocab_prompt(terms);
+    VocabSet {
+        source: source.to_string(),
+        terms: terms.len(),
+        folded,
+        prompt: prompt_info.as_ref().map(|(p, _)| p.clone()),
+        prompt_terms: prompt_info.map_or(0, |(_, used)| used),
+    }
+}
+
+fn load_vocab_sets(eval_dir: &Path) -> Result<VocabSets> {
+    let mut sets = BTreeMap::new();
+    let default_terms = load_jargon_file(&eval_dir.join("jargon.txt"))?;
+    sets.insert(
+        DEFAULT_VOCAB_SET.to_string(),
+        build_vocab_set("jargon.txt", &default_terms),
+    );
+
+    if eval_dir.is_dir() {
+        let mut files: Vec<PathBuf> = std::fs::read_dir(eval_dir)
+            .with_context(|| format!("dizin okunamadı: {}", eval_dir.display()))?
+            .filter_map(std::result::Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.is_file())
+            .collect();
+        files.sort();
+        for path in files {
+            let Some(file) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            // "jargon.txt" strips to "txt", which has no ".txt" suffix → skipped
+            // here and handled above as the default set.
+            let Some(name) = file
+                .strip_prefix("jargon.")
+                .and_then(|rest| rest.strip_suffix(".txt"))
+            else {
+                continue;
+            };
+            let name = name.to_lowercase();
+            if name.is_empty() {
+                continue;
+            }
+            if name == DEFAULT_VOCAB_SET {
+                bail!(
+                    "eval/{file} adı '{DEFAULT_VOCAB_SET}' setiyle çakışıyor \
+                     (o set eval/jargon.txt'ten gelir). Dosyayı farklı adlandırın."
+                );
+            }
+            let terms = load_jargon_file(&path)?;
+            sets.insert(name, build_vocab_set(file, &terms));
+        }
+    }
+    Ok(VocabSets { sets })
+}
+
+impl VocabSets {
+    /// Reject any clip naming a set that was not loaded — before a model is
+    /// loaded, like the other gate checks. A typo must never fall back to
+    /// `default`: that is exactly the silent wrong-domain measurement this
+    /// per-clip split was introduced to prevent.
+    fn validate_clips(&self, clips: &[Clip]) -> Result<()> {
+        let mut bad: Vec<String> = clips
+            .iter()
+            .filter_map(|c| c.vocab.as_deref().map(|v| (c, v)))
+            .filter(|(_, v)| !self.sets.contains_key(*v))
+            .map(|(c, v)| format!("{}/{}.vocab.txt → '{v}'", c.bucket, c.id))
+            .collect();
+        if bad.is_empty() {
+            return Ok(());
+        }
+        bad.sort();
+        let known: Vec<&str> = self.sets.keys().map(String::as_str).collect();
+        bail!(
+            "Bilinmeyen vocab seti ({} klip):\n  {}\n\
+             Tanımlı setler: {}\n\
+             Yeni set için eval/jargon.<ad>.txt dosyası oluşturun.",
+            bad.len(),
+            bad.join("\n  "),
+            known.join(", ")
+        );
+    }
+
+    /// The set actually used for a clip, with the name it resolved to.
+    fn for_clip(&self, clip: &Clip) -> (&str, &VocabSet) {
+        let requested = clip.vocab.as_deref().unwrap_or(DEFAULT_VOCAB_SET);
+        if let Some((name, set)) = self.sets.get_key_value(requested) {
+            return (name.as_str(), set);
+        }
+        let (name, set) = self
+            .sets
+            .get_key_value(DEFAULT_VOCAB_SET)
+            .expect("default vocab set is always inserted");
+        (name.as_str(), set)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.sets.values().all(|s| s.terms == 0)
+    }
+}
+
 fn run_notes(
     cfgs: &[RunConfig],
-    prompt_info: Option<&(String, usize)>,
-    jargon_total: usize,
+    vocabs: &VocabSets,
+    clips: &[Clip],
     need_parakeet: bool,
 ) -> Vec<String> {
     let mut notes: Vec<String> = Vec::new();
-    if let Some((_, used)) = prompt_info {
+
+    // Term recall is scored against the clip's own set, so the mapping belongs in
+    // the report even when no *_vocab config runs.
+    let mut per_set: BTreeMap<&str, usize> = BTreeMap::new();
+    for clip in clips {
+        let (name, _) = vocabs.for_clip(clip);
+        *per_set.entry(name).or_default() += 1;
+    }
+    for (name, clip_count) in &per_set {
+        let Some(set) = vocabs.sets.get(*name) else {
+            continue;
+        };
         notes.push(format!(
-            "Whisper vocab prompt: eval/jargon.txt'den {used}/{jargon_total} terim \
-             (~600 karakter sınırı; whisper initial-prompt ≈224 token)"
+            "Vocab seti '{name}' (eval/{}): {} terim — {clip_count} klip \
+             (terim yakalama bu sete göre ölçülür)",
+            set.source, set.terms
         ));
+    }
+    if cfgs.iter().any(|c| c.vocab) {
+        for name in per_set.keys() {
+            let Some(set) = vocabs.sets.get(*name) else {
+                continue;
+            };
+            if set.prompt.is_none() {
+                continue;
+            }
+            notes.push(format!(
+                "Whisper vocab prompt '{name}': {}/{} terim (~{} karakter sınırı; \
+                 whisper initial-prompt ≈224 token)",
+                set.prompt_terms, set.terms, MAX_PROMPT_CHARS
+            ));
+        }
         notes.push(
             "Whisper initial-prompt yalnızca ilk 30s penceresini doğrudan koşullar; sonraki \
              pencereler önceki çıktıyı bağlam alır (whisper.cpp davranışı)"
@@ -434,8 +618,7 @@ fn run_notes(
 struct EvalCtx<'a> {
     eval_dir: &'a Path,
     clips: &'a [Clip],
-    jargon_folded: &'a [String],
-    vocab_prompt: Option<&'a str>,
+    vocabs: &'a VocabSets,
 }
 
 #[derive(Copy, Clone)]
@@ -453,12 +636,20 @@ async fn eval_config(
 ) -> Result<()> {
     println!("\n=== Konfig: {} ===", cfg.name);
     for clip in ctx.clips {
+        // Vocabulary is per clip: prompt bias and term recall both come from the
+        // set this clip declares, so a legal clip is never biased or scored with
+        // another domain's terms.
+        let (vocab_set_name, vocab) = ctx.vocabs.for_clip(clip);
         let samples = wav::read_wav_16k_mono_s16(&clip.wav)?;
         let audio_secs = samples.len() as f64 / f64::from(wav::SAMPLE_RATE);
         let started = Instant::now();
         let hyp = match engine {
             EngineRef::Whisper(w) => {
-                let prompt = if cfg.vocab { ctx.vocab_prompt } else { None };
+                let prompt = if cfg.vocab {
+                    vocab.prompt.as_deref()
+                } else {
+                    None
+                };
                 w.transcribe(samples, clip.lang.as_deref(), prompt).await?
             }
             EngineRef::Parakeet(p) => p.transcribe(&samples).await?,
@@ -471,7 +662,7 @@ async fn eval_config(
         };
         let ref_text = std::fs::read_to_string(&clip.ref_path)
             .with_context(|| format!("referans okunamadı: {}", clip.ref_path.display()))?;
-        let s = metrics::score(&ref_text, &hyp, ctx.jargon_folded);
+        let s = metrics::score(&ref_text, &hyp, &vocab.folded);
         let hyp_file = ctx
             .eval_dir
             .join(&clip.bucket)
@@ -495,6 +686,7 @@ async fn eval_config(
         rows.push(Row {
             clip: clip.id.clone(),
             bucket: clip.bucket.clone(),
+            vocab_set: vocab_set_name.to_string(),
             config: cfg.name.clone(),
             lang: clip.lang.clone(),
             audio_secs,
@@ -525,28 +717,22 @@ async fn cmd_run(
     let clips = collect_clips(&eval_dir, RefFilter::HasRef, quick)?;
     validate_gate_inputs(&clips)?;
 
-    let jargon = load_jargon(&eval_dir)?;
-    if jargon.is_empty() {
+    let vocabs = load_vocab_sets(&eval_dir)?;
+    vocabs.validate_clips(&clips)?;
+    if vocabs.is_empty() {
         eprintln!(
-            "Uyarı: eval/jargon.txt boş/yok — terim yakalama ve vocab konfigleri sınırlı olur"
+            "Uyarı: eval/jargon.txt (ve eval/jargon.<ad>.txt) boş/yok — terim yakalama ve \
+             vocab konfigleri sınırlı olur"
         );
     }
-    let jargon_folded: Vec<String> = jargon
-        .iter()
-        .map(|t| metrics::normalize(t).folded)
-        .filter(|t| !t.is_empty())
-        .collect();
-    let prompt_info = build_vocab_prompt(&jargon);
-    let vocab_prompt = prompt_info.as_ref().map(|(p, _)| p.clone());
 
     let need_parakeet = cfgs.iter().any(|c| c.engine == EngineKind::Parakeet);
-    let mut notes = run_notes(&cfgs, prompt_info.as_ref(), jargon.len(), need_parakeet);
+    let mut notes = run_notes(&cfgs, &vocabs, &clips, need_parakeet);
 
     let ctx = EvalCtx {
         eval_dir: &eval_dir,
         clips: &clips,
-        jargon_folded: &jargon_folded,
-        vocab_prompt: vocab_prompt.as_deref(),
+        vocabs: &vocabs,
     };
 
     let mut rows: Vec<Row> = Vec::new();
@@ -691,6 +877,7 @@ mod tests {
             wav: PathBuf::from(format!("{bucket}-{index}.wav")),
             ref_path: PathBuf::from(format!("{bucket}-{index}.ref.txt")),
             lang: None,
+            vocab: None,
         }
     }
 
@@ -729,5 +916,131 @@ mod tests {
         assert!(message.contains("field: 0/5"));
         assert!(message.contains("multi: 0/5"));
         assert!(message.contains("jargon: 0/5"));
+    }
+
+    // --- per-clip domain vocabulary -------------------------------------------
+
+    fn temp_eval_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("mityu-eval-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp eval dir");
+        dir
+    }
+
+    fn write_file(dir: &Path, name: &str, body: &str) {
+        std::fs::write(dir.join(name), body).expect("write fixture");
+    }
+
+    #[test]
+    fn vocab_sets_discovers_named_files_and_skips_comments() {
+        let dir = temp_eval_dir("sets");
+        write_file(&dir, "jargon.txt", "konveyör\nAGV\n");
+        write_file(
+            &dir,
+            "jargon.legal.txt",
+            "# yorum\n\nihtarname\nbilirkişi raporu\n",
+        );
+
+        let sets = load_vocab_sets(&dir).expect("sets load");
+
+        assert_eq!(sets.sets.len(), 2);
+        assert_eq!(sets.sets[DEFAULT_VOCAB_SET].terms, 2);
+        assert_eq!(sets.sets["legal"].terms, 2);
+        assert_eq!(sets.sets["legal"].source, "jargon.legal.txt");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The regression this per-clip split exists for: with one merged list the
+    /// ~600-char whisper prompt only ever carries whichever domain is listed
+    /// first, so the other domain's `*_vocab` run silently measures the wrong
+    /// vocabulary. Each clip must get its own domain's prompt *and* its own
+    /// terms for recall.
+    #[test]
+    fn each_clip_gets_only_its_own_domain_vocabulary() {
+        let dir = temp_eval_dir("perclip");
+        write_file(&dir, "jargon.txt", "konveyör\n");
+        write_file(&dir, "jargon.legal.txt", "ihtarname\n");
+        let sets = load_vocab_sets(&dir).expect("sets load");
+
+        let mut legal_clip = clip("jargon", 1);
+        legal_clip.vocab = Some("legal".to_string());
+        let default_clip = clip("jargon", 2); // no sidecar
+
+        let (legal_name, legal_set) = sets.for_clip(&legal_clip);
+        let legal_prompt = legal_set.prompt.as_deref().expect("legal prompt");
+        assert_eq!(legal_name, "legal");
+        assert!(legal_prompt.contains("ihtarname"));
+        assert!(!legal_prompt.contains("konveyör"));
+        assert_eq!(legal_set.folded.len(), 1);
+
+        let (default_name, default_set) = sets.for_clip(&default_clip);
+        let default_prompt = default_set.prompt.as_deref().expect("default prompt");
+        assert_eq!(default_name, DEFAULT_VOCAB_SET);
+        assert!(default_prompt.contains("konveyör"));
+        assert!(!default_prompt.contains("ihtarname"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unknown_vocab_set_fails_closed() {
+        let dir = temp_eval_dir("unknown");
+        write_file(&dir, "jargon.txt", "konveyör\n");
+        write_file(&dir, "jargon.legal.txt", "ihtarname\n");
+        let sets = load_vocab_sets(&dir).expect("sets load");
+
+        let mut typo = clip("jargon", 1);
+        typo.vocab = Some("legall".to_string());
+
+        let message = sets
+            .validate_clips(&[typo])
+            .expect_err("typo must not fall back to default")
+            .to_string();
+        assert!(message.contains("legall"));
+        assert!(message.contains("Tanımlı setler"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn declared_vocab_sets_validate() {
+        let dir = temp_eval_dir("valid");
+        write_file(&dir, "jargon.txt", "konveyör\n");
+        write_file(&dir, "jargon.legal.txt", "ihtarname\n");
+        let sets = load_vocab_sets(&dir).expect("sets load");
+
+        let mut legal = clip("jargon", 1);
+        legal.vocab = Some("legal".to_string());
+        assert!(sets.validate_clips(&[legal, clip("quiet", 1)]).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn jargon_default_txt_collides_with_the_default_set() {
+        let dir = temp_eval_dir("collide");
+        write_file(&dir, "jargon.txt", "konveyör\n");
+        write_file(&dir, "jargon.default.txt", "ihtarname\n");
+        assert!(load_vocab_sets(&dir).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sidecar_reads_first_meaningful_line_lowercased() {
+        let dir = temp_eval_dir("sidecar");
+        write_file(&dir, "j01.vocab.txt", "\n# hangi set\nLEGAL\n");
+        assert_eq!(read_vocab_set(&dir, "j01").as_deref(), Some("legal"));
+        assert!(read_vocab_set(&dir, "absent").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_set_exists_even_with_no_jargon_file() {
+        let dir = temp_eval_dir("empty");
+        let sets = load_vocab_sets(&dir).expect("sets load");
+
+        assert!(sets.is_empty());
+        let (name, set) = sets.for_clip(&clip("quiet", 1));
+        assert_eq!(name, DEFAULT_VOCAB_SET);
+        assert!(set.prompt.is_none());
+        assert!(set.folded.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

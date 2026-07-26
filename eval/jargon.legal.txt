@@ -1,0 +1,98 @@
+# Phase 0 — HUKUK jargon listesi (jl* klipleri için)
+# Bir satır = bir terim. '#' ile başlayan satırlar yorumdur.
+#
+# ÖNEMLİ — sıralama kasıtlı: whisper vocab prompt'u ~600 karakterde kesilir
+# (engines.rs MAX_PROMPT_CHARS), yani yaklaşık ilk 40-50 terim bias alır.
+# En ayırt edici / ASR'ın en çok yanlış duyacağı terimler başa konuldu.
+# Terim-recall metriği ise referansta GEÇEN her terimi puanlar (metrics.rs:63-76),
+# bu yüzden listenin uzun kuyruğu zarar vermez.
+#
+# YAPILACAK (sahip): kendi çalışma alanına göre buda ve genişlet.
+# Gerçek müvekkil adı, dosya numarası veya gizli ürün kodu EKLEME.
+
+# --- en ayırt edici usul/kurum terimleri (prompt bias önceliği) ---
+ihtarname
+vekaletname
+bilirkişi raporu
+gerekçeli karar
+ara karar
+cevap dilekçesi
+replik
+düplik
+istinaf
+temyiz
+Yargıtay
+Bölge Adliye Mahkemesi
+asliye hukuk
+sulh hukuk
+ticaret mahkemesi
+iş mahkemesi
+arabuluculuk
+tahkim
+hakem heyeti
+ihtiyati tedbir
+ihtiyati haciz
+icra takibi
+zamanaşımı
+hak düşürücü süre
+muvazaa
+ibraname
+konkordato
+temerrüt
+cezai şart
+teminat mektubu
+keşif
+tanık beyanı
+tebligat
+haciz
+
+# --- taraflar ve temel dava kavramları ---
+dava
+davacı
+davalı
+müvekkil
+vekalet ücreti
+dilekçe
+duruşma
+bilirkişi
+
+# --- sözleşme / borçlar ---
+sözleşme
+fesih
+tazminat
+maddi tazminat
+manevi tazminat
+alacak
+borçlu
+kefil
+ipotek
+rehin
+protokol
+
+# --- şirketler hukuku ---
+hisse devir sözleşmesi
+pay sahipliği
+genel kurul
+yönetim kurulu kararı
+ticaret sicili
+iflas
+
+# --- veri koruma / uyum (KVKK) ---
+KVKK
+aydınlatma metni
+açık rıza
+veri sorumlusu
+veri işleyen
+ihlal bildirimi
+
+# --- TR-EN code-switching (kurumsal hukuk konuşmasında sık) ---
+due diligence
+compliance
+NDA
+term sheet
+closing
+escrow
+arbitration
+jurisdiction
+governing law
+force majeure

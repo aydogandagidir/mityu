@@ -25,8 +25,30 @@ Amaç: Mityu'nun transkripsiyon kalitesini **senin gerçek ortamında** ölçmek
 yalnızca yeniden adlandırmak kabul edilmez. `run`, model yüklemeden önce her kovada en az beş çift,
 boş olmayan referans ve 16 kHz mono s16 WAV biçimini doğrular; eksikte rapor yazmadan durur.
 
-## Jargon listesi
+## Jargon listesi ve domain setleri
 `jargon.txt` taslağı intralojistik/depo otomasyonu için hazırlandı — **yanlışları sil, kendi ürün/parça adlarını ekle** (müşteri adları, ürün kodları, marka adları çok değerli).
+
+Birden fazla domain ölçüyorsan (ör. hukuk + intralojistik) **her domain kendi set dosyasını alır**:
+
+| Dosya | Set adı |
+|---|---|
+| `jargon.txt` | `default` — sidecar'ı olmayan tüm klipler |
+| `jargon.<ad>.txt` (ör. `jargon.legal.txt`) | `<ad>` — yalnız o seti seçen klipler |
+
+Bir klibin setini `<kova>/<id>.vocab.txt` dosyasıyla seçersin (tek satır set adı; `#` yorum olabilir),
+tıpkı `<id>.lang.txt` gibi:
+
+```
+eval/jargon/jl01.wav
+eval/jargon/jl01.ref.txt
+eval/jargon/jl01.vocab.txt   →  içinde tek satır:  legal
+```
+
+Bu ayrım **şart**, kolaylık değil: whisper'ın `initial_prompt` bütçesi ~600 karakter (≈224 token), yani
+tek birleşik listede prompt'a **yalnızca dosyada önce yazılan domain** girer ve diğer domainin
+`*_vocab` koşusu sessizce yanlış sözlükle ölçülür. Set adı hem prompt bias'ını hem terim-recall
+skorunu belirler. Tanımsız bir set adı yazarsan `run` **model yüklemeden** durur ve tanımlı setleri
+listeler.
 
 Koşu ve rapor: `docs/PHASE0_VALIDATION.md` + `eval-harness` (workspace bin). Çıktılar:
 `eval/report.md` + `eval/report.json` → GO / CONDITIONAL / NO-GO kararı insana sunulur.
