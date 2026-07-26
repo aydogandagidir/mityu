@@ -17,6 +17,10 @@ pub const GO_TERM_RECALL: f64 = 0.80;
 pub struct Row {
     pub clip: String,
     pub bucket: String,
+    /// Domain vocabulary set this clip was biased and scored with (`default`
+    /// unless the clip carries a `<id>.vocab.txt` sidecar). Term recall is only
+    /// comparable inside one set, so the gate reports it per set.
+    pub vocab_set: String,
     pub config: String,
     pub lang: Option<String>,
     pub audio_secs: f64,
@@ -52,6 +56,7 @@ pub struct MedianCell {
 
 pub fn write_reports(eval_dir: &Path, rows: &[Row], meta: &RunMeta) -> Result<(PathBuf, PathBuf)> {
     let medians = compute_medians(rows);
+    let domain_medians = compute_domain_medians(rows);
     let json_path = eval_dir.join("report.json");
     let md_path = eval_dir.join("report.md");
 
@@ -83,6 +88,8 @@ pub fn write_reports(eval_dir: &Path, rows: &[Row], meta: &RunMeta) -> Result<(P
         },
         "notes": meta.notes,
         "medians": medians,
+        "medians_by_domain": domain_medians,
+        "jargon_domains": jargon_domains(rows),
         "rows": rows,
     });
     std::fs::write(
@@ -91,8 +98,11 @@ pub fn write_reports(eval_dir: &Path, rows: &[Row], meta: &RunMeta) -> Result<(P
     )
     .with_context(|| format!("yazılamadı: {}", json_path.display()))?;
 
-    std::fs::write(&md_path, render_markdown(rows, &medians, meta))
-        .with_context(|| format!("yazılamadı: {}", md_path.display()))?;
+    std::fs::write(
+        &md_path,
+        render_markdown(rows, &medians, &domain_medians, meta),
+    )
+    .with_context(|| format!("yazılamadı: {}", md_path.display()))?;
 
     Ok((json_path, md_path))
 }
@@ -111,6 +121,18 @@ fn median(values: &[f64]) -> Option<f64> {
     }
 }
 
+fn cell_from(rs: &[&Row]) -> MedianCell {
+    MedianCell {
+        clips: rs.len(),
+        wer: median(&rs.iter().map(|r| r.wer).collect::<Vec<_>>()),
+        wer_folded: median(&rs.iter().map(|r| r.wer_folded).collect::<Vec<_>>()),
+        cer: median(&rs.iter().map(|r| r.cer).collect::<Vec<_>>()),
+        cer_folded: median(&rs.iter().map(|r| r.cer_folded).collect::<Vec<_>>()),
+        term_recall: median(&rs.iter().filter_map(|r| r.term_recall).collect::<Vec<_>>()),
+        rtf: median(&rs.iter().map(|r| r.rtf).collect::<Vec<_>>()),
+    }
+}
+
 fn compute_medians(rows: &[Row]) -> BTreeMap<String, MedianCell> {
     let mut groups: BTreeMap<(String, String), Vec<&Row>> = BTreeMap::new();
     for r in rows {
@@ -121,19 +143,49 @@ fn compute_medians(rows: &[Row]) -> BTreeMap<String, MedianCell> {
     }
     groups
         .into_iter()
-        .map(|((config, bucket), rs)| {
-            let cell = MedianCell {
-                clips: rs.len(),
-                wer: median(&rs.iter().map(|r| r.wer).collect::<Vec<_>>()),
-                wer_folded: median(&rs.iter().map(|r| r.wer_folded).collect::<Vec<_>>()),
-                cer: median(&rs.iter().map(|r| r.cer).collect::<Vec<_>>()),
-                cer_folded: median(&rs.iter().map(|r| r.cer_folded).collect::<Vec<_>>()),
-                term_recall: median(&rs.iter().filter_map(|r| r.term_recall).collect::<Vec<_>>()),
-                rtf: median(&rs.iter().map(|r| r.rtf).collect::<Vec<_>>()),
-            };
-            (format!("{config}|{bucket}"), cell)
-        })
+        .map(|((config, bucket), rs)| (format!("{config}|{bucket}"), cell_from(&rs)))
         .collect()
+}
+
+/// Medians split by domain vocabulary as well as by bucket.
+///
+/// When one bucket carries clips from two domains (e.g. 5 legal + 5
+/// intralogistics jargon clips), a single merged median averages them: legal
+/// 0.60 and intralogistics 0.95 read as ~0.78 and the failing domain disappears
+/// behind a passing number. The gate looks at exactly that number, so it must be
+/// reported per domain.
+fn compute_domain_medians(rows: &[Row]) -> BTreeMap<String, MedianCell> {
+    let mut groups: BTreeMap<(String, String, String), Vec<&Row>> = BTreeMap::new();
+    for r in rows {
+        groups
+            .entry((r.config.clone(), r.bucket.clone(), r.vocab_set.clone()))
+            .or_default()
+            .push(r);
+    }
+    groups
+        .into_iter()
+        .map(|((config, bucket, set), rs)| (format!("{config}|{bucket}|{set}"), cell_from(&rs)))
+        .collect()
+}
+
+/// Distinct domain vocabularies present in the `jargon` bucket, sorted.
+fn jargon_domains(rows: &[Row]) -> Vec<String> {
+    let mut seen: Vec<String> = rows
+        .iter()
+        .filter(|r| r.bucket == "jargon")
+        .map(|r| r.vocab_set.clone())
+        .collect();
+    seen.sort();
+    seen.dedup();
+    seen
+}
+
+/// Distinct domain vocabularies across every bucket, sorted.
+fn all_domains(rows: &[Row]) -> Vec<String> {
+    let mut seen: Vec<String> = rows.iter().map(|r| r.vocab_set.clone()).collect();
+    seen.sort();
+    seen.dedup();
+    seen
 }
 
 fn distinct_configs(rows: &[Row]) -> Vec<String> {
@@ -168,7 +220,12 @@ fn gate(v: Option<f64>, threshold: f64, at_most: bool) -> &'static str {
     }
 }
 
-fn render_markdown(rows: &[Row], medians: &BTreeMap<String, MedianCell>, meta: &RunMeta) -> String {
+fn render_markdown(
+    rows: &[Row],
+    medians: &BTreeMap<String, MedianCell>,
+    domain_medians: &BTreeMap<String, MedianCell>,
+    meta: &RunMeta,
+) -> String {
     let mut md = String::new();
     md.push_str("# Phase 0 Transcription Report\n\n");
     md.push_str(&format!(
@@ -243,16 +300,50 @@ fn render_markdown(rows: &[Row], medians: &BTreeMap<String, MedianCell>, meta: &
     }
     md.push('\n');
 
+    // Only worth a table when more than one domain vocabulary is in play;
+    // otherwise it would repeat the table above with one extra column.
+    let domains_all = all_domains(rows);
+    if domains_all.len() > 1 {
+        md.push_str("## Medyanlar (config | kova | domain)\n\n");
+        md.push_str(&format!(
+            "Bu koşuda {} domain sözlüğü var ({}). Terim yakalama yalnızca aynı sözlük içinde \
+             karşılaştırılabilir, bu yüzden domain kırılımı ayrıca verilir.\n\n",
+            domains_all.len(),
+            domains_all.join(", ")
+        ));
+        md.push_str(
+            "| Config | Kova | Domain | Klip | WER | WER(fold) | CER | Terim yakalama | RTF |\n",
+        );
+        md.push_str("|---|---|---|---:|---:|---:|---:|---:|---:|\n");
+        for (key, c) in domain_medians {
+            let mut parts = key.split('|');
+            let config = parts.next().unwrap_or("");
+            let bucket = parts.next().unwrap_or("");
+            let set = parts.next().unwrap_or("");
+            md.push_str(&format!(
+                "| {config} | {bucket} | {set} | {} | {} | {} | {} | {} | {} |\n",
+                c.clips,
+                opt(c.wer, 4),
+                opt(c.wer_folded, 4),
+                opt(c.cer, 4),
+                opt(c.term_recall, 3),
+                opt(c.rtf, 2)
+            ));
+        }
+        md.push('\n');
+    }
+
     md.push_str("## Klip bazında sonuçlar\n\n");
     md.push_str(
-        "| Kova | Klip | Config | Dil | WER | WER(fold) | CER | Terim | Ses(s) | Duvar(s) | RTF | Not |\n",
+        "| Kova | Klip | Domain | Config | Dil | WER | WER(fold) | CER | Terim | Ses(s) | Duvar(s) | RTF | Not |\n",
     );
-    md.push_str("|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|\n");
+    md.push_str("|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|\n");
     for r in rows {
         md.push_str(&format!(
-            "| {} | {} | {} | {} | {:.4} | {:.4} | {:.4} | {} | {:.1} | {:.1} | {:.2} | {} |\n",
+            "| {} | {} | {} | {} | {} | {:.4} | {:.4} | {:.4} | {} | {:.1} | {:.1} | {:.2} | {} |\n",
             r.bucket,
             r.clip,
+            r.vocab_set,
             r.config,
             r.lang.as_deref().unwrap_or("auto"),
             r.wer,
@@ -283,32 +374,52 @@ fn render_markdown(rows: &[Row], medians: &BTreeMap<String, MedianCell>, meta: &
     md.push_str(&format!(
         "Eşikler (başlangıç çıtası — kesinleşen değerler DECISIONS.md'ye yazılır):\n\n\
          - **GO (saha dahil tam kapsam):** medyan WER ≤ {GO_QUIET_WER} (quiet) VE ≤ {GO_FIELD_WER} (field) \
-         VE jargon terim yakalama ≥ {GO_TERM_RECALL} (vocab ayarlı config).\n\
+         VE **her jargon domaininde** terim yakalama ≥ {GO_TERM_RECALL} (vocab ayarlı config).\n\
          - **CONDITIONAL (yalnız toplantı odası):** quiet çıtayı geçer, field geçemez → Q ortamları için çık; saha ertelenir.\n\
          - **NO-GO:** ayara rağmen quiet WER kullanılamaz düzeyde → STT yaklaşımı yeniden değerlendirilir.\n\n"
     ));
+    let domains = jargon_domains(rows);
     md.push_str(
-        "Hesaplanan medyanlar (strict WER; jargon terim yakalama = jargon kovası medyanı):\n\n",
+        "Hesaplanan medyanlar (strict WER; jargon terim yakalama **domain sözlüğü başına** ayrı):\n\n",
     );
+    if domains.len() > 1 {
+        md.push_str(&format!(
+            "> Bu koşuda {} jargon domaini var ({}). Her domain kendi satırında raporlanır ve \
+             **GO için hepsinin** terim yakalama eşiğini geçmesi gerekir. Domainleri tek medyanda \
+             harmanlamak birinin eşiği geçemediğini gizler.\n\n",
+            domains.len(),
+            domains.join(", ")
+        ));
+    }
     md.push_str(&format!(
-        "| Config | Quiet WER | ≤{GO_QUIET_WER}? | Field WER | ≤{GO_FIELD_WER}? | Jargon terim yakalama | ≥{GO_TERM_RECALL}? |\n"
+        "| Config | Jargon domain | Quiet WER | ≤{GO_QUIET_WER}? | Field WER | ≤{GO_FIELD_WER}? | Terim yakalama | ≥{GO_TERM_RECALL}? |\n"
     ));
-    md.push_str("|---|---:|:-:|---:|:-:|---:|:-:|\n");
+    md.push_str("|---|---|---:|:-:|---:|:-:|---:|:-:|\n");
     for config in distinct_configs(rows) {
         let quiet_wer = medians.get(&format!("{config}|quiet")).and_then(|c| c.wer);
         let field_wer = medians.get(&format!("{config}|field")).and_then(|c| c.wer);
-        let jargon_recall = medians
-            .get(&format!("{config}|jargon"))
-            .and_then(|c| c.term_recall);
-        md.push_str(&format!(
-            "| {config} | {} | {} | {} | {} | {} | {} |\n",
+        let quiet_cells = format!(
+            "{} | {} | {} | {}",
             opt(quiet_wer, 4),
             gate(quiet_wer, GO_QUIET_WER, true),
             opt(field_wer, 4),
-            gate(field_wer, GO_FIELD_WER, true),
-            opt(jargon_recall, 3),
-            gate(jargon_recall, GO_TERM_RECALL, false)
-        ));
+            gate(field_wer, GO_FIELD_WER, true)
+        );
+        if domains.is_empty() {
+            // No jargon clips in this run — the recall gate cannot be evaluated.
+            md.push_str(&format!("| {config} | — | {quiet_cells} | — | — |\n"));
+            continue;
+        }
+        for domain in &domains {
+            let recall = domain_medians
+                .get(&format!("{config}|jargon|{domain}"))
+                .and_then(|c| c.term_recall);
+            md.push_str(&format!(
+                "| {config} | {domain} | {quiet_cells} | {} | {} |\n",
+                opt(recall, 3),
+                gate(recall, GO_TERM_RECALL, false)
+            ));
+        }
     }
     md.push_str(
         "\n**Verdict (İNSAN karar verir — GO / CONDITIONAL(meeting-room) / NO-GO):** ________\n\n",
@@ -326,9 +437,21 @@ mod tests {
     use super::*;
 
     fn row(config: &str, bucket: &str, clip: &str, wer: f64, recall: Option<f64>) -> Row {
+        row_in(config, bucket, clip, wer, recall, "default")
+    }
+
+    fn row_in(
+        config: &str,
+        bucket: &str,
+        clip: &str,
+        wer: f64,
+        recall: Option<f64>,
+        vocab_set: &str,
+    ) -> Row {
         Row {
             clip: clip.to_string(),
             bucket: bucket.to_string(),
+            vocab_set: vocab_set.to_string(),
             config: config.to_string(),
             lang: None,
             audio_secs: 60.0,
@@ -384,7 +507,12 @@ mod tests {
             quick: None,
             notes: vec!["test notu".into()],
         };
-        let md = render_markdown(&rows, &compute_medians(&rows), &meta);
+        let md = render_markdown(
+            &rows,
+            &compute_medians(&rows),
+            &compute_domain_medians(&rows),
+            &meta,
+        );
         assert!(md.contains("Verdict"));
         assert!(md.contains("İNSAN karar verir"));
         assert!(md.contains("PASS")); // quiet 0.12 ≤ 0.15
@@ -394,5 +522,117 @@ mod tests {
         assert!(md.contains("canlı UI TTFT"));
         assert!(md.contains("multi-speaker / diyarisasyon sanity"));
         assert!(md.contains("PASS / FAIL / N/A"));
+    }
+
+    // --- per-domain term recall ----------------------------------------------
+
+    /// Two jargon domains in one bucket: legal fails the recall gate badly
+    /// (0.60), intralogistics is perfect (1.00). Merged, the bucket median lands
+    /// exactly on the threshold and reads PASS — which is precisely how a
+    /// failing domain used to disappear.
+    fn split_domain_rows() -> Vec<Row> {
+        vec![
+            row_in("cfgA", "quiet", "q1", 0.10, None, "default"),
+            row_in("cfgA", "jargon", "jl1", 0.20, Some(0.60), "legal"),
+            row_in("cfgA", "jargon", "jl2", 0.20, Some(0.60), "legal"),
+            row_in("cfgA", "jargon", "ji1", 0.20, Some(1.00), "default"),
+            row_in("cfgA", "jargon", "ji2", 0.20, Some(1.00), "default"),
+        ]
+    }
+
+    #[test]
+    fn merged_bucket_median_hides_a_failing_domain() {
+        let rows = split_domain_rows();
+
+        // The old, merged number: median(0.60, 0.60, 1.00, 1.00) = 0.80 → PASS.
+        let merged = compute_medians(&rows)["cfgA|jargon"]
+            .term_recall
+            .expect("merged recall");
+        assert!((merged - 0.80).abs() < 1e-9);
+        assert_eq!(gate(Some(merged), GO_TERM_RECALL, false), "PASS");
+
+        // Split: legal is exposed as a FAIL, intralogistics still passes.
+        let per_domain = compute_domain_medians(&rows);
+        let legal = per_domain["cfgA|jargon|legal"]
+            .term_recall
+            .expect("legal recall");
+        let intra = per_domain["cfgA|jargon|default"]
+            .term_recall
+            .expect("default recall");
+        assert!((legal - 0.60).abs() < 1e-9);
+        assert!((intra - 1.00).abs() < 1e-9);
+        assert_eq!(gate(Some(legal), GO_TERM_RECALL, false), "FAIL");
+        assert_eq!(gate(Some(intra), GO_TERM_RECALL, false), "PASS");
+    }
+
+    #[test]
+    fn threshold_table_reports_each_jargon_domain_on_its_own_row() {
+        let rows = split_domain_rows();
+        let meta = RunMeta {
+            whisper_models: vec!["large-v3".into()],
+            parakeet_model: None,
+            quick: None,
+            notes: vec![],
+        };
+        let md = render_markdown(
+            &rows,
+            &compute_medians(&rows),
+            &compute_domain_medians(&rows),
+            &meta,
+        );
+
+        // One threshold row per (config, domain), carrying that domain's recall.
+        assert!(md.contains("| cfgA | legal |"));
+        assert!(md.contains("| cfgA | default |"));
+        assert!(md.contains("0.600"));
+        assert!(md.contains("1.000"));
+        // The GO rule and the multi-domain warning must both be explicit.
+        assert!(md.contains("her jargon domaininde"));
+        assert!(md.contains("GO için hepsinin"));
+        // The blended figure must not be presented as the gate number.
+        assert!(!md.contains("jargon kovası medyanı"));
+    }
+
+    #[test]
+    fn single_domain_run_needs_no_domain_warning() {
+        let rows = vec![
+            row("cfgA", "quiet", "q1", 0.10, None),
+            row("cfgA", "jargon", "j1", 0.20, Some(0.85)),
+        ];
+        let meta = RunMeta {
+            whisper_models: vec![],
+            parakeet_model: None,
+            quick: None,
+            notes: vec![],
+        };
+        let md = render_markdown(
+            &rows,
+            &compute_medians(&rows),
+            &compute_domain_medians(&rows),
+            &meta,
+        );
+        assert!(!md.contains("GO için hepsinin"));
+        assert!(!md.contains("## Medyanlar (config | kova | domain)"));
+        assert!(md.contains("| cfgA | default |"));
+    }
+
+    #[test]
+    fn run_without_jargon_clips_reports_recall_as_unavailable() {
+        let rows = vec![row("cfgA", "quiet", "q1", 0.10, None)];
+        assert!(jargon_domains(&rows).is_empty());
+        let meta = RunMeta {
+            whisper_models: vec![],
+            parakeet_model: None,
+            quick: None,
+            notes: vec![],
+        };
+        let md = render_markdown(
+            &rows,
+            &compute_medians(&rows),
+            &compute_domain_medians(&rows),
+            &meta,
+        );
+        // config row still present, recall columns blank rather than fabricated
+        assert!(md.contains("| cfgA | — |"));
     }
 }

@@ -29,6 +29,7 @@ Legend: **Agent** = `.claude/agents/` file · **Cmd** = `.claude/commands/`.
 - AC: PHASE0_VALIDATION.md report produced; WER + domain-vocab thresholds met; **human-reviewed go/no-go recorded**. If NO-GO → scope narrows to meeting-room; do not enter EPIC C field features.
 - Current evidence (2026-07-15): Whisper `large-v3` and Parakeet v3 int8 are installed/integrity-verified and the harness fails closed correctly. The four consented real-audio buckets remain `0/5`; twenty 2–10 minute recordings, human-corrected references, diarization review and the human verdict are still required. This is NOT EVALUATED, not a measured quality NO-GO.
 - v1.0.4 exception (ADR-0027): the product owner accepted this as explicit evidence debt for this patch only. A5 is neither PASS nor waived for field/accuracy claims; it must close before those claims or any downstream phase that depends on proven target-environment quality.
+- **Execution runbook: `docs/A5_SPRINT.md`** (2026-07-26). Owner decisions locked there: the `jargon` bucket splits into 5 legal + 5 intralogistics clips (**25 recordings total**, not 20), and the §4 GO/NO-GO numbers are locked *before* measurement. Two pre-sprint code debts are recorded: the harness build recipe (vendored-OpenSSL/perl) and per-clip vocabulary selection — the global ~600-char vocab prompt would otherwise bias only whichever domain is listed first in the jargon file.
 
 ---
 

@@ -27,7 +27,7 @@ const SAMPLE_RATE: usize = 16_000;
 /// degenerate final chunk.
 const MIN_TAIL_SECS: usize = 5;
 /// whisper.cpp's initial prompt budget is ~224 tokens; ~600 chars is a safe cap for TR.
-const MAX_PROMPT_CHARS: usize = 600;
+pub const MAX_PROMPT_CHARS: usize = 600;
 
 /// Model roots shared by both engines — mirrors the app: `app_data_dir()/models`
 /// (bundle id `com.bluedev.mityu`), the engines' own `data_dir()/Mityu/models`
@@ -324,13 +324,15 @@ impl ParakeetRunner {
     }
 }
 
-/// Read eval/jargon.txt (one term per line, `#` comments allowed).
-pub fn load_jargon(eval_dir: &Path) -> Result<Vec<String>> {
-    let path = eval_dir.join("jargon.txt");
+/// Read a jargon term file (one term per line, `#` comments allowed).
+///
+/// A missing file yields an empty list: `eval/jargon.txt` is optional, and so is
+/// every `eval/jargon.<set>.txt` domain list.
+pub fn load_jargon_file(path: &Path) -> Result<Vec<String>> {
     if !path.is_file() {
         return Ok(Vec::new());
     }
-    let text = std::fs::read_to_string(&path)
+    let text = std::fs::read_to_string(path)
         .map_err(|e| anyhow!("jargon listesi okunamadı ({}): {e}", path.display()))?;
     Ok(text
         .lines()
