@@ -4,6 +4,12 @@ import { defineConfig } from 'vitest/config';
 /**
  * Vitest config for the `frontend/` unit tests.
  *
+ * ⚠️ BEFORE BUMPING `jsdom`: CI and the release build both pin **Node 20.19.4**
+ * (`.github/workflows/ci.yml`, `build.yml`). jsdom 30+ requires Node >= 22.22,
+ * so it installs fine on a newer local Node and then fails every CI run. `jsdom`
+ * is therefore held at the newest line that still supports Node 20 (`^29`);
+ * raising it means raising the pinned CI *and* release runtime first.
+ *
  * `environment: 'node'` stays the DEFAULT: almost every suite is pure logic and
  * the heaviest ones (exportDocx/exportPdf) only need `Blob`, which Node provides
  * globally. A suite that genuinely renders React opts in per file with a

@@ -105,7 +105,7 @@
         "eslint": "8.57.1",
         "eslint-config-next": "15.5.18",
         "fake-indexeddb": "^6.2.5",
-        "jsdom": "^30.0.1",
+        "jsdom": "^29.1.1",
         "postcss": "^8",
         "tailwindcss": "^3.4.1",
         "typescript": "^5.7.2",
