@@ -43,6 +43,13 @@ pub mod agents;
 pub mod analytics;
 pub mod anthropic;
 pub mod api;
+/// "Ask This Meeting" (Product Intelligence slice 3): retrieve the meeting's
+/// own passages first, answer only from those, and refuse rather than guess.
+/// Every rendered claim is ground-checked against the retrieved window — a
+/// citation to anything else is dropped, never repaired, because repairing it
+/// would give an invented claim a real timestamp. Read-only: nothing here
+/// persists or can become approved content.
+pub mod ask;
 pub mod audio;
 pub mod config;
 pub mod console_utils;
@@ -688,6 +695,7 @@ pub fn run() {
             api::api_get_meetings,
             context::api_get_current_workspace_id,
             api::api_search_evidence,
+            ask::commands::api_ask_meeting,
             api::api_search_transcripts,
             api::api_get_model_config,
             api::api_save_model_config,

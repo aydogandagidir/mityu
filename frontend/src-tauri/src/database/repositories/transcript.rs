@@ -6,7 +6,8 @@
 //! INSERT here MUST populate them; writes also stamp `rev`/`updated_by`.
 
 use crate::api::{
-    EvidenceSearchResult, SearchMatchField, TranscriptSearchResult, TranscriptSegment,
+    EvidenceSearchResult, MeetingEvidencePassage, SearchMatchField, TranscriptSearchResult,
+    TranscriptSegment,
 };
 use crate::context::AuthContext;
 use chrono::Utc;
@@ -353,6 +354,86 @@ impl TranscriptsRepository {
                     matched_in: SearchMatchField::Transcript,
                     source_chunk_id,
                     audio_start_time,
+                },
+            )
+            .collect())
+    }
+
+    /// Retrieve the passages of ONE meeting that best match a question
+    /// (Product Intelligence slice 3, "Ask This Meeting").
+    ///
+    /// [`Self::search_evidence`] cannot serve this: it collapses to the single
+    /// best segment per meeting, which is right for cross-meeting search and
+    /// exactly wrong here. This returns several passages from one meeting, in
+    /// relevance order, carrying the full segment text.
+    ///
+    /// Same trust rules as `search_evidence`, plus the meeting predicate: the
+    /// FTS table is a derived index and never an authority, every candidate is
+    /// joined back to both source tables, all three workspace predicates are
+    /// bound from `AuthContext`, and soft-deleted rows cannot surface. The
+    /// meeting id is bound against BOTH the derived document and the
+    /// authoritative transcript row, so a stale derived row pointing at another
+    /// meeting cannot leak a passage into this answer.
+    pub async fn retrieve_meeting_evidence(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        meeting_id: &str,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<MeetingEvidencePassage>, SqlxError> {
+        let Some(match_query) = build_evidence_match_query(query) else {
+            return Ok(Vec::new());
+        };
+        // A bounded window: enough passages for an answer, few enough to stay
+        // inside a small local model's context. Clamped rather than trusted.
+        let limit = limit.clamp(1, 25);
+
+        let rows = sqlx::query_as::<_, (String, String, Option<f64>, String)>(
+            "SELECT t.id AS source_chunk_id,
+                    t.timestamp,
+                    t.audio_start_time,
+                    t.transcript
+               FROM transcript_search_fts
+               JOIN transcript_search_documents AS d
+                 ON d.id = transcript_search_fts.rowid
+               JOIN transcripts AS t
+                 ON t.id = d.source_chunk_id
+                AND t.meeting_id = d.meeting_id
+                AND t.workspace_id = d.workspace_id
+               JOIN meetings AS m
+                 ON m.id = t.meeting_id
+                AND m.workspace_id = t.workspace_id
+              WHERE transcript_search_fts MATCH ?
+                AND d.workspace_id = ?
+                AND t.workspace_id = ?
+                AND m.workspace_id = ?
+                AND d.meeting_id = ?
+                AND t.meeting_id = ?
+                AND t.deleted_at IS NULL
+                AND m.deleted_at IS NULL
+              ORDER BY bm25(transcript_search_fts) ASC,
+                       COALESCE(t.audio_start_time, 1.0e30) ASC,
+                       t.id ASC
+              LIMIT ?",
+        )
+        .bind(&match_query)
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .bind(meeting_id)
+        .bind(meeting_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(source_chunk_id, timestamp, audio_start_time, text)| MeetingEvidencePassage {
+                    source_chunk_id,
+                    timestamp,
+                    audio_start_time,
+                    text,
                 },
             )
             .collect())

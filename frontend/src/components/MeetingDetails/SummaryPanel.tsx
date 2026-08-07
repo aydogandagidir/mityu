@@ -4,6 +4,7 @@ import { Summary, SummaryResponse, Transcript } from '@/types';
 import { SummaryDraftResponse } from '@/services/summaryDraftService';
 import { EditableTitle } from '@/components/EditableTitle';
 import { BlockNoteSummaryView, BlockNoteSummaryViewRef } from '@/components/AISummary/BlockNoteSummaryView';
+import { AskPanel } from '@/components/AskThisMeeting/AskPanel';
 import { EmptyStateSummary } from '@/components/EmptyStateSummary';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 import { SummaryGeneratorButtonGroup } from './SummaryGeneratorButtonGroup';
@@ -344,6 +345,17 @@ export function SummaryPanel({
               well at the rebalanced, narrower panel width instead of stretching
               edge-to-edge. Width wrapper only — DraftSummaryView is untouched. */}
           <div className="p-6 w-full max-w-3xl mx-auto">
+            {/* Ask This Meeting (PI slice 3) sits above the draft: a question is
+                usually what brings someone back to a past meeting, and the
+                answer's sources open in the same transcript the draft cites. */}
+            <div className="mb-6 border-b border-border pb-6">
+              <AskPanel
+                meetingId={meeting.id}
+                modelProvider={modelConfig.provider}
+                modelName={modelConfig.model}
+                onJumpToSource={onJumpToSource}
+              />
+            </div>
             <BlockNoteSummaryView
               ref={summaryRef}
               summaryData={aiSummary}
