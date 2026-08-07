@@ -84,7 +84,22 @@ impl NpuVendor {
 pub struct DeviceCapabilities {
     pub os: HostOs,
     pub arch: &'static str,
-    pub physical_cores: usize,
+    /// Major OS version, when the host reports one — `26` for macOS 26.
+    ///
+    /// Carried because backend availability depends on it: Apple Foundation
+    /// Models needs macOS 26+, and without a version here a future "just mark it
+    /// Available" change would select it on macOS 15, where the API does not
+    /// exist. `None` means the version could not be parsed, which
+    /// [`super::backend`] treats as unsupported rather than assuming.
+    pub os_version_major: Option<u32>,
+    /// Physical cores, when the OS reports them.
+    ///
+    /// `None` when it does not. Kept separate from [`Self::logical_threads`]
+    /// because `available_parallelism()` counts *hardware threads*: on an SMT
+    /// part a 2-core/4-thread machine would otherwise clear a four-core floor.
+    pub physical_cores: Option<usize>,
+    /// Hardware threads available to this process.
+    pub logical_threads: usize,
     /// Total installed RAM in GiB.
     ///
     /// Measured, not guessed. `audio::HardwareProfile::detect_memory_gb` returns
@@ -106,17 +121,31 @@ impl DeviceCapabilities {
 
     fn detect() -> DeviceCapabilities {
         let profile = crate::audio::HardwareProfile::detect();
+        let (physical_cores, total_ram_gb) = host_cores_and_ram();
         DeviceCapabilities {
             os: HostOs::current(),
             arch: std::env::consts::ARCH,
+            os_version_major: os_version_major(),
+            physical_cores,
             // `|n| n.get()` rather than the `std::num::NonZero::get` path: that
             // generic alias is only stable since 1.79 and this crate's MSRV is
             // 1.77, so naming it would break a 1.77 toolchain.
-            physical_cores: std::thread::available_parallelism().map_or(4, |n| n.get()),
-            total_ram_gb: total_ram_gb(),
+            logical_threads: std::thread::available_parallelism().map_or(4, |n| n.get()),
+            total_ram_gb,
             gpu: profile.gpu_type,
             npu: detect_npu(),
         }
+    }
+
+    /// Cores to reason about, erring low when the OS will not say.
+    ///
+    /// When the physical count is unknown, hardware threads are halved rather
+    /// than used directly: assuming SMT understates a non-SMT part but never
+    /// overstates an SMT one, and overstating is what would wrongly clear the
+    /// local-model floor.
+    pub fn effective_cores(&self) -> usize {
+        self.physical_cores
+            .unwrap_or_else(|| (self.logical_threads / 2).max(1))
     }
 
     /// How comfortably this device can be expected to run a local model.
@@ -125,16 +154,32 @@ impl DeviceCapabilities {
     /// scheduling. RAM is weighted hardest because it is what actually stops a
     /// quantised model from loading.
     pub fn local_inference_fitness(&self) -> LocalInferenceFitness {
-        if self.total_ram_gb < 8.0 || self.physical_cores < 4 {
+        let cores = self.effective_cores();
+        if self.total_ram_gb < 8.0 || cores < 4 {
             return LocalInferenceFitness::NotRecommended;
         }
         let accelerated = self.npu.is_known_present() || self.gpu != GpuType::None;
-        if self.total_ram_gb >= 16.0 && self.physical_cores >= 8 && accelerated {
+        if self.total_ram_gb >= 16.0 && cores >= 8 && accelerated {
             LocalInferenceFitness::Comfortable
         } else {
             LocalInferenceFitness::Constrained
         }
     }
+}
+
+/// Major OS version as an integer, when it can be parsed.
+///
+/// `sysinfo` reports e.g. `"26.1"` on macOS and `"11"` on Windows; only the
+/// leading component is used, and anything unparseable stays `None` so callers
+/// fail closed instead of assuming a version.
+fn os_version_major() -> Option<u32> {
+    let version = sysinfo::System::os_version()?;
+    version
+        .split(['.', '-', ' '])
+        .next()?
+        .trim()
+        .parse::<u32>()
+        .ok()
 }
 
 /// Coarse verdict on running a local model, for backend preference and copy.
@@ -148,12 +193,16 @@ pub enum LocalInferenceFitness {
     NotRecommended,
 }
 
-fn total_ram_gb() -> f32 {
+/// Physical cores (when the OS reports them) and total RAM in GiB, from one
+/// `sysinfo` handle — `physical_core_count` is a method, so both readings share
+/// an instance rather than building two.
+fn host_cores_and_ram() -> (Option<usize>, f32) {
     let mut system = sysinfo::System::new();
     system.refresh_memory();
     // sysinfo 0.32 reports bytes (see whisper_engine::system_monitor, which
     // divides by 1024 twice for MB).
-    system.total_memory() as f32 / 1024.0 / 1024.0 / 1024.0
+    let ram_gb = system.total_memory() as f32 / 1024.0 / 1024.0 / 1024.0;
+    (system.physical_core_count(), ram_gb)
 }
 
 /// Classify a neural accelerator from an OS-reported device name.
@@ -168,8 +217,10 @@ fn total_ram_gb() -> f32 {
 pub fn classify_npu_device(name: &str) -> Option<NpuVendor> {
     let lower = name.to_lowercase();
 
-    // Vendor phrases are distinctive enough to match directly.
-    if lower.contains("ai boost") || lower.contains("intel(r) ai") {
+    // Vendor phrases must name the accelerator, not just the vendor's AI brand:
+    // a bare `intel(r) ai` prefix also matches "Intel(R) AI Camera", which is not
+    // an NPU and would then count as acceleration.
+    if lower.contains("ai boost") {
         return Some(NpuVendor::IntelAiBoost);
     }
     if lower.contains("xdna") || lower.contains("ryzen ai") {
@@ -236,6 +287,15 @@ mod tests {
         assert_eq!(classify_npu_device("Input/Output Controller"), None);
     }
 
+    /// A vendor's AI branding is not an accelerator. `Intel(R) AI Camera` is a
+    /// camera; matching it would feed a phantom NPU into the fitness verdict.
+    #[test]
+    fn vendor_ai_branding_is_not_an_accelerator() {
+        assert_eq!(classify_npu_device("Intel(R) AI Camera"), None);
+        assert_eq!(classify_npu_device("Intel(R) AI Analytics Helper"), None);
+        assert_eq!(classify_npu_device("NVIDIA AI Display Driver"), None);
+    }
+
     #[test]
     fn recognises_vendor_accelerators() {
         assert_eq!(
@@ -281,7 +341,9 @@ mod tests {
         DeviceCapabilities {
             os: HostOs::Windows,
             arch: "x86_64",
-            physical_cores: cores,
+            os_version_major: Some(11),
+            physical_cores: Some(cores),
+            logical_threads: cores * 2,
             total_ram_gb: ram,
             gpu,
             npu,
@@ -322,10 +384,51 @@ mod tests {
         );
     }
 
+    /// Hardware threads must never be read as cores: a 2-core/4-thread part
+    /// would otherwise clear the four-core floor it is meant to fail.
+    #[test]
+    fn smt_threads_do_not_clear_the_core_floor() {
+        let smt_dual_core = DeviceCapabilities {
+            os: HostOs::Windows,
+            arch: "x86_64",
+            os_version_major: Some(11),
+            physical_cores: None, // OS would not say
+            logical_threads: 4,
+            total_ram_gb: 32.0,
+            gpu: GpuType::Cuda,
+            npu: NpuVendor::AmdXdna,
+        };
+        assert_eq!(smt_dual_core.effective_cores(), 2);
+        assert_eq!(
+            smt_dual_core.local_inference_fitness(),
+            LocalInferenceFitness::NotRecommended
+        );
+    }
+
+    #[test]
+    fn a_reported_physical_count_wins_over_the_smt_estimate() {
+        let non_smt = DeviceCapabilities {
+            os: HostOs::Windows,
+            arch: "x86_64",
+            os_version_major: Some(11),
+            physical_cores: Some(8),
+            logical_threads: 8,
+            total_ram_gb: 32.0,
+            gpu: GpuType::Cuda,
+            npu: NpuVendor::Undetermined,
+        };
+        assert_eq!(non_smt.effective_cores(), 8);
+        assert_eq!(
+            non_smt.local_inference_fitness(),
+            LocalInferenceFitness::Comfortable
+        );
+    }
+
     #[test]
     fn probe_reads_a_plausible_host() {
         let c = DeviceCapabilities::probe();
-        assert!(c.physical_cores >= 1);
+        assert!(c.logical_threads >= 1);
+        assert!(c.effective_cores() >= 1);
         // Real measurement, not the hard-coded 8 the whisper profile falls back to.
         assert!(
             c.total_ram_gb > 0.5,

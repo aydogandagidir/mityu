@@ -560,4 +560,10 @@ NPU classification is a pure function over a device name, split from the platfor
 
 **Owed, deliberately not faked:** the Windows/Linux NPU enumeration shim (needs a machine with an NPU to validate); the Apple Foundation Models and Windows ONNX implementations; and wiring the probe into provider assembly and the UI. `hardware_detector.rs::detect_memory_gb` is left as-is rather than changed underneath the whisper tier — the new probe measures RAM correctly for its own consumers, and correcting the whisper path is an audio-side change that must be made with §4's care and its own smoke test.
 
+**Amendment (2026-08-07, out of the #13 review).** Three corrections, each one the module's own stated principle being violated by its first implementation:
+
+1. **Cores were hardware threads.** `available_parallelism()` counts logical execution units, so a 2-core/4-thread part cleared the four-core floor and an accelerated 4c/8t part could reach `Comfortable`. `physical_cores: Option<usize>` (from `sysinfo`) is now separate from `logical_threads`, and `effective_cores()` halves threads when the physical count is unknown — understating a non-SMT part rather than overstating an SMT one, because overstating is what wrongly clears the floor.
+2. **Vendor branding was read as an accelerator.** The `intel(r) ai` substring matched `"Intel(R) AI Camera"`, feeding a phantom NPU into the fitness verdict — the same false-positive class as the `I·npu·t` case, in the code written to prevent it. Only the `ai boost` device name matches now.
+3. **Apple Silicon was treated as sufficient for Foundation Models.** The API arrives in macOS 26, and `DeviceCapabilities` carried no version, so the documented "just mark it Available" step would have selected it on macOS 15. `os_version_major` is now probed and the backend reports `UnsupportedHost` below 26 — including when the version cannot be parsed, so it fails closed.
+
 **Status:** Accepted (2026-08-07). Seam dormant; OS-native backends declared, unimplemented, and structurally unselectable.

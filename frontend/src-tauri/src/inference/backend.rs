@@ -24,6 +24,9 @@
 use super::capability::{DeviceCapabilities, HostOs, LocalInferenceFitness};
 use crate::summary::llm_client::LLMProvider;
 
+/// First macOS release exposing the on-device Foundation Models API.
+const APPLE_FM_MIN_MACOS: u32 = 26;
+
 /// A backend able to run a model on this device, without the network.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocalBackend {
@@ -107,6 +110,13 @@ pub fn backend_status(backend: LocalBackend, caps: &DeviceCapabilities) -> Backe
                 BackendStatus::UnsupportedHost {
                     reason: "requires Apple Silicon on macOS",
                 }
+            } else if caps.os_version_major.is_none_or(|v| v < APPLE_FM_MIN_MACOS) {
+                // Fails closed on an unknown version: implementing this backend
+                // later must not make it selectable on a release whose OS has no
+                // Foundation Models API.
+                BackendStatus::UnsupportedHost {
+                    reason: "requires macOS 26 or newer",
+                }
             } else {
                 BackendStatus::NotImplemented {
                     tracking: "STRATEGY_2026-2030 Tier-0: OS-native SLM backends",
@@ -174,10 +184,22 @@ mod tests {
     use crate::inference::capability::NpuVendor;
 
     fn caps(os: HostOs, arch: &'static str, ram: f32, cores: usize) -> DeviceCapabilities {
+        caps_on(os, arch, ram, cores, Some(APPLE_FM_MIN_MACOS))
+    }
+
+    fn caps_on(
+        os: HostOs,
+        arch: &'static str,
+        ram: f32,
+        cores: usize,
+        os_version_major: Option<u32>,
+    ) -> DeviceCapabilities {
         DeviceCapabilities {
             os,
             arch,
-            physical_cores: cores,
+            os_version_major,
+            physical_cores: Some(cores),
+            logical_threads: cores * 2,
             total_ram_gb: ram,
             gpu: GpuType::None,
             npu: NpuVendor::Undetermined,
@@ -249,6 +271,33 @@ mod tests {
             backend_status(
                 LocalBackend::AppleFoundationModels,
                 &caps(HostOs::MacOs, "aarch64", 32.0, 12)
+            ),
+            BackendStatus::NotImplemented { .. }
+        ));
+    }
+
+    /// Apple Silicon is not sufficient — the Foundation Models API arrives in
+    /// macOS 26. Without this gate, implementing the backend later would make it
+    /// selectable on releases that cannot run it, and an unknown version must
+    /// fail closed rather than be assumed new enough.
+    #[test]
+    fn apple_foundation_models_requires_macos_26() {
+        for version in [None, Some(15), Some(25)] {
+            assert!(
+                matches!(
+                    backend_status(
+                        LocalBackend::AppleFoundationModels,
+                        &caps_on(HostOs::MacOs, "aarch64", 32.0, 12, version)
+                    ),
+                    BackendStatus::UnsupportedHost { .. }
+                ),
+                "macOS {version:?} must not be reported as supportable"
+            );
+        }
+        assert!(matches!(
+            backend_status(
+                LocalBackend::AppleFoundationModels,
+                &caps_on(HostOs::MacOs, "aarch64", 32.0, 12, Some(26))
             ),
             BackendStatus::NotImplemented { .. }
         ));
