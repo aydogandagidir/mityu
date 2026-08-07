@@ -31,6 +31,9 @@ Append a short ADR whenever you make a decision that shapes structure, dependenc
 **Status:** Accepted.
 
 ---
+**Amendment (2026-08-07, out of a codebase-cleanliness sweep).** The deletion this ADR scheduled has already happened: `2b99ed6` (2026-07-07) removed `audio_v2/` together with `lib_old_complex.rs`, `audio/core-old.rs` and `audio/recording_saver_old.rs`, and is an ancestor of `main`. Recording it because the text above still reads as pending work under a condition that was **not** met — the Phase-0/A5 gate it was made conditional on remains unpassed to this day (ADR-0027), so the files went a month before their stated trigger. Nothing argues for restoring them: the evidence in the Decision above (unreferenced, uncompiled, bit-rotted) was what made them safe to remove, and it did not depend on Phase-0. What Phase-0 gated was the *risk appetite* for touching the audio tree at all. The `cargo build` half of the follow-up is continuously satisfied by CI; the **per-platform recording smoke test is not** — the macOS smoke remains owed here as it does elsewhere (`CLAUDE.md` §4).
+
+---
 ## ADR-0005 — Audio retention default
 **Context:** Storing raw audio increases cost + privacy risk.
 **Decision:** Default to **transcript-only** (delete audio after transcription); raw-audio retention is an explicit per-tenant policy.
@@ -65,6 +68,13 @@ Append a short ADR whenever you make a decision that shapes structure, dependenc
 **Deliberately kept as "meetily":** legacy-import UI/paths (HomebrewDatabaseDetector, LegacyDatabaseImport, homebrew db path) — they refer to the legacy product's data; IndexedDB `MeetilyRecoveryDB` (rename needs a data migration); model CDN `meetily.towardsgeneralintelligence.com` (upstream model hosting — supply-chain review before GA); macOS CoreAudio tap label `meetily-audio-tap` (audio module — separate audio-pipeline ticket); `lib_old_complex.rs` (legacy, do-not-extend).
 **Consequences:** App runs branded as Mityu; `LICENSE.md` (MIT © Zackriya Solutions) untouched. Pre-existing QA tooling debt surfaced and tracked separately: `next lint` unconfigured / `eslint` missing; `tests/lib/blocknote-markdown.test.ts` (bun:test) breaks `tsc --noEmit`.
 **Status:** Accepted.
+
+---
+**Amendment (2026-08-07).** **Two** entries in the "deliberately kept" list above are obsolete; the others were re-checked in the tree rather than assumed.
+
+- `lib_old_complex.rs` no longer exists — removed by `2b99ed6` (2026-07-07) as dead code under ADR-0004.
+- The model CDN `meetily.towardsgeneralintelligence.com` was retired the same day. `parakeet_engine.rs` now builds both the v2 and v3 URLs from `huggingface.co/istupakov/parakeet-tdt-0.6b-v{2,3}-onnx`, and `RELEASE_CHECKLIST.md` §3 records the switch as verified byte-for-byte against the old CDN (ADR-0020, whose Status already notes the repoint). So the "supply-chain review before GA" follow-up attached to this entry is **closed, not pending** — the domain now survives only in this ADR's prose.
+- Still present and still deliberately "meetily", each verified on 2026-08-07: `HomebrewDatabaseDetector.tsx` and `LegacyDatabaseImport.tsx` with the homebrew path in `database/commands.rs`; `MeetilyRecoveryDB` (`indexedDBService.ts:11`, frozen so the v1 database can be upgraded in place); and the CoreAudio tap label (`audio/capture/core_audio.rs:147`).
 
 ---
 ## ADR-0010 — Tenant-scoped repositories are the only storage access path (BACKLOG B2 phase 2)
