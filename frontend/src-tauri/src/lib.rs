@@ -49,6 +49,13 @@ pub mod console_utils;
 pub mod context;
 pub mod database;
 pub mod groq;
+/// Local inference capability + backend selection (Tier-0 seam, DORMANT).
+/// One offline picture of what this device can run — shared by STT and the
+/// summary path, which until now had no hardware awareness at all — plus the
+/// pure selection function the on-device OS-native runtimes (Apple Foundation
+/// Models, Windows ONNX) slot into. Declared backends are structurally
+/// unselectable until implemented. Nothing calls it yet; no behaviour changes.
+pub mod inference;
 /// Local learning (ADR-0030): the human-in-the-loop correction signal becomes
 /// plain-language rules that shape the next summary. Learning is DATA, never
 /// weights — an unwanted rule is one `DELETE`, which is what makes KVKK/GDPR

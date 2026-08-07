@@ -530,3 +530,34 @@ This required the frontend's first component-test infrastructure. `environment: 
 **Explicitly NOT decided here — legal applicability.** This is a source-level engineering verification: it establishes that the documented mechanisms exist and cannot be bypassed. Whether Art. 50(2) applies to HITL-approved summarisation at all, and whether the "assistive function / no substantial alteration" carve-out is engaged, is a question for counsel and is not answered by this ADR. Art. 50(1) (informing a person they are interacting with an AI system) is not triggered by today's surfaces, but the planned "Ask This Meeting" conversational surface (Wave 1) would engage it and must be assessed before it ships.
 
 **Status:** Accepted (2026-07-26). Verification PASS; legal applicability review still owed.
+
+---
+
+## ADR-0033 — Tier-0: one honest device-capability probe, and a seam OS-native backends slot into
+
+**Context:** The strategy's Tier-0 item (`STRATEGY_2026-2030.md`, Dalga 0) is a model/STT abstraction that makes OS-native small-model runtimes — Apple Foundation Models, Windows ONNX / Copilot Runtime — interchangeable with the built-in GGUF sidecar and BYOK cloud, selected per task from device capability. That wave is the largest tailwind behind the local-first thesis: it turns on-device inference from a quality tax into zero marginal cost.
+
+Two findings shaped the scope:
+
+1. **The LLM path has no hardware awareness at all.** `audio::HardwareProfile` (GPU type, performance tier) exists but lives inside `audio/` and is consumed only by the whisper engine. `summary/` — provider enum, `ProviderParams::call`, `assemble_provider` — never consults it. There is no shared answer to "what can this device run".
+2. **Part of the existing detection does not detect.** `hardware_detector.rs::detect_memory_gb()` returns a hard-coded `8` unless a `MEMORY_GB` env var is set, and `PerformanceTier` is derived from it — so the tier is fictional on most machines.
+
+The OS-native backends themselves cannot honestly be built in this environment: Apple Foundation Models needs macOS 26+ on Apple Silicon and Swift FFI (no macOS machine here — the §4 macOS smoke is still owed), and a Windows ONNX LLM path needs its own model-management and quality validation. Writing either would be unverifiable speculation.
+
+**Decision:** Land the capability probe and the selection seam; declare the OS-native backends without implementing them. New dormant module `frontend/src-tauri/src/inference/`, pure and offline, called by nothing.
+
+- **`capability`** — `DeviceCapabilities` (OS, arch, cores, RAM, GPU, NPU) with RAM measured through `sysinfo` (already a dependency) rather than assumed, plus a coarse `LocalInferenceFitness` for backend preference and product copy.
+- **`backend`** — `LocalBackend` { `GgufSidecar`, `AppleFoundationModels`, `WindowsOnnxRuntime` }, a `BackendStatus` per host, a preference order (OS-native first on its own host), and `select_local_backend`.
+
+Two honesty rules are enforced structurally rather than documented:
+
+- **"Could not tell" is not "none".** `NpuVendor::Undetermined` is distinct from `None`, and `is_known_present()` is false for both, so an undetected NPU can never be counted as a capability. macOS is settled by construction (every Apple Silicon part has a Neural Engine); Windows and Linux report `Undetermined` because PnP enumeration is not implemented here and could not be validated against a machine that actually has an NPU. Reporting `None` there would let the product tell a Copilot+ PC owner they have no accelerator.
+- **A declared backend is unselectable.** `select_local_backend` is *derived* from `BackendStatus` rather than hand-written, so an unimplemented arm cannot be returned by construction. `os_native_backends_are_never_selectable_yet` and `a_selected_backend_always_has_a_provider` pin it.
+
+NPU classification is a pure function over a device name, split from the platform enumeration that feeds it, so it is fully testable without the hardware. This matters because the risk is false positives, not misses: a first pass that substring-matched `"npu"` flagged **"Microsoft Input Configuration Device"** on the (NPU-less) development machine — `I·npu·t` contains it. Matching is token-based, and that exact device name is now a regression test.
+
+**Consequences:** Both STT and the summary path now have one place to ask what the device can do, and the arrival of an OS-native backend becomes an addition — implement it, flip its status to `Available` — rather than a refactor of every call site, matching the dormant-seam approach of `sync/` (ADR-0012) and `agents/` (ADR-0013). Nothing changes behaviour: no new inference path, no call sites, no UI. The local-first invariant holds by construction since the module performs no I/O beyond reading host properties.
+
+**Owed, deliberately not faked:** the Windows/Linux NPU enumeration shim (needs a machine with an NPU to validate); the Apple Foundation Models and Windows ONNX implementations; and wiring the probe into provider assembly and the UI. `hardware_detector.rs::detect_memory_gb` is left as-is rather than changed underneath the whisper tier — the new probe measures RAM correctly for its own consumers, and correcting the whisper path is an audio-side change that must be made with §4's care and its own smoke test.
+
+**Status:** Accepted (2026-08-07). Seam dormant; OS-native backends declared, unimplemented, and structurally unselectable.
