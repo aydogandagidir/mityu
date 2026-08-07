@@ -334,6 +334,24 @@ export function SummaryPanel({
         </div>
       </div>
 
+      {/* Ask This Meeting (PI slice 3) sits OUTSIDE the structured-draft branch
+          on purpose. `structuredEnabled` is `hasSummaryDraft`, so nesting it
+          there would hide Ask from every meeting that was never summarised —
+          exactly the meetings where "what did we decide?" is worth asking. It
+          needs a transcript, nothing else. */}
+      {transcripts?.length > 0 ? (
+        <div className="border-b border-border px-6 py-4">
+          <div className="w-full max-w-3xl mx-auto">
+            <AskPanel
+              meetingId={meeting.id}
+              modelProvider={modelConfig.provider}
+              modelName={modelConfig.model}
+              onJumpToSource={onJumpToSource}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {structuredEnabled ? (
         // BACKLOG C1.6 — source-linked structured draft review (HITL). Renders
         // regardless of the legacy `aiSummary`/transcripts gate because
@@ -345,17 +363,6 @@ export function SummaryPanel({
               well at the rebalanced, narrower panel width instead of stretching
               edge-to-edge. Width wrapper only — DraftSummaryView is untouched. */}
           <div className="p-6 w-full max-w-3xl mx-auto">
-            {/* Ask This Meeting (PI slice 3) sits above the draft: a question is
-                usually what brings someone back to a past meeting, and the
-                answer's sources open in the same transcript the draft cites. */}
-            <div className="mb-6 border-b border-border pb-6">
-              <AskPanel
-                meetingId={meeting.id}
-                modelProvider={modelConfig.provider}
-                modelName={modelConfig.model}
-                onJumpToSource={onJumpToSource}
-              />
-            </div>
             <BlockNoteSummaryView
               ref={summaryRef}
               summaryData={aiSummary}

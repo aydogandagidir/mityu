@@ -156,6 +156,11 @@ export default function PageContent({
   const handleJumpToSource = (sourceChunkId: string) => {
     setScrollToSegmentId(sourceChunkId);
     setScrollNonce((n) => n + 1);
+    // On the narrow layout the transcript pane is mounted but hidden, so
+    // scrolling it would happen out of sight: opening a source has to reveal
+    // the transcript too, or the source control silently does nothing. No-op
+    // on desktop, where both panes are visible.
+    setMobileTab('transcript');
   };
 
   // The target segment isn't in the loaded page: pull the next page so the
