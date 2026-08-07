@@ -17,6 +17,12 @@
 # testing
 /coverage
 /dist
+# Redirected cargo build/test output. Three of these (full_test.txt,
+# lib_test.txt, test_result.txt) sat in the repo root from v1.0.3 until
+# 2026-08-07; `*.log` further down never matched them.
+/test_result.txt
+/*_test.txt
+/cargo-*.txt
 
 # next.js
 /.next/
