@@ -70,7 +70,11 @@ Append a short ADR whenever you make a decision that shapes structure, dependenc
 **Status:** Accepted.
 
 ---
-**Amendment (2026-08-07).** The "deliberately kept" list above names `lib_old_complex.rs`; that file no longer exists, removed by `2b99ed6` (2026-07-07) as dead code under ADR-0004. The rest of the list still stands. Noted so the next reader does not go looking for a file the document promises is there.
+**Amendment (2026-08-07).** **Two** entries in the "deliberately kept" list above are obsolete; the others were re-checked in the tree rather than assumed.
+
+- `lib_old_complex.rs` no longer exists — removed by `2b99ed6` (2026-07-07) as dead code under ADR-0004.
+- The model CDN `meetily.towardsgeneralintelligence.com` was retired the same day. `parakeet_engine.rs` now builds both the v2 and v3 URLs from `huggingface.co/istupakov/parakeet-tdt-0.6b-v{2,3}-onnx`, and `RELEASE_CHECKLIST.md` §3 records the switch as verified byte-for-byte against the old CDN (ADR-0020, whose Status already notes the repoint). So the "supply-chain review before GA" follow-up attached to this entry is **closed, not pending** — the domain now survives only in this ADR's prose.
+- Still present and still deliberately "meetily", each verified on 2026-08-07: `HomebrewDatabaseDetector.tsx` and `LegacyDatabaseImport.tsx` with the homebrew path in `database/commands.rs`; `MeetilyRecoveryDB` (`indexedDBService.ts:11`, frozen so the v1 database can be upgraded in place); and the CoreAudio tap label (`audio/capture/core_audio.rs:147`).
 
 ---
 ## ADR-0010 — Tenant-scoped repositories are the only storage access path (BACKLOG B2 phase 2)
