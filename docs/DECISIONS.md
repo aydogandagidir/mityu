@@ -620,7 +620,7 @@ Three findings from reading the tree shaped this decision.
 
 CAM++ is the preferred embedding model on licence grounds (Apache-2.0 carries no attribution-in-product obligation); NeMo TitaNet is the fallback and would add no new machinery, since Parakeet already ships under CC-BY-4.0 with attribution in `README.md` and the About screen (ADR-0020). **Neither may ship until its licence is verified from the model card the way ADR-0020 verified whisper and Parakeet, and until it is confirmed that redistribution through sherpa-onnx's release assets preserves the required notices.** Whether Hugging Face's access gate binds a downstream consumer who obtains the same MIT-licensed weights elsewhere is a question for counsel, not for this ADR.
 
-> **Superseded in part by ADR-0035 (2026-08-09).** Item 2 above names `sherpa-rs`, which is archived; the live crate is k2-fsa's own `sherpa-onnx`. The implementation-approach paragraph below is likewise closed there — and the answer is forced rather than chosen, because sherpa-onnx and the app's `ort` **cannot link into one binary** (measured). The model-licence obligation in item 2 is *not* superseded and remains open.
+> **The implementation-approach paragraph below is superseded by ADR-0035 (2026-08-09):** the `sherpa-rs` crate it names is archived; the live crate is k2-fsa's own `sherpa-onnx`, and the choice between it and `ort` turned out to be forced rather than open, because sherpa-onnx and the app's `ort` **cannot link into one binary** (measured). **Nothing else in this ADR is superseded** — in particular item 2's model provenance and its licence-verification obligation still stand, and ADR-0035 lists them as prerequisites of shipping.
 
 **Implementation approach (recommended, not yet decided):** the whole diarization pipeline is segmentation → embedding → clustering. `ort` is already a dependency and could run both models, but the segmentation post-processing and speaker clustering would then be ours to write — that is a research project, not an integration. The `sherpa-rs` bindings to sherpa-onnx provide the assembled pipeline instead, at the cost of a substantial native dependency that must build on Windows, macOS and Linux. That trade needs its own decision once the schema lands.
 
@@ -667,11 +667,27 @@ Three things that were *assumed* when ADR-0034 was written turned out to be wron
 
 3. **Default (`static`) features, giving a single self-contained executable.** Measured: 17.7 MB release, and it runs from an otherwise **empty directory** — no `onnxruntime.dll`, no sibling libraries to ship or to get out of step. One file into `binaries/`, exactly like the two already there. The `shared` feature is available and not needed.
 
-4. **The native archive MUST be vendored and SHA-256-verified in our own build script before this ships.** `sherpa-onnx-sys`' `build.rs` downloads a prebuilt archive from a GitHub release and performs **no integrity check of any kind** — verified by reading it. That is squarely against ADR-0020's exact-size-plus-digest precedent for model files. The crate exposes `SHERPA_ONNX_LIB_DIR` and `SHERPA_ONNX_ARCHIVE_DIR`, so the mitigation is the pattern `build/ffmpeg.rs` already implements: pin the archive, check its digest, fail the build on mismatch. **Shipping without this is not permitted by this ADR.**
+4. **The native archive MUST be verified before `sherpa-onnx-sys` is ever built — and NOT by a build script of ours.** `sherpa-onnx-sys`' `build.rs` downloads a prebuilt archive from a GitHub release and performs **no integrity check of any kind** — verified by reading it. That is squarely against ADR-0020's exact-size-plus-digest precedent for model files.
+
+   The obvious mitigation does not work, and the trap is worth stating so nobody implements it: a `build/ffmpeg.rs`-style check inside `diarize-helper`'s own build script runs **too late**. Cargo builds a dependency's script before the dependent crate's, and a build script cannot set environment for a sibling that has already run — so the unverified bytes would be downloaded and extracted before our digest check executed.
+
+   So the verification must sit **outside cargo**, in one of two places:
+   - a **bootstrap step run before `cargo build`** (developer command and CI step) that fetches the archive, checks its digest, fails closed on mismatch, and hands it over through the documented `SHERPA_ONNX_ARCHIVE_DIR` / `SHERPA_ONNX_LIB_DIR`; or
+   - a **vendored/patched `sherpa-onnx-sys`** whose build script does the check itself.
+
+   The bootstrap is preferred: it leaves the upstream crate untouched and therefore upgradable. **Shipping without one of the two is not permitted by this ADR.**
 
 5. **Speaker count is never assumed.** `FastClusteringConfig::default()` is `num_clusters: -1, threshold: 0.5` — read from the crate source and confirmed at run time. `-1` means "unknown, cluster by threshold". A fixed default would have imposed a speaker count on every meeting, and a two-person conversation is Mityu's typical recording; if a future version changes that default, this is the line to re-check.
 
-6. **The result type maps onto the schema with no translation.** `OfflineSpeakerDiarizationSegment { start: f32, end: f32, speaker: i32 }` → `speaker_turns(start_ms, end_ms, speaker_label)`. ADR-0034's timed-turn decision was made independently and happens to be exactly what the engine emits.
+6. **The result SHAPE matches the schema; the units and the label do not, and the conversion is part of this contract.** `OfflineSpeakerDiarizationSegment { start: f32, end: f32, speaker: i32 }` is one timed turn per row, which is exactly what ADR-0034 decided independently — so no re-modelling is needed. But it is **not** a copy:
+
+   | sherpa | `speaker_turns` | conversion |
+   |---|---|---|
+   | `start`/`end`: `f32` **seconds** | `start_ms`/`end_ms`: `INTEGER` **milliseconds** | `(secs * 1000).round() as i64`. Storing the float directly would place every turn ~1000× too early. |
+   | `speaker`: `i32` index, 0-based | `speaker_label`: `TEXT`, e.g. `Speaker 1` | `format!("Speaker {}", speaker + 1)` — anonymous, 1-based for humans (ADR-0034 decision 6). Storing `0` would put a bare integer where the report renders a name. |
+   | (not reported) | `confidence`: `REAL` nullable | `NULL`. The engine reports no per-turn confidence, and NULL means "not reported", which is not the same as "low". |
+
+   A turn whose rounded `end_ms <= start_ms` is dropped rather than stored.
 
 **How the evidence was obtained, and one thing it corrects:** two throwaway crates outside the workspace (`C:\t\spike-diarize`, `C:\t\spike-both`), so a failed spike could not touch CI. The first version of the standalone spike only printed a string; it linked and produced a **128 KB** binary, because with nothing referencing sherpa the linker's `/OPT:REF` had discarded the entire library — a false pass that would have proven nothing. Calling `OfflineSpeakerDiarization::create()` took it to 21.4 MB and produced errors from sherpa's own C++ source (`offline-speaker-segmentation-model-config.cc:Validate:38`), which is what proves the FFI boundary was crossed at run time rather than merely satisfied at link time. `create()` returned `None` on bad configuration instead of aborting — a native library that crashed there would be unusable in a sidecar.
 
@@ -686,4 +702,4 @@ The earlier analysis called the `/MT` clash "the kill risk" for the standalone b
 - **macOS or Linux.** Only Windows was measured. Default CI builds `ubuntu-latest` only and never builds macOS, so a break on either would surface at release. A `windows-latest` and `macos` check for the helper is owed as part of the implementation.
 - **Any statement about runtime or memory on a 60–90 minute recording.** Unmeasured; clustering is superlinear in segment count, and this determines whether the sidecar needs chunked progress reporting.
 
-**Status:** Accepted (2026-08-09). Supersedes ADR-0034's item 2 naming `sherpa-rs`, and closes the implementation-approach question ADR-0034 left open.
+**Status:** Accepted (2026-08-09). Closes the implementation-approach question ADR-0034 left open, and supersedes that paragraph only — ADR-0034's item 2 (model provenance and licence verification) is untouched and remains a prerequisite here.
