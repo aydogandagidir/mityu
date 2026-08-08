@@ -1002,14 +1002,20 @@ fn cmd_der(
         bail!("--collar negatif olamaz ve sonlu olmalı: {collar_secs}");
     }
 
-    let read = |path: &Path, what: &str| -> Result<Vec<diarization::Turn>> {
+    let read = |path: &Path, what: &str| -> Result<diarization::Rttm> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("{what} RTTM okunamadı: {}", path.display()))?;
         diarization::parse_rttm(&text, file_id)
             .with_context(|| format!("{what} RTTM ayrıştırılamadı: {}", path.display()))
     };
-    let reference_turns = read(reference, "Referans")?;
-    let hypothesis_turns = read(hypothesis, "Hipotez")?;
+    let reference_rttm = read(reference, "Referans")?;
+    let hypothesis_rttm = read(hypothesis, "Hipotez")?;
+    // Two separately parsed files each carry one valid id; without this, an
+    // unrelated pair whose timelines happen to line up scores a low, meaningless
+    // DER.
+    diarization::ensure_same_recording(&reference_rttm, &hypothesis_rttm)?;
+    let reference_turns = reference_rttm.turns;
+    let hypothesis_turns = hypothesis_rttm.turns;
 
     let report = diarization::der(
         &reference_turns,

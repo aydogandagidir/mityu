@@ -50,6 +50,10 @@
 //! - An RTTM containing more than one `file_id` is an ERROR unless a file is
 //!   named. Silently concatenating two meetings' turns yields a plausible number
 //!   that means nothing.
+//! - A reference and a hypothesis naming DIFFERENT recordings is an ERROR
+//!   ([`ensure_same_recording`]). Rejecting several ids inside one file does not
+//!   cover this: two files each carry one valid id, and two unrelated recordings
+//!   whose timelines happen to line up would otherwise score a confident 0%.
 //! - A reference with no speech is an ERROR. DER's denominator would be zero;
 //!   reporting `0.0` ("perfect") or `1.0` ("all wrong") would both be lies.
 //! - A malformed line is an ERROR with its line number, never skipped. Silently
@@ -157,7 +161,19 @@ impl DerReport {
 // RTTM
 // ---------------------------------------------------------------------------
 
-/// Parse RTTM text into turns.
+/// One parsed RTTM: the turns, plus the recording they belong to.
+///
+/// The identity is carried rather than discarded because it is the only thing
+/// that can tell whether a reference and a hypothesis describe the SAME audio —
+/// see [`ensure_same_recording`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rttm {
+    /// `None` only when the text contained no `SPEAKER` records at all.
+    pub file_id: Option<String>,
+    pub turns: Vec<Turn>,
+}
+
+/// Parse RTTM text.
 ///
 /// Format (NIST): whitespace-separated
 /// `SPEAKER <file_id> <chan> <tbeg> <tdur> <ortho> <stype> <name> <conf> <slat>`
@@ -166,7 +182,7 @@ impl DerReport {
 /// since RTTM also carries `SPKR-INFO` and non-speech records that are not turns.
 /// `file_id` selects one file when the stream holds several; passing `None`
 /// while several are present is an error (see the module note).
-pub fn parse_rttm(text: &str, file_id: Option<&str>) -> Result<Vec<Turn>> {
+pub fn parse_rttm(text: &str, file_id: Option<&str>) -> Result<Rttm> {
     let mut turns = Vec::new();
     let mut seen_files: BTreeSet<String> = BTreeSet::new();
 
@@ -234,7 +250,29 @@ pub fn parse_rttm(text: &str, file_id: Option<&str>) -> Result<Vec<Turn>> {
         );
     }
 
-    Ok(turns)
+    Ok(Rttm {
+        file_id: seen_files.into_iter().next(),
+        turns,
+    })
+}
+
+/// Refuse to score a reference and a hypothesis that describe different
+/// recordings.
+///
+/// Rejecting several ids WITHIN one file is not enough: two separately parsed
+/// files each carry one valid id, and nothing else notices that they are not the
+/// same meeting. Two unrelated recordings whose timelines happen to line up can
+/// then report a low, entirely meaningless DER — the same class of plausible
+/// lie this module refuses everywhere else.
+pub fn ensure_same_recording(reference: &Rttm, hypothesis: &Rttm) -> Result<()> {
+    match (&reference.file_id, &hypothesis.file_id) {
+        (Some(r), Some(h)) if r != h => bail!(
+            "referans '{r}' kaydını, hipotez '{h}' kaydını tanımlıyor — farklı kayıtları \
+             karşılaştırmak anlamsız bir DER üretir. Aynı kaydın iki RTTM'ini verin ya da \
+             ortak kimliği --file-id ile seçin"
+        ),
+        _ => Ok(()),
+    }
 }
 
 /// Render turns as RTTM. Times are written with millisecond precision, which is
@@ -273,7 +311,7 @@ pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: DerOptions) -> Result<
         cuts.insert(t.start);
         cuts.insert(t.end);
     }
-    let collar_zones = collar_zones(reference, opts.collar);
+    let collar_zones = collar_zones(&ref_by_spk, opts.collar);
     for (a, b) in &collar_zones {
         cuts.insert(*a);
         cuts.insert(*b);
@@ -415,16 +453,27 @@ fn active(
         .collect()
 }
 
-/// No-score zones: `±collar` around every reference turn boundary.
-fn collar_zones(reference: &[Turn], collar: Micros) -> Vec<(Micros, Micros)> {
+/// No-score zones: `±collar` around every reference speaker-change boundary.
+///
+/// Built from the MERGED per-speaker spans, never from the raw records. An
+/// annotator who splits one speaker's continuous speech into two lines — per
+/// sentence, per breath — has not created a speaker change, and treating that
+/// split as a boundary would put a no-score zone in the middle of uninterrupted
+/// speech. That made the metric depend on annotation style: see
+/// `splitting_one_speakers_turn_does_not_change_der`, which scored 1.05% and
+/// 0.00% on the same audio before this was fixed.
+fn collar_zones(
+    by_speaker: &BTreeMap<String, Vec<(Micros, Micros)>>,
+    collar: Micros,
+) -> Vec<(Micros, Micros)> {
     if collar <= 0 {
         return Vec::new();
     }
     let mut zones: Vec<(Micros, Micros)> = Vec::new();
-    for t in reference {
-        if t.duration() > 0 {
-            zones.push((t.start - collar, t.start + collar));
-            zones.push((t.end - collar, t.end + collar));
+    for spans in by_speaker.values() {
+        for (start, end) in spans {
+            zones.push((start - collar, start + collar));
+            zones.push((end - collar, end + collar));
         }
     }
     zones.sort_unstable();
@@ -745,6 +794,44 @@ mod tests {
         assert!(forgiving.excluded > 0.0);
     }
 
+    /// How an annotator CHUNKS one speaker's continuous speech must not change
+    /// the score. `A [0,10)` and `A [0,5) + A [5,10)` describe the same audio;
+    /// if the collar is built from raw records, the second invents a no-score
+    /// zone at t=5 and the two disagree.
+    #[test]
+    fn splitting_one_speakers_turn_does_not_change_der() {
+        let whole = vec![
+            Turn::from_secs("A", 0.0, 10.0),
+            Turn::from_secs("B", 10.0, 20.0),
+        ];
+        let chunked = vec![
+            Turn::from_secs("A", 0.0, 5.0),
+            Turn::from_secs("A", 5.0, 10.0),
+            Turn::from_secs("B", 10.0, 20.0),
+        ];
+        // An error placed right at the artificial split point.
+        let hypothesis = vec![
+            Turn::from_secs("X", 0.0, 4.9),
+            Turn::from_secs("Y", 4.9, 5.1),
+            Turn::from_secs("X", 5.1, 10.0),
+            Turn::from_secs("Z", 10.0, 20.0),
+        ];
+        let opts = DerOptions {
+            collar: secs_to_micros(0.25),
+            ..DerOptions::default()
+        };
+
+        let a = der(&whole, &hypothesis, opts).expect("scored");
+        let b = der(&chunked, &hypothesis, opts).expect("scored");
+        assert!(
+            approx(a.der, b.der),
+            "chunking changed DER: {} vs {}",
+            a.der,
+            b.der
+        );
+        assert!(approx(a.total_reference, b.total_reference));
+    }
+
     #[test]
     fn skip_overlap_removes_overlapped_regions_from_scoring() {
         let reference = vec![
@@ -784,7 +871,8 @@ mod tests {
         ];
         let text = write_rttm("meeting1", &turns);
         let back = parse_rttm(&text, None).expect("parsed");
-        assert_eq!(back, turns);
+        assert_eq!(back.turns, turns);
+        assert_eq!(back.file_id.as_deref(), Some("meeting1"));
     }
 
     #[test]
@@ -796,7 +884,7 @@ SPEAKER meeting1 1 0.000 2.500 <NA> <NA> spk0 <NA> <NA>
 
 SPEAKER meeting1 1 2.500 1.000 <NA> <NA> spk1 <NA> <NA>
 ";
-        let turns = parse_rttm(text, None).expect("parsed");
+        let turns = parse_rttm(text, None).expect("parsed").turns;
         assert_eq!(turns.len(), 2);
         assert_eq!(turns[1].speaker, "spk1");
         assert_eq!(turns[1].start, secs_to_micros(2.5));
@@ -829,13 +917,44 @@ SPEAKER meetingB 1 0.000 2.500 <NA> <NA> spk0 <NA> <NA>
         assert!(e.to_string().contains("farklı dosya kimliği"), "{e}");
 
         let just_a = parse_rttm(text, Some("meetingA")).expect("selection resolves it");
-        assert_eq!(just_a.len(), 1);
+        assert_eq!(just_a.turns.len(), 1);
+        assert_eq!(just_a.file_id.as_deref(), Some("meetingA"));
+    }
+
+    /// Rejecting several ids inside ONE file is not enough — two files each
+    /// carrying one valid but DIFFERENT id would otherwise be scored happily.
+    #[test]
+    fn a_reference_and_hypothesis_for_different_recordings_are_refused() {
+        let reference = parse_rttm(
+            "SPEAKER meetingA 1 0.000 10.000 <NA> <NA> A <NA> <NA>\n",
+            None,
+        )
+        .expect("parsed");
+        let hypothesis = parse_rttm(
+            "SPEAKER meetingB 1 0.000 10.000 <NA> <NA> X <NA> <NA>\n",
+            None,
+        )
+        .expect("parsed");
+
+        // The timelines line up exactly, so scoring would report a confident 0%.
+        assert!(approx(
+            der(&reference.turns, &hypothesis.turns, DerOptions::default())
+                .expect("would score")
+                .der,
+            0.0
+        ));
+        let e = ensure_same_recording(&reference, &hypothesis).expect_err("must refuse");
+        assert!(e.to_string().contains("meetingA"), "{e}");
+        assert!(e.to_string().contains("meetingB"), "{e}");
+
+        // Same recording is fine.
+        ensure_same_recording(&reference, &reference).expect("same id");
     }
 
     #[test]
     fn zero_length_turns_are_dropped_not_counted() {
         let text = "SPEAKER m 1 1.000 0.000 <NA> <NA> spk0 <NA> <NA>\n";
-        assert!(parse_rttm(text, None).expect("parsed").is_empty());
+        assert!(parse_rttm(text, None).expect("parsed").turns.is_empty());
     }
 
     // -- Assignment ---------------------------------------------------------
