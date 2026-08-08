@@ -127,6 +127,40 @@ async fn seed_sensitive_meeting(pool: &SqlitePool, folder: &Path) {
     .execute(pool)
     .await
     .expect("seed action");
+
+    // The learning system's correction record. Seeded with the sentinel in the
+    // HUMAN'S rewrite, because that column is the most sensitive thing this
+    // schema derives from a meeting (ADR-0030) — and because listing a table in
+    // the residual-count assertion without ever writing a row to it proves
+    // nothing: `COUNT(*) = 0` passes trivially.
+    sqlx::query(
+        r#"INSERT INTO correction_events
+           (id, workspace_id, meeting_id, subject_kind, subject_id, action,
+            original_text, final_text, created_at, updated_at)
+           VALUES ('correction-c6a', 'local', 'meeting-c6a', 'summary_block', 'summary-c6a',
+                   'edited', 'AI draft', ?, ?, ?)"#,
+    )
+    .bind(format!("Human rewrite {SENTINEL}"))
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await
+    .expect("seed correction event");
+
+    // Diarization turns (ADR-0034). Nothing writes these yet; seeding one keeps
+    // the erasure contract honest from the moment the engine lands rather than
+    // after someone notices.
+    sqlx::query(
+        r#"INSERT INTO speaker_turns
+           (id, meeting_id, workspace_id, speaker_label, start_ms, end_ms, created_at, updated_at)
+           VALUES ('turn-c6a', 'meeting-c6a', 'local', ?, 0, 9000, ?, ?)"#,
+    )
+    .bind(format!("Speaker {SENTINEL}"))
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await
+    .expect("seed speaker turn");
 }
 
 fn contains_sentinel(path: &Path) -> bool {
@@ -242,6 +276,8 @@ async fn owner_delete_removes_sentinel_from_sqlite_fts_wal_and_managed_files() {
         "meeting_notes",
         "summaries",
         "action_items",
+        "correction_events",
+        "speaker_turns",
         "transcript_search_documents",
         "transcript_search_fts",
     ] {
@@ -417,4 +453,71 @@ async fn scoped_delete_leaves_malformed_foreign_workspace_dependent_untouched() 
     complete_privacy_maintenance(&pool)
         .await
         .expect("complete scoped deletion maintenance");
+}
+
+/// Structural guard: every table that declares a foreign key to `meetings(id)`
+/// must be deleted explicitly by the meeting-deletion path.
+///
+/// This exists because the obvious verification is WRONG, and two independent
+/// authors already got it wrong the same way. `delete_database_records` runs
+/// with `PRAGMA foreign_keys = OFF` on purpose — so that a malformed
+/// foreign-workspace child cannot be cascaded away with the caller's parent —
+/// which means a declared `ON DELETE CASCADE` never fires in production. Proving
+/// a cascade in a sqlite3 session with foreign keys ON proves nothing about the
+/// app, yet reads as convincing. Both `correction_events` (ADR-0030) and
+/// `speaker_turns` (ADR-0034) shipped that way, and `correction_events` retained
+/// the human's rewritten meeting text after a "delete my data" that reported
+/// success.
+///
+/// The per-table assertion above cannot catch the NEXT such table, because it is
+/// a hand-maintained list and the omission is precisely a hand-maintenance
+/// failure. This one is derived from the schema, so a new child table fails here
+/// the moment its migration lands.
+#[tokio::test]
+async fn every_child_of_meetings_is_deleted_explicitly() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let pool = open_migrated(&dir.path().join("fk.db")).await;
+
+    // Tables that declare a FK to meetings(id), read from the live schema.
+    let names: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("list tables");
+
+    let mut children: Vec<String> = Vec::new();
+    for table in names {
+        let refs: Vec<String> = sqlx::query_scalar(&format!(
+            "SELECT \"table\" FROM pragma_foreign_key_list('{table}')"
+        ))
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+        if refs.iter().any(|t| t.eq_ignore_ascii_case("meetings")) {
+            children.push(table);
+        }
+    }
+    assert!(
+        !children.is_empty(),
+        "no child tables found — the probe itself is broken"
+    );
+
+    // The explicit list in `delete_meeting_with_connection`. Kept as source text
+    // so the test fails on a schema addition, not on a refactor.
+    let source = include_str!("../src/database/repositories/meeting.rs");
+    let mut missing: Vec<String> = Vec::new();
+    for child in &children {
+        if !source.contains(&format!("DELETE FROM {child} WHERE meeting_id = ?")) {
+            missing.push(child.clone());
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "these tables reference meetings(id) but are never deleted by \
+         delete_meeting_with_connection: {missing:?}. Their ON DELETE CASCADE cannot save them — \
+         the deletion path runs with PRAGMA foreign_keys = OFF by design. Add an explicit \
+         DELETE, or document an exemption here."
+    );
 }
