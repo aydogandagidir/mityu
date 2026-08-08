@@ -9,6 +9,7 @@
 //! human to correct into `.ref.txt`) → `run` (metrics + report). The GO /
 //! CONDITIONAL / NO-GO verdict is always made by a human.
 
+mod diarization;
 mod engines;
 mod metrics;
 mod prep;
@@ -92,6 +93,30 @@ enum Cmd {
         /// Parakeet model adı (uygulamanın indirdiği model yeniden kullanılır)
         #[arg(long, default_value = DEFAULT_PARAKEET_MODEL)]
         parakeet_model: String,
+    },
+    /// İki RTTM dosyasını karşılaştırıp DER (Diarization Error Rate) hesapla
+    ///
+    /// ADR-0034 adım (c)'nin ölçü aleti: bir diyarizasyon motoru seçilmeden önce
+    /// iyiyi kötüden ayırabilmek gerekir. `eval/` dizinine ihtiyaç duymaz.
+    Der {
+        /// İnsan tarafından etiketlenmiş referans RTTM
+        #[arg(long)]
+        reference: PathBuf,
+        /// Sistem çıktısı RTTM
+        #[arg(long)]
+        hypothesis: PathBuf,
+        /// Birden fazla kayıt içeren RTTM'de puanlanacak dosya kimliği
+        #[arg(long)]
+        file_id: Option<String>,
+        /// Referans sınırları etrafında puanlanmayan pay (saniye). NIST geleneği
+        /// 0.25; yayınlanmış pyannote sayıları 0 ile hesaplanır.
+        #[arg(long, default_value_t = 0.0)]
+        collar: f64,
+        /// Birden fazla referans konuşmacısının aynı anda konuştuğu bölgeleri
+        /// puanlama dışı bırak. DER'i daima düşürür — bu şekilde hesaplanan bir
+        /// sayı, örtüşme dahil hesaplanmış bir sayıyla KARŞILAŞTIRILAMAZ.
+        #[arg(long)]
+        skip_overlap: bool,
     },
 }
 
@@ -676,8 +701,10 @@ fn run_notes(
         );
     }
     notes.push(
-        "Diyarizasyon otomatik puanlanmaz; report.md'deki multi-speaker insan inceleme \
-         alanında nitel olarak kaydedilir"
+        "Diyarizasyon BU koşuda puanlanmaz: A5 referansları düz metindir, konuşmacı turn'ü \
+         taşımaz (docs/A5_SPRINT.md) — dolayısıyla report.md'deki multi-speaker insan \
+         inceleme alanında nitel olarak kaydedilir. Konuşmacı etiketli RTTM referansı \
+         olduğunda `eval-harness der --reference X.rttm --hypothesis Y.rttm` DER hesaplar"
             .to_string(),
     );
     notes
@@ -901,6 +928,26 @@ async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let cli = Cli::parse();
     let root = cli.root.clone().unwrap_or_else(default_root);
+
+    // `der` scores two RTTM paths given on the command line and never reads the
+    // corpus, so it is dispatched before the eval/ requirement below.
+    if let Cmd::Der {
+        reference,
+        hypothesis,
+        file_id,
+        collar,
+        skip_overlap,
+    } = &cli.cmd
+    {
+        return cmd_der(
+            reference,
+            hypothesis,
+            file_id.as_deref(),
+            *collar,
+            *skip_overlap,
+        );
+    }
+
     let eval_dir = root.join("eval");
     if !eval_dir.is_dir() {
         bail!(
@@ -932,7 +979,81 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        // Handled above, before the eval/ requirement.
+        Cmd::Der { .. } => unreachable!("dispatched before the eval/ check"),
     }
+}
+
+/// Score one hypothesis RTTM against a reference RTTM.
+///
+/// Prints the three DER components separately, not just the headline number:
+/// the same 20% DER means very different things when it is all missed speech
+/// (the segmenter is deaf) versus all confusion (the clustering is wrong), and
+/// only the components say which part to fix. The speaker mapping is printed for
+/// the same reason — it is the step most likely to be silently wrong.
+fn cmd_der(
+    reference: &Path,
+    hypothesis: &Path,
+    file_id: Option<&str>,
+    collar_secs: f64,
+    skip_overlap: bool,
+) -> Result<()> {
+    if !(collar_secs.is_finite() && collar_secs >= 0.0) {
+        bail!("--collar negatif olamaz ve sonlu olmalı: {collar_secs}");
+    }
+
+    let read = |path: &Path, what: &str| -> Result<Vec<diarization::Turn>> {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("{what} RTTM okunamadı: {}", path.display()))?;
+        diarization::parse_rttm(&text, file_id)
+            .with_context(|| format!("{what} RTTM ayrıştırılamadı: {}", path.display()))
+    };
+    let reference_turns = read(reference, "Referans")?;
+    let hypothesis_turns = read(hypothesis, "Hipotez")?;
+
+    let report = diarization::der(
+        &reference_turns,
+        &hypothesis_turns,
+        diarization::DerOptions {
+            collar: diarization::secs_to_micros(collar_secs),
+            skip_overlap,
+        },
+    )?;
+
+    println!("DER            {:.2}%", report.der_percent());
+    println!("  missed       {:.2}s", report.missed);
+    println!("  false alarm  {:.2}s", report.false_alarm);
+    println!("  confusion    {:.2}s", report.confusion);
+    println!("  reference    {:.2}s", report.total_reference);
+    if report.excluded > 0.0 {
+        println!("  excluded     {:.2}s (collar/overlap)", report.excluded);
+    }
+    println!(
+        "konuşmacı      referans {} / hipotez {}",
+        report.ref_speakers, report.hyp_speakers
+    );
+    for (r, h) in &report.mapping {
+        println!("  {r} -> {h}");
+    }
+    let unmatched: Vec<&String> = reference_turns
+        .iter()
+        .map(|t| &t.speaker)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|s| !report.mapping.contains_key(*s))
+        .collect();
+    for s in unmatched {
+        println!("  {s} -> (eşleşmedi)");
+    }
+    println!(
+        "koşul          collar={collar_secs:.2}s, örtüşme {}",
+        if skip_overlap {
+            "puanlanmadı"
+        } else {
+            "dahil"
+        }
+    );
+    Ok(())
 }
 
 #[cfg(test)]
