@@ -577,3 +577,42 @@ NPU classification is a pure function over a device name, split from the platfor
 3. **Apple Silicon was treated as sufficient for Foundation Models.** The API arrives in macOS 26, and `DeviceCapabilities` carried no version, so the documented "just mark it Available" step would have selected it on macOS 15. `os_version_major` is now probed and the backend reports `UnsupportedHost` below 26 — including when the version cannot be parsed, so it fails closed.
 
 **Status:** Accepted (2026-08-07). Seam dormant; OS-native backends declared, unimplemented, and structurally unselectable.
+
+---
+
+## ADR-0034 — Speaker diarization: post-hoc, not in the live pipeline; models pinned like Parakeet; quality unverifiable until A5 has multi-speaker audio
+
+**Context:** `docs/DESIGN_READAI.md` Phase E requires "its own ADR before any model ships (model licensing, §9)", and the owner's 2026-07-09 scope decision promoted diarization from a maybe to a priority enabler. It is also the most visible parity gap: every competitor labels speakers; Mityu has no speaker code at all. The owner chose the real-model path (2026-08-08) over the cheaper channel-attribution alternative, because channel attribution ("you" vs "the room") does nothing for in-person capture — which is precisely Mityu's differentiator.
+
+Three findings from reading the tree shaped this decision.
+
+1. **Channel provenance is destroyed before transcription.** `audio/ffmpeg_mixer.rs:319` mixes microphone and system audio into one stream (`(m * mic_ducking) + (s * system_gain)`) and `pipeline.rs:901` feeds the mixed window onward. Both sources still exist separately at that call, so a cheap two-way attribution was available — but it is worthless for a room recorded on one microphone.
+2. **There is nowhere to put a speaker.** `TranscriptSegment` carries id, text, timestamp and audio timings; no speaker or channel field exists.
+3. **`CLAUDE.md` §10 forbids refactoring the audio pipeline and the DB schema in one change**, and diarization needs both.
+
+**Decision:**
+
+1. **Diarization runs post-hoc on the saved recording, not inside the live capture pipeline.** Speaker clustering is inherently global — deciding that the voice at 02:00 is the same person as at 47:00 requires both — so a streaming implementation would be worse *and* would put new code in the most fragile subsystem in the app (`CLAUDE.md` §4). The saved audio already persists until the user deletes the meeting, so the live path is not touched at all.
+2. **Model stack: `pyannote-segmentation-3.0` for segmentation plus a speaker-embedding model, obtained from the sherpa-onnx GitHub release assets**, not from Hugging Face. This matters: `huggingface.co/pyannote/segmentation-3.0` is **MIT-licensed but gated** — verified from the model card, which states "You need to agree to share your contact information to access this model". An app cannot satisfy a click-through gate on the user's behalf, so an in-app download from that origin is not viable. sherpa-onnx publishes converted ONNX artifacts at its `speaker-segmentation-models` and `speaker-recongition-models` release tags, which are stable, unauthenticated, and pinnable — exactly the shape `parakeet_engine` already consumes (revision-pinned, expected size and SHA-256 checked through `utils::verify_file_integrity`).
+3. **Ship the schema before the engine, per §10.** Order: (a) this ADR; (b) a nullable speaker column plus migration, populated by nothing; (c) the diarization engine and model download; (d) UI for speaker labels and talk-time. Each lands separately.
+4. **Speaker labels stay anonymous and human-named.** The system emits `Speaker 1..N`; attaching a real identity is a manual human action. Mityu does no voice-based identification, and no emotion, charisma, engagement or performance inference is derived from them (`DESIGN_READAI` guardrail 3, `CLAUDE.md` §10). This is also what keeps the processing outside the "unique identification" purpose that would make it biometric special-category data under KVKK m.6 / GDPR Art. 9 — see `docs/legal/A5_KVKK_PACK.md` §4.1, where the same distinction is already drawn for the eval recordings.
+5. **Talk-time is descriptive only** — seconds and share of the meeting, source-linked like every other derived figure. It is not a score, ranking, or judgement of any participant.
+
+**Licensing status (incomplete on purpose):**
+
+| Artifact | Reported licence | Verified from primary source? |
+|---|---|---|
+| `pyannote/segmentation-3.0` | MIT (repository gated) | **Yes** — model card read 2026-08-08 |
+| 3D-Speaker CAM++ embedding | Apache-2.0 | **No** — search result only |
+| NeMo TitaNet embedding | CC-BY-4.0 | **No** — search result only |
+| `reverb-diarization-v1` (alternative segmentation) | unknown | **No** — not investigated; Rev.ai terms need checking before it is considered |
+
+CAM++ is the preferred embedding model on licence grounds (Apache-2.0 carries no attribution-in-product obligation); NeMo TitaNet is the fallback and would add no new machinery, since Parakeet already ships under CC-BY-4.0 with attribution in `README.md` and the About screen (ADR-0020). **Neither may ship until its licence is verified from the model card the way ADR-0020 verified whisper and Parakeet, and until it is confirmed that redistribution through sherpa-onnx's release assets preserves the required notices.** Whether Hugging Face's access gate binds a downstream consumer who obtains the same MIT-licensed weights elsewhere is a question for counsel, not for this ADR.
+
+**Implementation approach (recommended, not yet decided):** the whole diarization pipeline is segmentation → embedding → clustering. `ort` is already a dependency and could run both models, but the segmentation post-processing and speaker clustering would then be ours to write — that is a research project, not an integration. The `sherpa-rs` bindings to sherpa-onnx provide the assembled pipeline instead, at the cost of a substantial native dependency that must build on Windows, macOS and Linux. That trade needs its own decision once the schema lands.
+
+**Consequences:** The live capture path is unchanged, so the §4 risk of this feature is confined to a post-processing step that can fail without affecting a recording. The schema gains a nullable speaker column that older rows simply do not have, so nothing breaks for existing meetings. Diarization becomes an opt-in post-processing pass rather than a cost every recording pays.
+
+**The verification gap, stated plainly:** *diarization quality cannot be measured today.* The A5 `multi` bucket — three or more speakers with natural overlap — contains **zero recordings** (`docs/A5_SPRINT.md`). There is no multi-speaker audio in this project at all, so any claim about how well speakers are separated would be unfounded. This binds the feature to the A5 sprint: **no speaker-accuracy claim may be made in product copy, and the feature ships labelled best-effort, until the `multi` bucket is collected and a human has reviewed the result** — the diarization sanity field that `PHASE0_VALIDATION.md` §6 already reserves for exactly this.
+
+**Status:** Accepted (2026-08-08) as the design gate. No model ships under this ADR alone: item 2's licence verification and the implementation-approach decision are both still open.

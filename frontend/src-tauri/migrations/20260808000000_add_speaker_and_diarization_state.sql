@@ -1,0 +1,76 @@
+-- Migration: record whether a diarization pass has run for a meeting, and
+-- re-purpose the long-dead `transcripts.speaker` column (docs/DECISIONS.md
+-- ADR-0034).
+--
+-- Purpose (ADR-0034; DESIGN_READAI Phase E):
+--   Diarization is the most visible parity gap -- every competitor labels
+--   speakers. This is step (b) of the ADR's four-step order and is DELIBERATELY
+--   schema-only: `CLAUDE.md` §10 forbids changing the audio pipeline and the DB
+--   schema in one change, and diarization needs both. Nothing populates
+--   anything here yet.
+--
+-- `transcripts.speaker` ALREADY EXISTS and is dead.
+--   It was added by 20251110000001_add_speaker_field.sql (2025-11-10, inherited
+--   from upstream Meetily) and has never been used: no INSERT names it (see
+--   `insert_transcript_segment`, which lists every other column), nothing reads
+--   it, and no Rust type carries it. Verified 2026-08-08.
+--
+--   That old migration documents it as storing "which audio source the
+--   transcript came from" -- CHANNEL provenance (microphone vs system), not a
+--   speaker. ADR-0034 chose real diarization over channel attribution, so the
+--   column's MEANING changes even though its type does not. That re-definition
+--   is the substance of this migration: without it the next reader trusts the
+--   2025 comment and writes `microphone` into a column the report renders as a
+--   speaker. Re-purposing is safe precisely because the column has never held a
+--   value, so there is no data to migrate and no reader to break.
+--
+-- What `speaker` holds FROM NOW ON:
+--   An ANONYMOUS label minted by the diarization pass -- `Speaker 1`,
+--   `Speaker 2`. Never a real name, and never an audio-source name. Attaching a
+--   real identity is a manual human action; Mityu performs no voice-based
+--   identification (ADR-0034 decision 4, DESIGN_READAI guardrail 3). Keeping the
+--   purpose away from "unique identification" is also what keeps this out of
+--   biometric special-category processing under KVKK m.6 / GDPR Art. 9 -- see
+--   docs/legal/A5_KVKK_PACK.md §4.1, which draws the same distinction for the
+--   eval recordings.
+--
+-- Why `meetings.diarized_at` is needed at all:
+--   A nullable `speaker` alone cannot distinguish "diarization never ran" from
+--   "diarization ran and could not attribute this segment". Those must be told
+--   apart or the UI lies: the first should offer to identify speakers, the
+--   second should say the pass was inconclusive. Same rule the inference
+--   capability probe follows for NPUs (ADR-0033) -- "could not tell" is not
+--   "there is none".
+--
+-- Sync compatibility (docs/DATA_MODEL.md; ADR-0012):
+--   `meetings` is a synced entity, so the additive-column discipline applies:
+--     * The column is nullable with no default, so existing rows are untouched
+--       and no backfill is required or performed.
+--     * `sync/protocol.rs` carries an entity's fields as an OPAQUE
+--       `serde_json::Value` payload and does not enumerate them, so a peer on an
+--       older build simply omits the key and a newer build reads its absence as
+--       NULL. No protocol version bump is needed.
+--     * Additive only. A future RENAME or DROP would need the documented
+--       two-step (add new -> dual-write -> migrate -> drop old), because a
+--       synced peer may still be writing the old name.
+--   `transcripts.speaker` is NOT re-created here, so no schema change reaches
+--   that table at all -- only its documented meaning changes, which the sync
+--   layer cannot observe.
+--   No `rev`/`updated_by` change is made: adding a column is not a row edit, and
+--   bumping every row's `rev` would make every existing meeting look freshly
+--   modified to a sync peer.
+--
+-- Idempotency: executed exactly once per database by the app's sqlx migrator,
+--   which records applied versions -- the same guarantee every other migration
+--   here relies on. SQLite has no `ADD COLUMN IF NOT EXISTS`, so a plain ALTER
+--   is used, exactly as 20260702000000 does.
+--
+-- Down (documented, not automated -- forward-only, CLAUDE.md §6):
+--   On SQLite >= 3.35:  ALTER TABLE meetings DROP COLUMN diarized_at;
+--   Older engines require the 12-step table rebuild. `transcripts.speaker` is
+--   left in place on a down: it predates this migration.
+
+-- When a diarization pass last completed for this meeting (RFC 3339).
+-- NULL means no pass has ever completed, which is NOT the same as "no speakers
+-- were found" -- the UI must offer to run one rather than report a result.
+ALTER TABLE meetings ADD COLUMN diarized_at TEXT;

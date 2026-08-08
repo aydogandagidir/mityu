@@ -9,7 +9,7 @@ One logical model, two physical stores that must stay compatible: **client SQLit
 | `tenant` (server) / implicit `workspace` (client) | Isolation boundary | name, region, plan, settings | server only |
 | `user` (server) / implicit local user (client) | Identity | email, display_name, status | server only |
 | `membership` (server) | user↔tenant + role | tenant_id, user_id, role(owner/admin/member/viewer) | server only |
-| `meeting` | A recording session / on-site conversation | title, started_at, ended_at, participants | yes |
+| `meeting` | A recording session / on-site conversation | title, started_at, ended_at, participants, diarized_at | yes |
 | `transcript` | Full transcript for a meeting | language, engine(whisper/parakeet), model | yes |
 | `transcript_chunk` | Time-segmented transcript pieces | meeting_id, speaker, text, t_start, t_end | yes |
 | `summary` | Structured summary (draft→approved) | meeting_id, status(draft/approved), model, sections(JSON) | yes |
@@ -18,6 +18,15 @@ One logical model, two physical stores that must stay compatible: **client SQLit
 | `settings` | Per-workspace/tenant config | allowed_providers, default_model, retention_days, redaction | per-scope |
 | `provider_credential` | BYOK key **reference** | provider, key stored in OS keychain/secure store (NOT here in plaintext); the SQLite column holds only the non-secret marker `keychain:v1` | never synced raw |
 | `audit_log` (server) | Append-only actions | tenant_id, actor, action, resource, ts, request_id | server only |
+
+### `transcripts.speaker` — meaning changed 2026-08-08
+
+The column was added in 2025 (inherited from upstream) to record *which audio
+source* a segment came from, and was never written to by anything. ADR-0034
+re-purposes it to hold an **anonymous diarization label** (`Speaker 1`,
+`Speaker 2`) — never a real name and never an audio-source name. Re-purposing
+was safe because the column had never held a value, but the old migration's
+comment still describes the old intent, so this is the authoritative definition.
 
 ## Common columns on every domain entity
 `id uuid` · `workspace_id`/`tenant_id` · `created_at` · `updated_at`.
@@ -37,7 +46,7 @@ The client's physical table names predate this doc (Meetily heritage) and differ
 
 | Client table (SQLite) | Logical entity | Synced? | Common columns present |
 |---|---|---|---|
-| `meetings` | `meeting` | yes | `workspace_id`, `created_at`, `updated_at`, `updated_by`, `rev`, `deleted_at` |
+| `meetings` | `meeting` | yes | all of the above (`diarized_at` added by 20260808000000 — NULL means no diarization pass has ever completed, which is not the same as "no speakers found") |
 | `transcripts` | `transcript_chunk` (one row per time segment; also carries legacy `summary`/`action_items`/`key_points` TEXT columns) | yes | all of the above (`created_at`/`updated_at` added by 20260702000000, backfilled from the parent meeting) |
 | `summary_processes` | legacy generation-process status + result JSON per meeting (pre-C1; the sync `summary` entity maps to `summaries` below) | yes | all of the above |
 | `transcript_chunks` | `transcript` (full concatenated text per meeting, one row per meeting) | yes | all of the above (`updated_at` added, backfilled from `created_at`) |
