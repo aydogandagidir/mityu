@@ -112,13 +112,37 @@ impl Turn {
     }
 }
 
+/// Which stretch of the timeline is scored at all.
+///
+/// This exists because of a real disagreement found by cross-checking against
+/// NIST `md-eval.pl` on VoxConverse: hypothesis speech BEFORE the first
+/// reference turn or AFTER the last was counted as false alarm here and not
+/// there. Verified from md-eval's source rather than inferred — `uem_from_rttm`
+/// (md-eval-22.pl:2245) returns a single span `[min TBEG, max TEND]` over the
+/// REFERENCE, and line 626 installs it whenever no UEM is supplied.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum EvalRegion {
+    /// `[earliest reference start, latest reference end]`, one contiguous span
+    /// with internal gaps still scored. This is md-eval's default and therefore
+    /// the convention every published DER number is computed under, which is why
+    /// it is ours: a number that cannot be compared to the literature cannot
+    /// tell us whether an engine is good.
+    #[default]
+    ReferenceExtent,
+    /// Score the whole timeline; nothing is out of bounds. Use when the question
+    /// is "did this system invent speech anywhere", not "how does it compare".
+    Full,
+    /// Explicit spans, as read from a UEM file.
+    Uem(Vec<(Micros, Micros)>),
+}
+
 /// How to score.
 ///
-/// The derived default — `collar = 0`, `skip_overlap = false` — is the pyannote
-/// convention, deliberately, because that is what published VoxConverse numbers
+/// The derived default — `collar = 0`, `skip_overlap = false`,
+/// `region = ReferenceExtent` — is the convention published VoxConverse numbers
 /// are computed with. Defaulting to the more forgiving NIST 0.25 s collar would
 /// make our numbers look better than the papers we compare against.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DerOptions {
     /// No-score margin around every REFERENCE turn boundary, in microseconds.
     /// Absorbs annotation imprecision at speaker changes. NIST convention is
@@ -128,6 +152,8 @@ pub struct DerOptions {
     /// papers report this variant; it always lowers DER, so it must never be
     /// compared against a number computed with overlap included.
     pub skip_overlap: bool,
+    /// The stretch of timeline that is scored at all.
+    pub region: EvalRegion,
 }
 
 /// A scored comparison. Component times are in seconds, for reporting.
@@ -148,6 +174,16 @@ pub struct DerReport {
     pub hyp_speakers: usize,
     /// Wall-clock time excluded by the collar / overlap options, in seconds.
     pub excluded: f64,
+    /// Hypothesis speech that fell OUTSIDE the evaluation region and was
+    /// therefore not scored, in speaker-seconds.
+    ///
+    /// Reported separately and never folded away, because under the default
+    /// region this is exactly the speech a diarizer invented in a meeting's
+    /// leading or trailing silence — a phantom speaker in the report. The
+    /// convention says not to count it; nothing says to hide it.
+    pub unscored_hypothesis: f64,
+    /// The evaluation region actually applied, in seconds, for the record.
+    pub region: Vec<(f64, f64)>,
 }
 
 impl DerReport {
@@ -296,8 +332,107 @@ pub fn write_rttm(file_id: &str, turns: &[Turn]) -> String {
 // Scoring
 // ---------------------------------------------------------------------------
 
+/// Parse a UEM (Un-partitioned Evaluation Map): `<file-id> <chan> <beg> <end>`.
+///
+/// Spans are returned merged and sorted. Overlapping spans are an error, as they
+/// are in md-eval — they would double-count reference time.
+pub fn parse_uem(text: &str, file_id: Option<&str>) -> Result<Vec<(Micros, Micros)>> {
+    let mut spans: Vec<(Micros, Micros)> = Vec::new();
+    for (idx, raw) in text.lines().enumerate() {
+        let lineno = idx + 1;
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() < 4 {
+            bail!("UEM satır {lineno}: 4 alan bekleniyor (<dosya> <kanal> <baş> <son>): {line}");
+        }
+        if let Some(want) = file_id {
+            if f[0] != want {
+                continue;
+            }
+        }
+        let beg: f64 = f[2]
+            .parse()
+            .with_context(|| format!("UEM satır {lineno}: başlangıç okunamadı ({})", f[2]))?;
+        let end: f64 = f[3]
+            .parse()
+            .with_context(|| format!("UEM satır {lineno}: bitiş okunamadı ({})", f[3]))?;
+        if !beg.is_finite() || !end.is_finite() || end <= beg {
+            bail!("UEM satır {lineno}: geçersiz aralık ({beg}, {end})");
+        }
+        spans.push((secs_to_micros(beg), secs_to_micros(end)));
+    }
+    spans.sort_unstable();
+    for pair in spans.windows(2) {
+        if pair[1].0 < pair[0].1 {
+            bail!(
+                "UEM örtüşen değerlendirme aralıkları içeriyor ({}, {}) ve ({}, {}) \
+                 — referans süresi iki kez sayılırdı",
+                micros_to_secs(pair[0].0),
+                micros_to_secs(pair[0].1),
+                micros_to_secs(pair[1].0),
+                micros_to_secs(pair[1].1)
+            );
+        }
+    }
+    Ok(spans)
+}
+
+/// Restrict turns to `region`, returning the clipped turns and the speaker-time
+/// dropped.
+fn clip(turns: &[Turn], region: &[(Micros, Micros)]) -> (Vec<Turn>, Micros) {
+    let mut kept = Vec::with_capacity(turns.len());
+    let mut dropped: Micros = 0;
+    for t in turns {
+        let mut covered: Micros = 0;
+        for (a, b) in region {
+            let s = t.start.max(*a);
+            let e = t.end.min(*b);
+            if e > s {
+                covered += e - s;
+                kept.push(Turn {
+                    speaker: t.speaker.clone(),
+                    start: s,
+                    end: e,
+                });
+            }
+        }
+        dropped += t.duration() - covered;
+    }
+    (kept, dropped)
+}
+
 /// Score a hypothesis against a reference.
-pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: DerOptions) -> Result<DerReport> {
+pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: &DerOptions) -> Result<DerReport> {
+    // Resolve the evaluation region first: everything below is scored inside it.
+    let region: Vec<(Micros, Micros)> = match &opts.region {
+        EvalRegion::Full => vec![(Micros::MIN / 4, Micros::MAX / 4)],
+        EvalRegion::Uem(spans) => spans.clone(),
+        EvalRegion::ReferenceExtent => {
+            let beg = reference
+                .iter()
+                .filter(|t| t.duration() > 0)
+                .map(|t| t.start)
+                .min();
+            let end = reference
+                .iter()
+                .filter(|t| t.duration() > 0)
+                .map(|t| t.end)
+                .max();
+            match (beg, end) {
+                (Some(b), Some(e)) if e > b => vec![(b, e)],
+                _ => Vec::new(),
+            }
+        }
+    };
+
+    let (reference, _) = clip(reference, &region);
+    let (hypothesis, unscored_hypothesis) = clip(hypothesis, &region);
+    let reference = &reference[..];
+    let hypothesis = &hypothesis[..];
+
     let ref_by_spk = index_by_speaker(reference);
     let hyp_by_spk = index_by_speaker(hypothesis);
 
@@ -319,8 +454,9 @@ pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: DerOptions) -> Result<
     let cuts: Vec<Micros> = cuts.into_iter().collect();
 
     // Pass 1: per-interval active-speaker sets, and the pairwise overlap matrix
-    // the assignment is solved on. Overlap is accumulated only over SCORED
-    // regions, so the mapping is optimal for the region actually being judged.
+    // the assignment is solved on. See the note inside the loop for why the
+    // matrix spans the whole evaluation region while the counted intervals do
+    // not.
     let mut overlap = vec![vec![0i64; hyp_names.len()]; ref_names.len()];
     let mut intervals: Vec<(Micros, Vec<usize>, Vec<usize>)> = Vec::new();
     let mut excluded: Micros = 0;
@@ -334,6 +470,25 @@ pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: DerOptions) -> Result<
         let active_ref = active(&ref_by_spk, &ref_names, a, b);
         let active_hyp = active(&hyp_by_spk, &hyp_names, a, b);
 
+        // The mapping basis is accumulated BEFORE the collar and overlap
+        // exclusions, and the error components after. That split is md-eval's,
+        // verified from its source: `$spkr_overlap` is summed over `$eval_segs`
+        // and `map_speakers` is called on it (md-eval-22.pl:1890-1908), while
+        // `$uem_score` — with collars, and with overlap removed under `-1` — is
+        // only built afterwards (:1913-1918) and used solely for counting.
+        //
+        // Deciding WHICH speaker is which on the same region the errors are
+        // counted on is the tempting shortcut: it optimises the mapping against
+        // the score, so it yields a systematically LOWER DER than the
+        // literature's. A measuring instrument that flatters us is worse than
+        // no instrument. Cross-checking against md-eval on VoxConverse found
+        // exactly this: identical at collar 0, ours too low at collar 0.25.
+        for &r in &active_ref {
+            for &h in &active_hyp {
+                overlap[r][h] += dur;
+            }
+        }
+
         let in_collar = in_any_zone(&collar_zones, a, b);
         let skipped_overlap = opts.skip_overlap && active_ref.len() > 1;
         if in_collar || skipped_overlap {
@@ -343,11 +498,6 @@ pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: DerOptions) -> Result<
             continue;
         }
 
-        for &r in &active_ref {
-            for &h in &active_hyp {
-                overlap[r][h] += dur;
-            }
-        }
         intervals.push((dur, active_ref, active_hyp));
     }
 
@@ -402,6 +552,15 @@ pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: DerOptions) -> Result<
         ref_speakers: ref_names.len(),
         hyp_speakers: hyp_names.len(),
         excluded: micros_to_secs(excluded),
+        unscored_hypothesis: micros_to_secs(unscored_hypothesis),
+        region: if matches!(opts.region, EvalRegion::Full) {
+            Vec::new()
+        } else {
+            region
+                .iter()
+                .map(|(a, b)| (micros_to_secs(*a), micros_to_secs(*b)))
+                .collect()
+        },
     })
 }
 
@@ -489,6 +648,82 @@ fn collar_zones(
 
 fn in_any_zone(zones: &[(Micros, Micros)], a: Micros, b: Micros) -> bool {
     zones.iter().any(|(s, e)| *s <= a && *e >= b)
+}
+
+// ---------------------------------------------------------------------------
+// Corpus aggregation
+// ---------------------------------------------------------------------------
+
+/// A whole corpus scored as one number.
+#[derive(Debug, Clone)]
+pub struct CorpusReport {
+    /// **The** DER for the corpus: total error time over total reference time.
+    pub pooled_der: f64,
+    /// The mean of the per-file DERs, reported ONLY so the gap with `pooled_der`
+    /// is visible. Never quote this as the corpus DER — see [`pool`].
+    pub macro_der: f64,
+    pub missed: f64,
+    pub false_alarm: f64,
+    pub confusion: f64,
+    pub total_reference: f64,
+    pub unscored_hypothesis: f64,
+    pub files: usize,
+    /// `(file id, DER)` worst first.
+    pub per_file: Vec<(String, f64)>,
+}
+
+/// Aggregate per-file results into one corpus number.
+///
+/// **Pooled, not averaged.** DER is a ratio of times, and the mean of ratios is
+/// not the ratio of sums: a corpus with one 30-minute file at 5% and one
+/// 10-second file at 100% is 5.5% pooled and 52.5% averaged. Averaging lets a
+/// handful of tiny files dominate a number that is supposed to describe hours of
+/// audio — and VoxConverse dev really does mix a 22-second file with a
+/// 20-minute one. `md-eval` and `pyannote` both pool, so an averaged number
+/// would also not be comparable with any published one.
+///
+/// The macro average is still computed and reported, because a large gap between
+/// the two is real information: it means performance depends strongly on file
+/// length, which pooling alone would hide.
+pub fn pool(results: &[(String, DerReport)]) -> CorpusReport {
+    let mut missed = 0.0;
+    let mut false_alarm = 0.0;
+    let mut confusion = 0.0;
+    let mut total_reference = 0.0;
+    let mut unscored_hypothesis = 0.0;
+    let mut per_file: Vec<(String, f64)> = Vec::with_capacity(results.len());
+
+    for (id, r) in results {
+        missed += r.missed;
+        false_alarm += r.false_alarm;
+        confusion += r.confusion;
+        total_reference += r.total_reference;
+        unscored_hypothesis += r.unscored_hypothesis;
+        per_file.push((id.clone(), r.der));
+    }
+    per_file.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    let macro_der = if results.is_empty() {
+        0.0
+    } else {
+        results.iter().map(|(_, r)| r.der).sum::<f64>() / results.len() as f64
+    };
+
+    CorpusReport {
+        pooled_der: if total_reference > 0.0 {
+            (missed + false_alarm + confusion) / total_reference
+        } else {
+            0.0
+        },
+        macro_der,
+        missed,
+        false_alarm,
+        confusion,
+        total_reference,
+        unscored_hypothesis,
+        files: results.len(),
+        per_file,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -605,7 +840,7 @@ mod tests {
     }
 
     fn score(reference: &[Turn], hypothesis: &[Turn]) -> DerReport {
-        der(reference, hypothesis, DerOptions::default()).expect("scored")
+        der(reference, hypothesis, &DerOptions::default()).expect("scored")
     }
 
     // -- The property the whole feature rests on ---------------------------
@@ -722,15 +957,176 @@ mod tests {
 
     #[test]
     fn invented_speech_is_false_alarm_and_der_may_exceed_one() {
+        // `Full` on purpose: under the default region this invention lies past
+        // the last reference turn and is not scored at all — see
+        // `speech_outside_the_reference_extent_is_unscored_but_reported`.
         let reference = vec![Turn::from_secs("A", 0.0, 5.0)];
         let hypothesis = vec![
             Turn::from_secs("X", 0.0, 5.0),
             Turn::from_secs("Y", 5.0, 20.0),
         ];
 
-        let r = score(&reference, &hypothesis);
+        let r = der(
+            &reference,
+            &hypothesis,
+            &DerOptions {
+                region: EvalRegion::Full,
+                ..DerOptions::default()
+            },
+        )
+        .expect("scored");
         assert!(approx(r.false_alarm, 15.0));
         assert!(approx(r.der, 3.0), "der was {}", r.der);
+        assert!(approx(r.unscored_hypothesis, 0.0));
+    }
+
+    // -- Evaluation region --------------------------------------------------
+
+    /// The disagreement that cross-checking against NIST md-eval on VoxConverse
+    /// actually found. Under the field's convention, hypothesis speech outside
+    /// the reference's extent is NOT scored — so our numbers are comparable with
+    /// published ones — but it is still reported, because under that convention
+    /// a diarizer inventing a speaker in a meeting's trailing silence would
+    /// otherwise be invisible.
+    #[test]
+    fn speech_outside_the_reference_extent_is_unscored_but_reported() {
+        let reference = vec![
+            Turn::from_secs("A", 10.0, 15.0),
+            Turn::from_secs("A", 20.0, 25.0),
+        ];
+        // One invention before the extent, one after, one in the internal gap.
+        let before = vec![
+            Turn::from_secs("X", 5.0, 6.0),
+            Turn::from_secs("X", 10.0, 15.0),
+            Turn::from_secs("X", 20.0, 25.0),
+        ];
+        let after = vec![
+            Turn::from_secs("X", 10.0, 15.0),
+            Turn::from_secs("X", 20.0, 25.0),
+            Turn::from_secs("X", 30.0, 31.0),
+        ];
+        let inside = vec![
+            Turn::from_secs("X", 10.0, 15.0),
+            Turn::from_secs("X", 16.0, 17.0),
+            Turn::from_secs("X", 20.0, 25.0),
+        ];
+
+        for (name, hyp) in [("before", &before), ("after", &after)] {
+            let r = score(&reference, hyp);
+            assert!(approx(r.der, 0.0), "{name}: der was {}", r.der);
+            // Not scored — but not hidden either.
+            assert!(
+                approx(r.unscored_hypothesis, 1.0),
+                "{name}: unscored was {}",
+                r.unscored_hypothesis
+            );
+        }
+
+        // Inside the extent, an internal gap IS scored: the region is one span,
+        // not the union of reference speech.
+        let r = score(&reference, &inside);
+        assert!(approx(r.der, 0.1), "der was {}", r.der);
+        assert!(approx(r.false_alarm, 1.0));
+        assert!(approx(r.unscored_hypothesis, 0.0));
+
+        // `Full` scores everything, and says so by reporting nothing unscored.
+        let full = der(
+            &reference,
+            &after,
+            &DerOptions {
+                region: EvalRegion::Full,
+                ..DerOptions::default()
+            },
+        )
+        .expect("scored");
+        assert!(approx(full.der, 0.1), "der was {}", full.der);
+        assert!(approx(full.unscored_hypothesis, 0.0));
+    }
+
+    // -- Corpus aggregation -------------------------------------------------
+
+    /// The trap this function exists to avoid: averaging per-file DERs lets a
+    /// tiny file outvote hours of audio.
+    #[test]
+    fn a_corpus_der_is_pooled_not_averaged() {
+        // A 30-minute file at 5% and a 10-second file at 100%.
+        let long = der(
+            &[Turn::from_secs("A", 0.0, 1800.0)],
+            &[Turn::from_secs("X", 0.0, 1710.0)],
+            &DerOptions::default(),
+        )
+        .expect("scored");
+        let short = der(
+            &[Turn::from_secs("A", 0.0, 10.0)],
+            &[],
+            &DerOptions::default(),
+        )
+        .expect("scored");
+        assert!(approx(long.der, 0.05));
+        assert!(approx(short.der, 1.0));
+
+        let c = pool(&[("long".into(), long), ("short".into(), short)]);
+        // 90 s + 10 s of error over 1810 s of reference.
+        assert!(approx(c.pooled_der, 100.0 / 1810.0), "{}", c.pooled_der);
+        assert!(c.pooled_der < 0.056, "pooled must stay near the long file");
+        // The average is over nine times larger — and is reported, not hidden.
+        assert!(approx(c.macro_der, 0.525));
+        assert_eq!(c.files, 2);
+        // Worst first, so the per-file table leads with what to look at.
+        assert_eq!(c.per_file[0].0, "short");
+    }
+
+    /// A system that produced nothing for a file must score that file, not skip
+    /// it — otherwise crashing on the hard files improves the corpus number.
+    #[test]
+    fn a_missing_hypothesis_scores_as_total_miss() {
+        let r = der(
+            &[Turn::from_secs("A", 0.0, 10.0)],
+            &[],
+            &DerOptions::default(),
+        )
+        .expect("scored");
+        assert!(approx(r.der, 1.0));
+        assert!(approx(r.missed, 10.0));
+    }
+
+    #[test]
+    fn a_uem_restricts_scoring_to_its_spans() {
+        let reference = vec![
+            Turn::from_secs("A", 0.0, 10.0),
+            Turn::from_secs("A", 20.0, 30.0),
+        ];
+        let hypothesis = vec![Turn::from_secs("X", 0.0, 10.0)];
+
+        // Without a UEM the second reference turn is missed: 10 / 20 = 50%.
+        assert!(approx(score(&reference, &hypothesis).der, 0.5));
+
+        // A UEM covering only the first half scores only that, and it is perfect.
+        let uem = parse_uem("meeting 1 0.0 10.0\n", None).expect("parsed");
+        let r = der(
+            &reference,
+            &hypothesis,
+            &DerOptions {
+                region: EvalRegion::Uem(uem),
+                ..DerOptions::default()
+            },
+        )
+        .expect("scored");
+        assert!(approx(r.der, 0.0), "der was {}", r.der);
+        assert!(approx(r.total_reference, 10.0));
+    }
+
+    #[test]
+    fn overlapping_uem_spans_are_refused() {
+        let e = parse_uem("m 1 0.0 10.0\nm 1 5.0 15.0\n", None).expect_err("must refuse");
+        assert!(e.to_string().contains("örtüşen"), "{e}");
+    }
+
+    #[test]
+    fn a_malformed_uem_line_is_an_error() {
+        assert!(parse_uem("m 1 0.0\n", None).is_err());
+        assert!(parse_uem("m 1 10.0 5.0\n", None).is_err());
+        assert!(parse_uem("m 1 zero 5.0\n", None).is_err());
     }
 
     #[test]
@@ -747,7 +1143,7 @@ mod tests {
     #[test]
     fn empty_reference_is_an_error_not_a_score() {
         let hypothesis = vec![Turn::from_secs("X", 0.0, 5.0)];
-        let e = der(&[], &hypothesis, DerOptions::default()).expect_err("must refuse");
+        let e = der(&[], &hypothesis, &DerOptions::default()).expect_err("must refuse");
         assert!(e.to_string().contains("paydası sıfır"), "{e}");
     }
 
@@ -778,13 +1174,13 @@ mod tests {
             Turn::from_secs("Y", 10.2, 20.0),
         ];
 
-        let strict = der(&reference, &hypothesis, DerOptions::default()).expect("scored");
+        let strict = der(&reference, &hypothesis, &DerOptions::default()).expect("scored");
         assert!(strict.confusion > 0.0, "0.2 s of B is called X");
 
         let forgiving = der(
             &reference,
             &hypothesis,
-            DerOptions {
+            &DerOptions {
                 collar: secs_to_micros(0.25),
                 ..DerOptions::default()
             },
@@ -821,8 +1217,8 @@ mod tests {
             ..DerOptions::default()
         };
 
-        let a = der(&whole, &hypothesis, opts).expect("scored");
-        let b = der(&chunked, &hypothesis, opts).expect("scored");
+        let a = der(&whole, &hypothesis, &opts).expect("scored");
+        let b = der(&chunked, &hypothesis, &opts).expect("scored");
         assert!(
             approx(a.der, b.der),
             "chunking changed DER: {} vs {}",
@@ -830,6 +1226,43 @@ mod tests {
             b.der
         );
         assert!(approx(a.total_reference, b.total_reference));
+    }
+
+    /// The speaker mapping is decided on the whole evaluation region, not on
+    /// what survives the collar — md-eval's split, and the reason ours matched
+    /// it at collar 0 but not at collar 0.25 until this was fixed.
+    ///
+    /// Here the collar hides most of `X`, so a mapping chosen on the SCORED
+    /// region alone would prefer `A -> Y` and report less error. Choosing on the
+    /// full region keeps `A -> X`, which is what actually happened in the audio.
+    #[test]
+    fn the_speaker_mapping_is_decided_before_the_collar_not_after() {
+        // A speaks throughout; the boundary at 10 s puts a collar over [9.5, 10.5).
+        let reference = vec![
+            Turn::from_secs("A", 0.0, 10.0),
+            Turn::from_secs("A", 10.0, 12.0),
+        ];
+        // X covers almost everything; Y covers only what the collar spares at the
+        // very end.
+        let hypothesis = vec![
+            Turn::from_secs("X", 0.0, 10.6),
+            Turn::from_secs("Y", 10.6, 12.0),
+        ];
+
+        let r = der(
+            &reference,
+            &hypothesis,
+            &DerOptions {
+                collar: secs_to_micros(0.5),
+                ..DerOptions::default()
+            },
+        )
+        .expect("scored");
+
+        // X owns 10.6 s of the 12 s reference; the mapping must follow the audio.
+        assert_eq!(r.mapping.get("A").map(String::as_str), Some("X"));
+        // And the error is real: Y's stretch outside the collar is confusion.
+        assert!(r.confusion > 0.0, "confusion was {}", r.confusion);
     }
 
     #[test]
@@ -845,7 +1278,7 @@ mod tests {
         let without = der(
             &reference,
             &hypothesis,
-            DerOptions {
+            &DerOptions {
                 skip_overlap: true,
                 ..DerOptions::default()
             },
@@ -938,7 +1371,7 @@ SPEAKER meetingB 1 0.000 2.500 <NA> <NA> spk0 <NA> <NA>
 
         // The timelines line up exactly, so scoring would report a confident 0%.
         assert!(approx(
-            der(&reference.turns, &hypothesis.turns, DerOptions::default())
+            der(&reference.turns, &hypothesis.turns, &DerOptions::default())
                 .expect("would score")
                 .der,
             0.0
