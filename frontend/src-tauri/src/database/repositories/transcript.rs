@@ -6,7 +6,8 @@
 //! INSERT here MUST populate them; writes also stamp `rev`/`updated_by`.
 
 use crate::api::{
-    EvidenceSearchResult, SearchMatchField, TranscriptSearchResult, TranscriptSegment,
+    EvidenceSearchResult, MeetingEvidencePassage, SearchMatchField, TranscriptSearchResult,
+    TranscriptSegment,
 };
 use crate::context::AuthContext;
 use chrono::Utc;
@@ -358,6 +359,89 @@ impl TranscriptsRepository {
             .collect())
     }
 
+    /// Retrieve the passages of ONE meeting that best match a question
+    /// (Product Intelligence slice 3, "Ask This Meeting").
+    ///
+    /// [`Self::search_evidence`] cannot serve this: it collapses to the single
+    /// best segment per meeting, which is right for cross-meeting search and
+    /// exactly wrong here. This returns several passages from one meeting, in
+    /// relevance order, carrying the full segment text.
+    ///
+    /// Same trust rules as `search_evidence`, plus the meeting predicate: the
+    /// FTS table is a derived index and never an authority, every candidate is
+    /// joined back to both source tables, all three workspace predicates are
+    /// bound from `AuthContext`, and soft-deleted rows cannot surface. The
+    /// meeting id is bound against BOTH the derived document and the
+    /// authoritative transcript row, so a stale derived row pointing at another
+    /// meeting cannot leak a passage into this answer.
+    pub async fn retrieve_meeting_evidence(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        meeting_id: &str,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<MeetingEvidencePassage>, SqlxError> {
+        // Question-oriented, NOT the AND-joined search expression: see
+        // `build_question_match_query` for why ANDing a question's tokens makes
+        // "no evidence" the common answer.
+        let Some(match_query) = build_question_match_query(query) else {
+            return Ok(Vec::new());
+        };
+        // A bounded window: enough passages for an answer, few enough to stay
+        // inside a small local model's context. Clamped rather than trusted.
+        let limit = limit.clamp(1, 25);
+
+        let rows = sqlx::query_as::<_, (String, String, Option<f64>, String)>(
+            "SELECT t.id AS source_chunk_id,
+                    t.timestamp,
+                    t.audio_start_time,
+                    t.transcript
+               FROM transcript_search_fts
+               JOIN transcript_search_documents AS d
+                 ON d.id = transcript_search_fts.rowid
+               JOIN transcripts AS t
+                 ON t.id = d.source_chunk_id
+                AND t.meeting_id = d.meeting_id
+                AND t.workspace_id = d.workspace_id
+               JOIN meetings AS m
+                 ON m.id = t.meeting_id
+                AND m.workspace_id = t.workspace_id
+              WHERE transcript_search_fts MATCH ?
+                AND d.workspace_id = ?
+                AND t.workspace_id = ?
+                AND m.workspace_id = ?
+                AND d.meeting_id = ?
+                AND t.meeting_id = ?
+                AND t.deleted_at IS NULL
+                AND m.deleted_at IS NULL
+              ORDER BY bm25(transcript_search_fts) ASC,
+                       COALESCE(t.audio_start_time, 1.0e30) ASC,
+                       t.id ASC
+              LIMIT ?",
+        )
+        .bind(&match_query)
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .bind(ctx.tenant_id.as_str())
+        .bind(meeting_id)
+        .bind(meeting_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(source_chunk_id, timestamp, audio_start_time, text)| MeetingEvidencePassage {
+                    source_chunk_id,
+                    timestamp,
+                    audio_start_time,
+                    text,
+                },
+            )
+            .collect())
+    }
+
     /// Searches, within the caller's workspace, for a query string in either a
     /// meeting's transcript text OR its generated summary (BACKLOG C3). Returns
     /// one row per meeting; `matched_in` labels where the hit came from and
@@ -517,6 +601,68 @@ impl TranscriptsRepository {
 /// tokens get prefix expansion. An interactive query therefore cannot fan a
 /// one/two-character prefix across almost the entire corpus. A future hybrid
 /// retriever can improve morphology without weakening that bound.
+/// Words that carry no evidence, folded to match [`evidence_query_tokens`]
+/// output (Turkish diacritics transliterated, lowercase).
+///
+/// Interrogatives and function words in both languages: a question is phrased
+/// with words nobody said out loud, and requiring them is what turns a good
+/// question into a false "nothing in this meeting covers that".
+const QUESTION_STOP_WORDS: &[&str] = &[
+    // English
+    "about", "an", "and", "any", "are", "as", "at", "be", "been", "but", "by", "can", "could",
+    "did", "do", "does", "for", "from", "had", "has", "have", "how", "in", "is", "it", "of", "on",
+    "or", "our", "say", "said", "should", "so", "that", "the", "their", "them", "then", "there",
+    "they", "this", "to", "was", "we", "were", "what", "when", "where", "which", "who", "why",
+    "will", "with", "would", "you", "your",
+    // Turkish (folded: i-dotless and diacritics transliterated)
+    "ama", "bana", "bir", "bize", "bu", "da", "de", "dedi", "dir", "en", "hangi", "icin", "ile",
+    "kac", "kim", "kime", "mi", "mu", "nasil", "ne", "neden", "nedir", "nerede", "neydi", "o",
+    "olarak", "oldu", "olur", "ve", "veya", "var", "vardi", "yok", "sey", "soyledi", "su", "zaman",
+];
+
+/// FTS expression for a natural-language QUESTION, as opposed to the keyword
+/// search that [`build_evidence_match_query`] serves.
+///
+/// The connective is the whole difference. Search ANDs every token, which is
+/// right when someone types the words they expect to find. A question is not
+/// that: *"What was decided about the budget?"* would require a segment
+/// containing `what` AND `was` AND `decided` AND `about` AND `the` AND `budget`,
+/// so the passage "we approved the budget" is never retrieved and the honest-
+/// looking answer "nothing in this meeting covers that" is simply wrong.
+///
+/// So the interrogatives and function words are dropped and the rest are ORed,
+/// leaving BM25 to rank by how well a passage matches. If a question is nothing
+/// but stop words, every token is kept rather than returning no query at all —
+/// a weak search beats a false "no evidence".
+fn build_question_match_query(question: &str) -> Option<String> {
+    let tokens = evidence_query_tokens(question);
+    if tokens.is_empty() {
+        return None;
+    }
+
+    let content: Vec<String> = tokens
+        .iter()
+        .filter(|t| !QUESTION_STOP_WORDS.contains(&t.as_str()))
+        .cloned()
+        .collect();
+    let chosen = if content.is_empty() { tokens } else { content };
+
+    Some(
+        chosen
+            .into_iter()
+            .map(|token| {
+                let literal = token.replace('"', "\"\"");
+                if token.chars().count() == 2 {
+                    format!("\"{literal}\"")
+                } else {
+                    format!("\"{literal}\"*")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" OR "),
+    )
+}
+
 fn build_evidence_match_query(query: &str) -> Option<String> {
     let tokens = evidence_query_tokens(query);
     if tokens.is_empty() {
@@ -698,6 +844,63 @@ async fn insert_transcript_segment(
     .execute(&mut *conn)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod question_query_tests {
+    use super::{build_evidence_match_query, build_question_match_query};
+
+    /// The failure this builder exists to prevent: ANDing a question's tokens
+    /// makes "no evidence" the usual answer, because a question is phrased with
+    /// words nobody said out loud.
+    #[test]
+    fn a_question_does_not_require_its_own_interrogatives() {
+        let q = build_question_match_query("What was decided about the budget?")
+            .expect("question yields a query");
+
+        assert!(q.contains("budget"));
+        assert!(q.contains(" OR "), "a question must not AND its tokens");
+        for stop in ["what", "was", "about", "the"] {
+            assert!(!q.contains(stop), "stop word {stop} must be dropped: {q}");
+        }
+        // "decided" is content, not a stop word.
+        assert!(q.contains("decid"));
+    }
+
+    /// Search keeps its own semantics: the keyword path still ANDs, so this
+    /// change cannot loosen C3a's evidence search.
+    #[test]
+    fn keyword_search_still_requires_every_token() {
+        let q = build_evidence_match_query("budget approval").expect("keyword query");
+        assert!(q.contains(" AND "));
+        assert!(!q.contains(" OR "));
+    }
+
+    #[test]
+    fn turkish_interrogatives_are_dropped_too() {
+        let q = build_question_match_query("Bütçe hakkında ne karar verildi?")
+            .expect("question yields a query");
+        assert!(q.contains("butce") || q.contains("karar"));
+        assert!(
+            !q.contains("\"ne\""),
+            "the Turkish 'ne' must be dropped: {q}"
+        );
+    }
+
+    /// A question made only of stop words still searches, weakly, rather than
+    /// reporting that the meeting does not cover it.
+    #[test]
+    fn an_all_stop_word_question_still_produces_a_query() {
+        let q = build_question_match_query("what was that about?")
+            .expect("must not collapse to no query");
+        assert!(q.contains(" OR "));
+    }
+
+    #[test]
+    fn an_empty_question_yields_no_query() {
+        assert!(build_question_match_query("   ").is_none());
+        assert!(build_question_match_query("?!").is_none());
+    }
 }
 
 #[cfg(test)]

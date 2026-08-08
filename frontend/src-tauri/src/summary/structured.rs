@@ -497,7 +497,10 @@ struct RawActionItem {
 /// Extracts the first balanced `{...}` object from `text`, honoring JSON
 /// string literals and escapes (recovery for replies that wrap the object in
 /// prose).
-fn extract_first_balanced_object(text: &str) -> Option<&str> {
+/// `pub(crate)` so `ask::service` parses model JSON with the SAME extractor as
+/// the summary path rather than a second, subtly different copy (ADR-0030's
+/// one-definition rule).
+pub(crate) fn extract_first_balanced_object(text: &str) -> Option<&str> {
     let start = text.find('{')?;
     let mut depth = 0usize;
     let mut in_string = false;

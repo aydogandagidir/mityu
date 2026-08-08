@@ -4,6 +4,7 @@ import { Summary, SummaryResponse, Transcript } from '@/types';
 import { SummaryDraftResponse } from '@/services/summaryDraftService';
 import { EditableTitle } from '@/components/EditableTitle';
 import { BlockNoteSummaryView, BlockNoteSummaryViewRef } from '@/components/AISummary/BlockNoteSummaryView';
+import { AskPanel } from '@/components/AskThisMeeting/AskPanel';
 import { EmptyStateSummary } from '@/components/EmptyStateSummary';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 import { SummaryGeneratorButtonGroup } from './SummaryGeneratorButtonGroup';
@@ -332,6 +333,24 @@ export function SummaryPanel({
 
         </div>
       </div>
+
+      {/* Ask This Meeting (PI slice 3) sits OUTSIDE the structured-draft branch
+          on purpose. `structuredEnabled` is `hasSummaryDraft`, so nesting it
+          there would hide Ask from every meeting that was never summarised —
+          exactly the meetings where "what did we decide?" is worth asking. It
+          needs a transcript, nothing else. */}
+      {transcripts?.length > 0 ? (
+        <div className="border-b border-border px-6 py-4">
+          <div className="w-full max-w-3xl mx-auto">
+            <AskPanel
+              meetingId={meeting.id}
+              modelProvider={modelConfig.provider}
+              modelName={modelConfig.model}
+              onJumpToSource={onJumpToSource}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {structuredEnabled ? (
         // BACKLOG C1.6 — source-linked structured draft review (HITL). Renders

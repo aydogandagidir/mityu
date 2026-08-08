@@ -79,6 +79,28 @@ pub struct EvidenceSearchResult {
     pub audio_start_time: Option<f64>,
 }
 
+/// One retrieved transcript passage from a single meeting (Product Intelligence
+/// slice 3, "Ask This Meeting").
+///
+/// Distinct from [`EvidenceSearchResult`], which deliberately collapses to the
+/// single best segment **per meeting** for cross-meeting search. Answering a
+/// question about one meeting needs the opposite: several passages from that one
+/// meeting, carrying the **full** segment text rather than a highlight snippet,
+/// because this text is what an answer may be drawn from.
+///
+/// `timestamp` and `audio_start_time` travel with the passage so a claim's
+/// timing is taken from the retrieved evidence and can never be invented by a
+/// model — the model only ever returns text and a `source_chunk_id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeetingEvidencePassage {
+    #[serde(rename = "sourceChunkId")]
+    pub source_chunk_id: String,
+    pub timestamp: String,
+    #[serde(rename = "audioStartTime")]
+    pub audio_start_time: Option<f64>,
+    pub text: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelConfig {
     pub provider: String,

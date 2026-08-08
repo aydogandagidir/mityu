@@ -127,6 +127,64 @@ The free-text `due` value is displayed verbatim and is never treated as a date.
 - The UI exposes provenance, loading, empty and retry states but no mutation or
   work-completion control.
 
+## Slice 3 - Ask This Meeting v1
+
+### Contract
+
+A question about ONE meeting, answered only from that meeting's transcript.
+The order is the guarantee, not an implementation detail:
+
+1. Retrieve that meeting's most relevant passages
+   (`TranscriptsRepository::retrieve_meeting_evidence`, bounded to 8).
+2. **If retrieval is empty the model is never called.** A transcript that does
+   not cover a question is the honest answer; answering anyway would answer from
+   the model's prior knowledge rather than from the meeting.
+3. The model sees only those passages and must cite one per claim.
+4. Every claim is ground-checked against the retrieved window before it can be
+   rendered.
+5. If nothing survives, the result is a refusal - never an empty answer.
+
+The outcome is a closed union with no "empty answer" member: `noEvidence`,
+`answered` or `refused`. Rendering an answer with no claims would read as "the
+meeting does not contain this", which is a stronger statement than the retrieval
+supports.
+
+### Trust rules
+
+- **A citation outside the retrieved window is dropped, never repaired.**
+  `summary::structured` repairs a bad `source_chunk_id` by text overlap, which is
+  right for summarisation - a summariser paraphrases a segment it was shown. An
+  answer is different: a citation to a passage that was never retrieved is the
+  model asserting evidence that does not exist, and repairing it would attach a
+  real timestamp to an invented claim, making a hallucination look sourced.
+- **The model is trusted with claim text and an id, nothing else.** Timestamps
+  come from the retrieved passage, so timing cannot be invented even for a
+  correctly grounded claim. The prompt does not contain timestamps at all.
+- **Filtered claims are disclosed, not hidden.** A silently shortened answer
+  looks complete.
+- **Read-only.** Nothing is persisted; an answer cannot enter the summary or
+  action-item tables and can never become approved content (`CLAUDE.md` 0.5).
+- **Tenant-scoped.** Retrieval binds `workspace_id` from `AuthContext` on every
+  joined table, and the meeting id on both the derived index and the
+  authoritative transcript row, so a stale derived row cannot leak another
+  meeting's passage into an answer.
+- **Local-first.** Retrieval is SQLite FTS5 and needs no network. Answering uses
+  whichever provider the user configured, including the built-in local model.
+- The AI-generated marking is present on this surface for the same reason it is
+  on the summary draft (ADR-0032).
+
+### Acceptance gates
+
+- An unknown `source_chunk_id` never reaches the user, even when the claim text
+  matches a retrieved passage verbatim.
+- Empty retrieval produces `noEvidence` with no provider call.
+- A reply whose claims are all ungrounded produces `refused`, not an empty
+  `answered`.
+- Claim timing always equals the retrieved passage's timing.
+- Every rendered claim exposes a control that opens its transcript segment.
+- Model replies wrapped in prose still parse; malformed claim objects are
+  skipped rather than guessed at.
+
 ## Gate discipline
 
 This quality-independent foundation may be implemented before A5 by explicit
