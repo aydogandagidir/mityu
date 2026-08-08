@@ -620,6 +620,8 @@ Three findings from reading the tree shaped this decision.
 
 CAM++ is the preferred embedding model on licence grounds (Apache-2.0 carries no attribution-in-product obligation); NeMo TitaNet is the fallback and would add no new machinery, since Parakeet already ships under CC-BY-4.0 with attribution in `README.md` and the About screen (ADR-0020). **Neither may ship until its licence is verified from the model card the way ADR-0020 verified whisper and Parakeet, and until it is confirmed that redistribution through sherpa-onnx's release assets preserves the required notices.** Whether Hugging Face's access gate binds a downstream consumer who obtains the same MIT-licensed weights elsewhere is a question for counsel, not for this ADR.
 
+> **Superseded in part by ADR-0035 (2026-08-09).** Item 2 above names `sherpa-rs`, which is archived; the live crate is k2-fsa's own `sherpa-onnx`. The implementation-approach paragraph below is likewise closed there — and the answer is forced rather than chosen, because sherpa-onnx and the app's `ort` **cannot link into one binary** (measured). The model-licence obligation in item 2 is *not* superseded and remains open.
+
 **Implementation approach (recommended, not yet decided):** the whole diarization pipeline is segmentation → embedding → clustering. `ort` is already a dependency and could run both models, but the segmentation post-processing and speaker clustering would then be ours to write — that is a research project, not an integration. The `sherpa-rs` bindings to sherpa-onnx provide the assembled pipeline instead, at the cost of a substantial native dependency that must build on Windows, macOS and Linux. That trade needs its own decision once the schema lands.
 
 **Consequences:** The live capture path is unchanged, so the §4 risk of this feature is confined to a post-processing step that can fail without affecting a recording. The schema gains a new table and one nullable column, both empty, so nothing breaks for existing meetings. Diarization becomes an opt-in post-processing pass rather than a cost every recording pays. The cost of the turn model is that rendering is an overlap query rather than a column read, and that a turn boundary can fall inside a transcript row — the UI must show a row attributed to more than one speaker instead of pretending rows and turns align.
@@ -637,3 +639,51 @@ That cross-check earned its place immediately: it found two convention errors th
 **Correction (2026-08-08, after merge — the erasure claim was wrong).** PR #17's commit body said "deleting a meeting cascades its turns away". It does not: the app's deletion path runs with `PRAGMA foreign_keys = OFF` by design, so `speaker_turns`' declared `ON DELETE CASCADE` never fires, and the table was missing from the explicit delete list. Verified in sqlite3 with foreign keys ON — the one state production negates. `speaker_turns` is unpopulated so nothing was retained, but `correction_events` (ADR-0030) had the identical defect and *was* live. Both are now deleted explicitly and guarded structurally; see the ADR-0030 amendment of the same date.
 
 **Review correction (2026-08-08, before merge):** the first draft of this ADR stated that no speaker field existed and proposed storing one anonymous label per transcript row. Review found both wrong: a dead `transcripts.speaker` column does exist, and — more importantly — VAD's 2000 ms redemption means a transcript row routinely spans multiple speakers, so row labels would mis-attribute speech and could not produce talk-time. The draft also assumed saved audio always exists, which "transcripts only" recordings disprove. Findings 2–3 and decisions 3–5 above are the corrected text; nothing had been merged or applied when they changed.
+
+## ADR-0035 — Diarization engine: the sherpa-onnx pipeline, out-of-process, because in-process does not link
+
+**Context:** ADR-0034 fixed the *shape* of diarization (post-hoc, timed `speaker_turns`, anonymous labels) and deliberately left the implementation approach open: `sherpa-rs` bindings versus writing segmentation post-processing and clustering ourselves on `ort`. That question is now answered, and the measuring instrument it depends on exists — `eval-harness`' DER scorer, validated against NIST `md-eval.pl` on 216 VoxConverse recordings to 0.0000 percentage points (`docs/DIARIZATION_EVAL.md`).
+
+Three things that were *assumed* when ADR-0034 was written turned out to be wrong, and each changes the decision:
+
+1. **`sherpa-rs` is dead.** The crate named in ADR-0034 is archived read-only (last push 2026-03-08, 32 open issues); its README points at k2-fsa's own `sherpa-onnx` crate. The live crate is `sherpa-onnx` 1.13.4, **Apache-2.0**, published 2026-07-08, from the upstream repository.
+2. **No Rust crate can be added to the app that does the job on `ort`.** `speakrs` (Apache-2.0) genuinely implements the full pipeline, but requires `ort ^2.0.0-rc.12` while the app's VAD dependency pins it exactly: `silero_rs` (rev 26a6460) declares `ort = "=2.0.0-rc.10"`, and `ort-sys` declares `links = "onnxruntime"`, so only one may exist in the graph. `pyannote-rs` is the only rc.10-compatible candidate and is not a diarizer — no powerset decode, no clustering; it benchmarks at 80% DER.
+3. **ADR-0034's licence route was based on a gate that does not bind us.** `pyannote/segmentation-3.0` is MIT but access-gated on Hugging Face; sherpa-onnx republishes converted ONNX artifacts on unauthenticated GitHub release tags, which is the origin ADR-0034 already blessed.
+
+**Decision:**
+
+1. **Integrate the assembled sherpa-onnx pipeline via k2-fsa's official `sherpa-onnx` crate (Apache-2.0), not `sherpa-rs`, and not a hand-written pipeline on `ort`.** Segmentation → embedding → clustering is a research project to write and an integration to adopt; we have no way to justify the former while the thing it would buy — tunability — is unmeasurable against target-condition audio we do not yet have.
+
+2. **It runs OUT OF PROCESS, in a `diarize-helper` sidecar binary. This is forced, not preferred.** Measured on Windows MSVC (2026-08-09):
+
+   | Configuration | Result |
+   |---|---|
+   | `sherpa-onnx` alone, default (`static`) features | **Links, runs, exit 0.** Zero linker warnings on a forced relink. |
+   | `sherpa-onnx` + `ort = "=2.0.0-rc.10"` in one binary | **`LNK1169: multiple defined symbols`** — fatal. |
+
+   The combined build fails with exactly the predicted class: `LNK2038: 'RuntimeLibrary' mismatch: MT_StaticRelease vs MD_DynamicRelease` against `libort_sys(onnxruntime_c_api.obj)`, plus `LNK2005` duplicate C++ runtime symbols and `LNK4098 defaultlib 'LIBCMT' conflicts`. sherpa's Windows archive is `sherpa-onnx-v1.13.4-win-x64-static-MT-Release-lib.tar.bz2` — a static-CRT build — while `ort` brings a `/MD` one. Two ONNX Runtimes cannot share one binary here.
+
+   Separate processes have separate address spaces, so the sidecar dissolves it entirely: **zero lines change in `parakeet_engine`, the `silero_rs` `ort` pin is untouched, no `ndarray` 0.16→0.17 migration.** The repo already ships two sidecars (`binaries/llama-helper`, `binaries/ffmpeg`, `externalBin` in `tauri.conf.json`, manager in `summary/summary_engine/sidecar.rs`), so this is an existing pattern, not a new one. Diarization is a *better* fit than `llama-helper`: ADR-0034 makes it post-hoc and whole-file, so it is one invocation per meeting with no keep-alive.
+
+3. **Default (`static`) features, giving a single self-contained executable.** Measured: 17.7 MB release, and it runs from an otherwise **empty directory** — no `onnxruntime.dll`, no sibling libraries to ship or to get out of step. One file into `binaries/`, exactly like the two already there. The `shared` feature is available and not needed.
+
+4. **The native archive MUST be vendored and SHA-256-verified in our own build script before this ships.** `sherpa-onnx-sys`' `build.rs` downloads a prebuilt archive from a GitHub release and performs **no integrity check of any kind** — verified by reading it. That is squarely against ADR-0020's exact-size-plus-digest precedent for model files. The crate exposes `SHERPA_ONNX_LIB_DIR` and `SHERPA_ONNX_ARCHIVE_DIR`, so the mitigation is the pattern `build/ffmpeg.rs` already implements: pin the archive, check its digest, fail the build on mismatch. **Shipping without this is not permitted by this ADR.**
+
+5. **Speaker count is never assumed.** `FastClusteringConfig::default()` is `num_clusters: -1, threshold: 0.5` — read from the crate source and confirmed at run time. `-1` means "unknown, cluster by threshold". A fixed default would have imposed a speaker count on every meeting, and a two-person conversation is Mityu's typical recording; if a future version changes that default, this is the line to re-check.
+
+6. **The result type maps onto the schema with no translation.** `OfflineSpeakerDiarizationSegment { start: f32, end: f32, speaker: i32 }` → `speaker_turns(start_ms, end_ms, speaker_label)`. ADR-0034's timed-turn decision was made independently and happens to be exactly what the engine emits.
+
+**How the evidence was obtained, and one thing it corrects:** two throwaway crates outside the workspace (`C:\t\spike-diarize`, `C:\t\spike-both`), so a failed spike could not touch CI. The first version of the standalone spike only printed a string; it linked and produced a **128 KB** binary, because with nothing referencing sherpa the linker's `/OPT:REF` had discarded the entire library — a false pass that would have proven nothing. Calling `OfflineSpeakerDiarization::create()` took it to 21.4 MB and produced errors from sherpa's own C++ source (`offline-speaker-segmentation-model-config.cc:Validate:38`), which is what proves the FFI boundary was crossed at run time rather than merely satisfied at link time. `create()` returned `None` on bad configuration instead of aborting — a native library that crashed there would be unusable in a sidecar.
+
+The earlier analysis called the `/MT` clash "the kill risk" for the standalone build. It is not: standalone links cleanly. It is the kill risk for the **in-process** build, which is why decision 2 is forced rather than chosen.
+
+**Consequences:** **+** The live capture path is untouched (`CLAUDE.md` §4 risk nil); the app's `ort`/`ndarray`/`silero_rs` graph is untouched; reversibility is deleting one workspace member and one `externalBin` entry; the engine can be swapped later without touching the app. **−** ~18 MB on the installer; a second, independently-versioned ONNX Runtime to keep an eye on; and one more binary to sign.
+
+**What this ADR does NOT authorize:**
+
+- **Shipping.** Decision 4 (archive vendoring + digest) and ADR-0034's open item 2 — primary-source licence verification for the CAM++ / TitaNet embedding models, still recorded there as *not* verified — are both prerequisites.
+- **Any speaker-accuracy claim.** ADR-0034's ban stands: the A5 `multi` bucket holds zero recordings, and the DER scorer is validated on English broadcast audio, not a Turkish meeting room.
+- **macOS or Linux.** Only Windows was measured. Default CI builds `ubuntu-latest` only and never builds macOS, so a break on either would surface at release. A `windows-latest` and `macos` check for the helper is owed as part of the implementation.
+- **Any statement about runtime or memory on a 60–90 minute recording.** Unmeasured; clustering is superlinear in segment count, and this determines whether the sidecar needs chunked progress reporting.
+
+**Status:** Accepted (2026-08-09). Supersedes ADR-0034's item 2 naming `sherpa-rs`, and closes the implementation-approach question ADR-0034 left open.
