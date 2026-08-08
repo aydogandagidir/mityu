@@ -1069,21 +1069,6 @@ fn cmd_der(args: DerArgs<'_>) -> Result<()> {
         bail!("--collar negatif olamaz ve sonlu olmalı: {collar_secs}");
     }
 
-    // The scored stretch of the timeline. The default matches NIST md-eval, so
-    // a number produced here means the same thing as a number in a paper.
-    let region = match (uem, score_everything) {
-        (Some(path), _) => {
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("UEM okunamadı: {}", path.display()))?;
-            diarization::EvalRegion::Uem(
-                diarization::parse_uem(&text, file_id)
-                    .with_context(|| format!("UEM ayrıştırılamadı: {}", path.display()))?,
-            )
-        }
-        (None, true) => diarization::EvalRegion::Full,
-        (None, false) => diarization::EvalRegion::ReferenceExtent,
-    };
-
     let read = |path: &Path, what: &str| -> Result<diarization::Rttm> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("{what} RTTM okunamadı: {}", path.display()))?;
@@ -1096,6 +1081,36 @@ fn cmd_der(args: DerArgs<'_>) -> Result<()> {
     // unrelated pair whose timelines happen to line up scores a low, meaningless
     // DER.
     diarization::ensure_same_recording(&reference_rttm, &hypothesis_rttm)?;
+
+    // The scored stretch of the timeline. The default matches NIST md-eval, so
+    // a number produced here means the same thing as a number in a paper.
+    //
+    // Resolved AFTER the reference is read on purpose: a UEM normally covers a
+    // whole corpus, and without `--file-id` its other recordings' spans would be
+    // folded in — either tripping the overlap check with a spurious error or
+    // silently enlarging the scored region. So an omitted `--file-id` falls back
+    // to the recording the reference itself names, which is what `der-suite`
+    // already does.
+    let region = match (uem, score_everything) {
+        (Some(path), _) => {
+            let selector = file_id.or(reference_rttm.file_id.as_deref());
+            let text = std::fs::read_to_string(path)
+                .with_context(|| format!("UEM okunamadı: {}", path.display()))?;
+            let spans = diarization::parse_uem(&text, selector)
+                .with_context(|| format!("UEM ayrıştırılamadı: {}", path.display()))?;
+            if spans.is_empty() {
+                bail!(
+                    "UEM {} içinde '{}' kaydı için aralık yok — puanlanacak bölge boş olurdu",
+                    path.display(),
+                    selector.unwrap_or("<isimsiz>")
+                );
+            }
+            diarization::EvalRegion::Uem(spans)
+        }
+        (None, true) => diarization::EvalRegion::Full,
+        (None, false) => diarization::EvalRegion::ReferenceExtent,
+    };
+
     let reference_turns = reference_rttm.turns;
     let hypothesis_turns = hypothesis_rttm.turns;
 
@@ -1182,9 +1197,15 @@ fn cmd_der_suite(
         bail!("--collar negatif olamaz ve sonlu olmalı: {collar_secs}");
     }
 
+    // `filter_map(|e| e.ok())` would drop an unreadable entry silently, and a
+    // reference that vanishes from the evaluation IMPROVES the corpus DER — the
+    // same failure this command refuses for a missing hypothesis.
     let mut references: Vec<PathBuf> = std::fs::read_dir(reference_dir)
         .with_context(|| format!("referans dizini okunamadı: {}", reference_dir.display()))?
-        .filter_map(|e| e.ok().map(|e| e.path()))
+        .collect::<std::io::Result<Vec<_>>>()
+        .with_context(|| format!("referans dizini taranamadı: {}", reference_dir.display()))?
+        .into_iter()
+        .map(|e| e.path())
         .filter(|p| {
             p.extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("rttm"))

@@ -428,6 +428,14 @@ pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: &DerOptions) -> Result
         }
     };
 
+    // Collars come from the ORIGINAL reference boundaries, computed BEFORE the
+    // region clips anything. Clipping first would put an artificial turn edge
+    // wherever a UEM span cuts through a turn, and a UEM edge is not a speaker
+    // change — a `[0,10)` turn scored under UEM `[2,8]` would silently lose
+    // `[2,2.25)` and `[7.75,8)` to no-score zones that correspond to nothing in
+    // the audio, shrinking the denominator.
+    let collar_zones = collar_zones(&index_by_speaker(reference), opts.collar);
+
     let (reference, _) = clip(reference, &region);
     let (hypothesis, unscored_hypothesis) = clip(hypothesis, &region);
     let reference = &reference[..];
@@ -446,7 +454,6 @@ pub fn der(reference: &[Turn], hypothesis: &[Turn], opts: &DerOptions) -> Result
         cuts.insert(t.start);
         cuts.insert(t.end);
     }
-    let collar_zones = collar_zones(&ref_by_spk, opts.collar);
     for (a, b) in &collar_zones {
         cuts.insert(*a);
         cuts.insert(*b);
@@ -1114,6 +1121,37 @@ mod tests {
         .expect("scored");
         assert!(approx(r.der, 0.0), "der was {}", r.der);
         assert!(approx(r.total_reference, 10.0));
+    }
+
+    /// A UEM edge is not a speaker change. Clipping the reference before
+    /// building collars would put a no-score zone wherever a UEM span cuts a
+    /// turn, shrinking the denominator for a boundary that exists nowhere in the
+    /// audio.
+    #[test]
+    fn a_uem_edge_does_not_create_a_collar() {
+        let reference = vec![Turn::from_secs("A", 0.0, 10.0)];
+        let hypothesis = vec![Turn::from_secs("X", 0.0, 10.0)];
+        let uem = parse_uem("meeting 1 2.0 8.0\n", None).expect("parsed");
+
+        let r = der(
+            &reference,
+            &hypothesis,
+            &DerOptions {
+                collar: secs_to_micros(0.25),
+                region: EvalRegion::Uem(uem),
+                ..DerOptions::default()
+            },
+        )
+        .expect("scored");
+
+        // The whole 6 s window is scored: A never changes speaker inside it.
+        assert!(
+            approx(r.total_reference, 6.0),
+            "reference was {}",
+            r.total_reference
+        );
+        assert!(approx(r.excluded, 0.0), "excluded was {}", r.excluded);
+        assert!(approx(r.der, 0.0));
     }
 
     #[test]

@@ -275,6 +275,11 @@ def main():
             a = ours(args.exe, path, hp, args.collar)
             b = md_eval(mdeval, path, hp, args.collar)
             if a is None or b is None:
+                # A crash or unparsable output means this pair was NOT checked.
+                # Counting it as anything other than a failure would let the
+                # validation "pass" precisely when one scorer cannot be
+                # compared -- the exact confident-lie shape this whole tool
+                # exists to prevent. See the exit code below.
                 skipped += 1
                 print(f"  SKIP {base}/{pname}: ours={a} md-eval={b}")
                 continue
@@ -286,10 +291,24 @@ def main():
 
     print(f"\nchecked={checked} skipped={skipped}")
     print(f"max |ours - md-eval| = {worst:.4f} percentage points")
+
+    failed = False
     if disagreements:
         print(f"DISAGREEMENTS ({len(disagreements)}):")
         for base, pname, a, b, d in disagreements[:40]:
             print(f"  {base:12s} {pname:8s} ours={a:7.3f}  md-eval={b:7.3f}  diff={d:.3f}")
+        failed = True
+    # A skip is an UNVERIFIED comparison, not a passing one. If md-eval crashes
+    # on every file, every comparison is skipped and "NO DISAGREEMENTS" would
+    # otherwise print with exit 0 — a validation that succeeds exactly when it
+    # validated nothing.
+    if skipped:
+        print(f"FAILED: {skipped} comparison(s) could not be made — nothing was proven about them")
+        failed = True
+    if checked == 0:
+        print("FAILED: nothing was compared at all")
+        failed = True
+    if failed:
         return 1
     print("NO DISAGREEMENTS")
     return 0
