@@ -99,7 +99,7 @@ python tools/diarization/crosscheck-mdeval.py --collar 0.25
 ```
 
 The tool downloads the corpus (CC-BY-4.0, pinned commit) and md-eval (pinned),
-**verifies both by SHA-256**, then builds six non-trivial hypotheses per file —
+**verifies both by SHA-256**, then builds six hypotheses per file —
 relabel, jitter, merge, split, drop, inflate — and compares the two scorers.
 Self-scoring a reference gives 0% and proves almost nothing; these break the
 reference the way a real diarizer breaks it.
@@ -108,9 +108,11 @@ reference the way a real diarizer breaks it.
 
 | Collar | Comparisons | Max &#124;ours − md-eval&#124; |
 |---|---|---|
-| 0.00 | 1296 | **0.0000 pp** |
-| 0.25 | 1296 | **0.0000 pp** |
-| 0.50 | 1296 | **0.0000 pp** |
+| 0.00 | 1296 | **0.00 pp** |
+| 0.25 | 1296 | **0.00 pp** |
+| 0.50 | 1296 | **0.00 pp** |
+
+**What that number does and does not say.** Both scorers print two decimals, so the finest observable difference is 0.01 pp; *agree at the printed resolution* is the strongest claim this method supports — not bit-identical arithmetic. The comparison tolerance is 0, so any observable difference fails. A handful of pairs are unavoidably **self-scores** — `merge` cannot change a single-speaker file, and 22 of the 216 dev files have one speaker — so the tool counts and prints them rather than letting them inflate the coverage claim.
 
 ### What it caught
 

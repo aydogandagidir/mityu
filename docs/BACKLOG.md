@@ -99,6 +99,18 @@ Legend: **Agent** = `.claude/agents/` file · **Cmd** = `.claude/commands/`.
 - Agent: frontend-nextjs-engineer · Cmd: /refactor via /feature · depends-on: C1
 - AC: canonical editor = BlockNote; no new TipTap/Remirror usage; legacy paths inert.
 
+### C9 · EU AI Act Art. 50(1) assessment for "Ask This Meeting" ⛔ RELEASE GATE
+- Agent: security-privacy-auditor · Cmd: /security-review · depends-on: —
+- AC: ADR-0032 states that the conversational Ask surface "would engage [Art. 50(1)] and must be assessed before it ships". The surface is on `main` (`SummaryPanel.tsx` mounts `AskPanel` whenever a transcript exists, with no flag) but is in **no released binary** — the newest tag anywhere is `v1.0.4`, which predates it. So the gate is **due, not breached**, and the cheap window closes at the next tag. Either record the assessment as an ADR-0032 amendment, or put the panel behind a default-off flag until it is done. Also carries ADR-0032's two counsel questions (does Art. 50(2) reach HITL summarisation; Art. 50(1) for the Ask surface).
+
+### C10 · NPU enumeration + OS-native inference backends (ADR-0033)
+- Agent: rust-tauri-core-engineer · Cmd: /feature · depends-on: —
+- AC: ADR-0033 landed the capability probe and a dormant seam, deliberately without faking the parts it could not implement: Windows/Linux NPU enumeration, the OS-native backend implementations themselves, and the wiring into provider assembly and the UI. `NpuVendor::Undetermined` must stay distinguishable from "none".
+
+### C11 · Learning system (ADR-0030) — in-app live smoke test
+- Agent: — (needs a running GUI + a live model) · Cmd: — · depends-on: —
+- AC: the learning loop is built and unit-tested, but has never been exercised end-to-end through the app: CPU build, Ollama configured, "look for patterns" on, make ≥3 corrections and approve, and confirm a "Suggested by the model" Proposed rule appears. An agent cannot substitute for this; it needs the GUI and a model.
+
 ### C8 · Phase 1 exit ⏸ DEFERRED for v1.0.4 — still a downstream gate
 - Agent: qa-release-engineer · Cmd: /release (dry-run) · depends-on: C1–C7 (including C6a)
 - AC: app works fully offline; a real pilot user completes record→approve→export; DoD green; multitenancy-guardian + security-privacy-auditor pass.
@@ -181,6 +193,46 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 ### G3 · Meeting bot (Zoom/Teams/Meet auto-join) ⛔ needs its own ADR before code
 - Agent: sync-server-architect + security-privacy-auditor · Cmd: — (design first) · depends-on: G1, D5
 - AC (frame only, per ADR-0018 Tier 2): bot joins only meetings the user connected and consented to; announces itself in-call; media path, processor role (DPA), retention and EU residency (E2) documented; per-integration kill switch; a detailed ADR + /security-review precede any implementation.
+
+## EPIC H — Speaker diarization (ADR-0034 + ADR-0035)
+
+> Ordering is not cosmetic here: H1 gates everything because a licence failure would throw away H3–H6 with no partial credit (ADR-0034 bans diarization-quality claims until A5's `multi` bucket exists, so there is nothing to bank early). H2 gates H3 *mechanically* — the moment `diarize-helper` is a workspace member, `ci.yml`'s `cargo test --all` on `ubuntu-latest` performs an unverified native download on every PR.
+
+### H1 · Embedding + segmentation model licence verification ⛔ GATE — DONE 2026-08-09
+- Agent: — · Cmd: — · depends-on: —
+- AC: **met.** All three verified from primary sources and recorded in the ADR-0034 amendment (2026-08-09): pyannote segmentation-3.0 = MIT with the CNRS copyright, read from the `LICENSE` **inside** the sherpa tarball; CAM++ = Apache-2.0 from ModelScope's API and the 3D-Speaker repo LICENSE; TitaNet = CC-BY-4.0 from the HuggingFace API, not gated. Redistribution through sherpa's release assets preserves the required notices — verified by unpacking the artifact, not by argument.
+
+### H2 · sherpa-onnx archive integrity bootstrap ⛔ PREREQUISITE FOR WORKSPACE MEMBERSHIP
+- Agent: qa-release-engineer · Cmd: /feature · depends-on: H1
+- AC: a pre-cargo step (developer command + CI step) fetches the sherpa native archive from a **pinned release tag and URL**, verifies **exact byte length and SHA-256** (the full ADR-0020 precedent, not a digest alone), fails closed on mismatch, and supplies it via `SHERPA_ONNX_ARCHIVE_DIR`/`SHERPA_ONNX_LIB_DIR`. `sherpa-onnx-sys`' own `build.rs` performs no integrity check of any kind, and a check inside our build script runs too late (ADR-0035 decision 4). **AC must include: a full `cargo test --all` on `ubuntu-latest` performs no unverified download.**
+
+### H3 · `diarize-helper` sidecar (ADR-0034 step c)
+- Agent: rust-tauri-core-engineer · Cmd: /add-tauri-command then /feature · depends-on: H2
+- AC: new workspace member built with sherpa-onnx default (`static`) features — one self-contained binary, no sibling DLLs; `externalBin` entry in `tauri.conf.json` plus the CI build step `llama-helper` already needs; invoked post-hoc per meeting, never from the capture path (CLAUDE.md §4); availability probed with `find_audio_file`, so a transcripts-only meeting reports "not available" rather than failing; writes `speaker_turns` + `meetings.diarized_at` using the ADR-0035 decision 6 conversion (seconds→ms, `Speaker N` 1-based, confidence NULL); works with the network off.
+
+### H4 · Cross-platform CI for `diarize-helper`
+- Agent: qa-release-engineer · Cmd: /release · depends-on: H3
+- AC: the helper is built on `windows-latest` and on macOS. Note the current gap: `ci.yml` builds and tests **only `ubuntu-latest`**, `release.yml` is Windows-only, and `build-macos.yml` is dispatch-only — so today a macOS break surfaces at release and a Windows break surfaces only in the release job.
+
+### H5 · Diarization runtime + memory on a 60–90 minute recording
+- Agent: qa-release-engineer · Cmd: /audio-debug · depends-on: H3
+- AC: wall-clock and peak RSS measured on a long recording; decides whether H3 needs chunked progress reporting or can stay fire-and-forget. Clustering is superlinear in segment count, so a short-clip measurement does not answer this.
+
+### H6 · Speaker labels + talk-time UI (ADR-0034 step d)
+- Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: H3
+- AC: a transcript row overlapping more than one turn shows more than one speaker (rows and turns do not align — see the migration's own note); talk-time is descriptive only, never a score or ranking; labels stay anonymous `Speaker N` and naming a speaker is a manual human action; the four states are distinguished — no audio / never ran / ran-inconclusive / has turns.
+
+### H7 · Third-party notices for the sidecar and models
+- Agent: qa-release-engineer · Cmd: /release · depends-on: H3
+- AC: `resources/MODEL-NOTICES.txt` gains the MIT text + `Copyright (c) 2022 CNRS` for segmentation and the Apache-2.0 attribution for CAM++ (published as a bare `.onnx` with no licence file, so the notice is ours to supply); the statically linked Apache-2.0 sherpa-onnx binary is attributed the way ADR-0021 settled it for FFmpeg.
+
+### H8 · DER instrument hardening
+- Agent: qa-release-engineer · Cmd: /fix-bug · depends-on: —
+- AC: `parse_rttm`/`parse_uem` strip a UTF-8 BOM (today a BOM silently drops the first `SPEAKER` record — and `Set-Content -Encoding utf8`, which the harness's own error message recommends, writes one); `secs_to_micros` range-checks instead of saturating; a negative `tbeg` is rejected. Cross-check: assert each perturbation actually changed the turn list (22 of 216 files are single-speaker, so `merge` currently self-scores), default `--tolerance` to 0, and extend md-eval coverage to `der-suite` pooling, `--skip-overlap` and `--uem`, none of which has ever been put in front of md-eval. Add a `--limit N` cross-check CI job or a committed expected-DER fixture — today, reverting either convention bug caught in PR #20 leaves `cargo test` fully green.
+
+### H9 · A5 `multi` bucket: decide whether a speaker-labelled reference is produced
+- Agent: — (owner decision) · Cmd: /phase0-validate · depends-on: —
+- AC: `eval/raw/multi/` holds zero clips and `A5_SPRINT.md` instructs annotators **not** to write speaker labels or timestamps, so filling the bucket as specified can never yield a DER. Either the A5 protocol gains an RTTM reference for the `multi` clips, or ADR-0034's ban on speaker-accuracy claims becomes permanent rather than temporary. Until this is decided, H3–H6 ship best-effort with no accuracy claim.
 
 ---
 
