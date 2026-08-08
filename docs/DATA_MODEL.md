@@ -9,15 +9,33 @@ One logical model, two physical stores that must stay compatible: **client SQLit
 | `tenant` (server) / implicit `workspace` (client) | Isolation boundary | name, region, plan, settings | server only |
 | `user` (server) / implicit local user (client) | Identity | email, display_name, status | server only |
 | `membership` (server) | user↔tenant + role | tenant_id, user_id, role(owner/admin/member/viewer) | server only |
-| `meeting` | A recording session / on-site conversation | title, started_at, ended_at, participants | yes |
+| `meeting` | A recording session / on-site conversation | title, started_at, ended_at, participants, diarized_at | yes |
 | `transcript` | Full transcript for a meeting | language, engine(whisper/parakeet), model | yes |
-| `transcript_chunk` | Time-segmented transcript pieces | meeting_id, speaker, text, t_start, t_end | yes |
+| `transcript_chunk` | Time-segmented transcript pieces | meeting_id, text, t_start, t_end (**no speaker** — see below) | yes |
+| `speaker_turn` | One stretch of audio attributed to one anonymous speaker | meeting_id, speaker_label, start_ms, end_ms, confidence | **no** (local-derived) |
 | `summary` | Structured summary (draft→approved) | meeting_id, status(draft/approved), model, sections(JSON) | yes |
 | `summary_block` (or JSON) | Block/Section content (client: embedded in `summaries.sections` JSON, no per-block rows — ADR-0019) | type(text/bullet/heading1/heading2), content, source_chunk_id | yes (inside `summary`) |
 | `action_item` | Extracted action | meeting_id, text, assignee, due, status, **source_chunk_id** | yes |
 | `settings` | Per-workspace/tenant config | allowed_providers, default_model, retention_days, redaction | per-scope |
 | `provider_credential` | BYOK key **reference** | provider, key stored in OS keychain/secure store (NOT here in plaintext); the SQLite column holds only the non-secret marker `keychain:v1` | never synced raw |
 | `audit_log` (server) | Append-only actions | tenant_id, actor, action, resource, ts, request_id | server only |
+
+### Speakers live on time ranges, not on transcript rows
+
+`transcripts.speaker` exists in SQLite (added 2025, inherited from upstream) and
+is **dead**: never read, never written, and **not** the diarization surface.
+
+A transcript row cannot carry a speaker, because a row is one VAD speech segment
+and VAD deliberately *bridges* pauses instead of cutting at them — the import and
+retranscription paths use a 2000 ms redemption time, longer than the gap between
+two people taking turns, and segments over 25 s are normal. One row therefore
+routinely spans several speakers, and talk-time (a sum of durations) cannot be
+derived from row labels at all.
+
+So ADR-0034 stores speakers as `speaker_turns`: anonymous `Speaker N` labels over
+millisecond ranges, in the same unit VAD emits. The UI attributes a row by
+overlapping it with turns and may show more than one speaker for a row.
+Overlapping turns are allowed — people talk over each other.
 
 ## Common columns on every domain entity
 `id uuid` · `workspace_id`/`tenant_id` · `created_at` · `updated_at`.
@@ -37,7 +55,7 @@ The client's physical table names predate this doc (Meetily heritage) and differ
 
 | Client table (SQLite) | Logical entity | Synced? | Common columns present |
 |---|---|---|---|
-| `meetings` | `meeting` | yes | `workspace_id`, `created_at`, `updated_at`, `updated_by`, `rev`, `deleted_at` |
+| `meetings` | `meeting` | yes | all of the above (`diarized_at` added by 20260808000000 — NULL means no diarization pass has ever completed, which is not the same as "no speakers found") |
 | `transcripts` | `transcript_chunk` (one row per time segment; also carries legacy `summary`/`action_items`/`key_points` TEXT columns) | yes | all of the above (`created_at`/`updated_at` added by 20260702000000, backfilled from the parent meeting) |
 | `summary_processes` | legacy generation-process status + result JSON per meeting (pre-C1; the sync `summary` entity maps to `summaries` below) | yes | all of the above |
 | `transcript_chunks` | `transcript` (full concatenated text per meeting, one row per meeting) | yes | all of the above (`updated_at` added, backfilled from `created_at`) |
@@ -46,6 +64,7 @@ The client's physical table names predate this doc (Meetily heritage) and differ
 | `action_items` | `action_item` — first-class extracted action with **mandatory `source_chunk_id`**; `position` orders items per meeting, `original_text` preserves pre-edit text | yes | all of the above (created by `20260706000000`, C1) |
 | `transcript_search_documents` | **Derived local routing map** from an indexed synthetic integer document id to `(workspace_id, meeting_id, source_chunk_id)`; maintenance-only, never an authority/domain entity | **no** | none — UNIQUE source lookup plus indexed workspace/meeting lookup; no transcript text |
 | `transcript_search_fts` | **Derived local FTS5 index**, one document per active `transcripts` segment; BM25 retrieval only, never an authority/domain entity | **no** | none — stores only normalized transcript text under the routing map's integer document id |
+| `speaker_turns` | `speaker_turn` — anonymous `Speaker N` over a `[start_ms, end_ms)` range (created by `20260808000000`, ADR-0034); derived from saved audio, so a meeting recorded without audio saving has none and cannot get any | **no** (ADR-0012 pins the synced set; a peer can regenerate turns from audio) | `id`, `workspace_id`, `created_at`, `updated_at` only — deliberately **no** `updated_by`/`rev`/`deleted_at` |
 | `local_privacy_maintenance` | **Content-free local maintenance marker** for crash-resumable FTS/WAL/free-page compaction | **no** | none — singleton operational state only; no meeting/workspace id or content |
 | `settings`, `transcript_settings` | `settings` (per-workspace config) | **no** (their `*ApiKey` columns now hold only the non-secret marker `keychain:v1` — the real BYOK secret lives in the OS credential store, see ADR-0011; columns retained for schema compat, never synced raw) | `workspace_id`, `created_at`, `updated_at` only — deliberately **no** `updated_by`/`rev`/`deleted_at` |
 | `licensing` | — (device-scoped license activation state, not workspace domain data) | no | none — deliberately untouched |
