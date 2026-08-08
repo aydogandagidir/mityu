@@ -340,6 +340,27 @@ pub(crate) async fn delete_meeting_with_connection(
         .execute(&mut *transaction)
         .await?;
 
+    // The learning system's corrections. Its own migration calls this "the most
+    // sensitive table in this schema after `transcripts`" because it stores the
+    // AI draft AND the human's rewrite of it, and ADR-0030 promises "no residue
+    // anywhere" after a meeting is deleted. That promise was false until this
+    // line existed: capture is on by default (`LearningConfig::default()`), and
+    // the declared `ON DELETE CASCADE` cannot fire because this connection runs
+    // with `PRAGMA foreign_keys = OFF` by design (see `delete_database_records`).
+    sqlx::query("DELETE FROM correction_events WHERE meeting_id = ? AND workspace_id = ?")
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .execute(&mut *transaction)
+        .await?;
+
+    // Diarization turns (ADR-0034). Nothing writes these yet, but the row must
+    // exist here before anything does — for the same reason as above.
+    sqlx::query("DELETE FROM speaker_turns WHERE meeting_id = ? AND workspace_id = ?")
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .execute(&mut *transaction)
+        .await?;
+
     // Finally delete only the caller-owned parent. With cascades disabled on
     // this disposable connection, foreign malformed children remain untouched.
     let result = sqlx::query("DELETE FROM meetings WHERE id = ? AND workspace_id = ?")
