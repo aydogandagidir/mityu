@@ -117,6 +117,35 @@ enum Cmd {
         /// sayı, örtüşme dahil hesaplanmış bir sayıyla KARŞILAŞTIRILAMAZ.
         #[arg(long)]
         skip_overlap: bool,
+        /// Değerlendirme bölgesini bir UEM dosyasından oku (<dosya> <kanal>
+        /// <baş> <son>). Verilmezse referansın kapsadığı aralık kullanılır.
+        #[arg(long)]
+        uem: Option<PathBuf>,
+        /// Tüm zaman çizelgesini puanla — referans aralığının dışına taşan
+        /// hipotez konuşması da yanlış alarm sayılır. Yayınlanmış DER sayıları
+        /// bu şekilde HESAPLANMAZ; karşılaştırma yaparken kullanma.
+        #[arg(long, conflicts_with = "uem")]
+        score_everything: bool,
+    },
+    /// Bir korpusun tamamını puanla: her referans RTTM'i aynı adlı hipotezle
+    /// eşleştirir ve HAVUZLANMIŞ DER verir (dosya başı DER'lerin ortalaması değil)
+    DerSuite {
+        /// Referans RTTM'lerin bulunduğu dizin (ör. VoxConverse dev/)
+        #[arg(long)]
+        reference_dir: PathBuf,
+        /// Sistem çıktısı RTTM'lerin bulunduğu dizin; dosya adları eşleşmeli
+        #[arg(long)]
+        hypothesis_dir: PathBuf,
+        #[arg(long, default_value_t = 0.0)]
+        collar: f64,
+        #[arg(long)]
+        skip_overlap: bool,
+        /// Tüm kayıtlar için tek bir UEM dosyası
+        #[arg(long)]
+        uem: Option<PathBuf>,
+        /// En kötü N dosyayı listele
+        #[arg(long, default_value_t = 10)]
+        worst: usize,
     },
 }
 
@@ -937,14 +966,37 @@ async fn main() -> Result<()> {
         file_id,
         collar,
         skip_overlap,
+        uem,
+        score_everything,
     } = &cli.cmd
     {
-        return cmd_der(
+        return cmd_der(DerArgs {
             reference,
             hypothesis,
-            file_id.as_deref(),
+            file_id: file_id.as_deref(),
+            collar_secs: *collar,
+            skip_overlap: *skip_overlap,
+            uem: uem.as_deref(),
+            score_everything: *score_everything,
+        });
+    }
+
+    if let Cmd::DerSuite {
+        reference_dir,
+        hypothesis_dir,
+        collar,
+        skip_overlap,
+        uem,
+        worst,
+    } = &cli.cmd
+    {
+        return cmd_der_suite(
+            reference_dir,
+            hypothesis_dir,
             *collar,
             *skip_overlap,
+            uem.as_deref(),
+            *worst,
         );
     }
 
@@ -980,7 +1032,9 @@ async fn main() -> Result<()> {
             .await
         }
         // Handled above, before the eval/ requirement.
-        Cmd::Der { .. } => unreachable!("dispatched before the eval/ check"),
+        Cmd::Der { .. } | Cmd::DerSuite { .. } => {
+            unreachable!("dispatched before the eval/ check")
+        }
     }
 }
 
@@ -991,13 +1045,26 @@ async fn main() -> Result<()> {
 /// (the segmenter is deaf) versus all confusion (the clustering is wrong), and
 /// only the components say which part to fix. The speaker mapping is printed for
 /// the same reason — it is the step most likely to be silently wrong.
-fn cmd_der(
-    reference: &Path,
-    hypothesis: &Path,
-    file_id: Option<&str>,
+struct DerArgs<'a> {
+    reference: &'a Path,
+    hypothesis: &'a Path,
+    file_id: Option<&'a str>,
     collar_secs: f64,
     skip_overlap: bool,
-) -> Result<()> {
+    uem: Option<&'a Path>,
+    score_everything: bool,
+}
+
+fn cmd_der(args: DerArgs<'_>) -> Result<()> {
+    let DerArgs {
+        reference,
+        hypothesis,
+        file_id,
+        collar_secs,
+        skip_overlap,
+        uem,
+        score_everything,
+    } = args;
     if !(collar_secs.is_finite() && collar_secs >= 0.0) {
         bail!("--collar negatif olamaz ve sonlu olmalı: {collar_secs}");
     }
@@ -1014,15 +1081,46 @@ fn cmd_der(
     // unrelated pair whose timelines happen to line up scores a low, meaningless
     // DER.
     diarization::ensure_same_recording(&reference_rttm, &hypothesis_rttm)?;
+
+    // The scored stretch of the timeline. The default matches NIST md-eval, so
+    // a number produced here means the same thing as a number in a paper.
+    //
+    // Resolved AFTER the reference is read on purpose: a UEM normally covers a
+    // whole corpus, and without `--file-id` its other recordings' spans would be
+    // folded in — either tripping the overlap check with a spurious error or
+    // silently enlarging the scored region. So an omitted `--file-id` falls back
+    // to the recording the reference itself names, which is what `der-suite`
+    // already does.
+    let region = match (uem, score_everything) {
+        (Some(path), _) => {
+            let selector = file_id.or(reference_rttm.file_id.as_deref());
+            let text = std::fs::read_to_string(path)
+                .with_context(|| format!("UEM okunamadı: {}", path.display()))?;
+            let spans = diarization::parse_uem(&text, selector)
+                .with_context(|| format!("UEM ayrıştırılamadı: {}", path.display()))?;
+            if spans.is_empty() {
+                bail!(
+                    "UEM {} içinde '{}' kaydı için aralık yok — puanlanacak bölge boş olurdu",
+                    path.display(),
+                    selector.unwrap_or("<isimsiz>")
+                );
+            }
+            diarization::EvalRegion::Uem(spans)
+        }
+        (None, true) => diarization::EvalRegion::Full,
+        (None, false) => diarization::EvalRegion::ReferenceExtent,
+    };
+
     let reference_turns = reference_rttm.turns;
     let hypothesis_turns = hypothesis_rttm.turns;
 
     let report = diarization::der(
         &reference_turns,
         &hypothesis_turns,
-        diarization::DerOptions {
+        &diarization::DerOptions {
             collar: diarization::secs_to_micros(collar_secs),
             skip_overlap,
+            region,
         },
     )?;
 
@@ -1033,6 +1131,16 @@ fn cmd_der(
     println!("  reference    {:.2}s", report.total_reference);
     if report.excluded > 0.0 {
         println!("  excluded     {:.2}s (collar/overlap)", report.excluded);
+    }
+    // Never folded into the headline and never omitted: under the default region
+    // this is speech the system invented outside the reference's extent, which
+    // the convention says not to score. Not scoring it is not a reason to hide
+    // it — that would be a phantom speaker nobody sees.
+    if report.unscored_hypothesis > 0.0 {
+        println!(
+            "  unscored hyp {:.2}s (bölge dışı — puanlanmadı, ama yok sayılmadı)",
+            report.unscored_hypothesis
+        );
     }
     println!(
         "konuşmacı      referans {} / hipotez {}",
@@ -1051,12 +1159,174 @@ fn cmd_der(
     for s in unmatched {
         println!("  {s} -> (eşleşmedi)");
     }
+    let region_note = if score_everything {
+        "tüm zaman çizelgesi".to_string()
+    } else if uem.is_some() {
+        format!("UEM ({} aralık)", report.region.len())
+    } else if let Some((a, b)) = report.region.first() {
+        format!("referans aralığı [{a:.2}, {b:.2}]")
+    } else {
+        "boş".to_string()
+    };
     println!(
-        "koşul          collar={collar_secs:.2}s, örtüşme {}",
+        "koşul          collar={collar_secs:.2}s, örtüşme {}, bölge: {region_note}",
         if skip_overlap {
             "puanlanmadı"
         } else {
             "dahil"
+        }
+    );
+    Ok(())
+}
+
+/// Score a whole corpus: every reference RTTM against the same-named hypothesis.
+///
+/// A reference with NO matching hypothesis is scored as a total miss, never
+/// skipped. Skipping would mean a system that crashes on its hardest files
+/// improves its corpus number by failing — the opposite of what a measurement
+/// should reward.
+fn cmd_der_suite(
+    reference_dir: &Path,
+    hypothesis_dir: &Path,
+    collar_secs: f64,
+    skip_overlap: bool,
+    uem: Option<&Path>,
+    worst: usize,
+) -> Result<()> {
+    if !(collar_secs.is_finite() && collar_secs >= 0.0) {
+        bail!("--collar negatif olamaz ve sonlu olmalı: {collar_secs}");
+    }
+
+    // `filter_map(|e| e.ok())` would drop an unreadable entry silently, and a
+    // reference that vanishes from the evaluation IMPROVES the corpus DER — the
+    // same failure this command refuses for a missing hypothesis.
+    let mut references: Vec<PathBuf> = std::fs::read_dir(reference_dir)
+        .with_context(|| format!("referans dizini okunamadı: {}", reference_dir.display()))?
+        .collect::<std::io::Result<Vec<_>>>()
+        .with_context(|| format!("referans dizini taranamadı: {}", reference_dir.display()))?
+        .into_iter()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("rttm"))
+        })
+        .collect();
+    references.sort();
+    if references.is_empty() {
+        bail!(
+            "{} içinde .rttm dosyası yok — puanlanacak bir şey olmadan 0% raporlamak yanıltıcı olurdu",
+            reference_dir.display()
+        );
+    }
+
+    let uem_text = match uem {
+        Some(path) => Some(
+            std::fs::read_to_string(path)
+                .with_context(|| format!("UEM okunamadı: {}", path.display()))?,
+        ),
+        None => None,
+    };
+
+    let mut results: Vec<(String, diarization::DerReport)> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
+
+    for ref_path in &references {
+        let stem = ref_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let reference = diarization::parse_rttm(
+            &std::fs::read_to_string(ref_path)
+                .with_context(|| format!("referans okunamadı: {}", ref_path.display()))?,
+            None,
+        )
+        .with_context(|| format!("referans ayrıştırılamadı: {}", ref_path.display()))?;
+
+        let hyp_path = hypothesis_dir.join(format!("{stem}.rttm"));
+        let hypothesis = if hyp_path.is_file() {
+            let parsed = diarization::parse_rttm(
+                &std::fs::read_to_string(&hyp_path)
+                    .with_context(|| format!("hipotez okunamadı: {}", hyp_path.display()))?,
+                None,
+            )
+            .with_context(|| format!("hipotez ayrıştırılamadı: {}", hyp_path.display()))?;
+            diarization::ensure_same_recording(&reference, &parsed)
+                .with_context(|| stem.clone())?;
+            parsed.turns
+        } else {
+            // Scored as a total miss; see the note above.
+            missing.push(stem.clone());
+            Vec::new()
+        };
+
+        let region = match &uem_text {
+            Some(text) => diarization::EvalRegion::Uem(
+                diarization::parse_uem(text, reference.file_id.as_deref())
+                    .context("UEM ayrıştırılamadı")?,
+            ),
+            None => diarization::EvalRegion::ReferenceExtent,
+        };
+
+        let report = diarization::der(
+            &reference.turns,
+            &hypothesis,
+            &diarization::DerOptions {
+                collar: diarization::secs_to_micros(collar_secs),
+                skip_overlap,
+                region,
+            },
+        )
+        .with_context(|| format!("{stem} puanlanamadı"))?;
+        results.push((stem, report));
+    }
+
+    let c = diarization::pool(&results);
+    println!("DER (pooled)   {:.2}%", c.pooled_der * 100.0);
+    println!("  missed       {:.1}s", c.missed);
+    println!("  false alarm  {:.1}s", c.false_alarm);
+    println!("  confusion    {:.1}s", c.confusion);
+    println!("  reference    {:.1}s", c.total_reference);
+    if c.unscored_hypothesis > 0.0 {
+        println!("  unscored hyp {:.1}s (bölge dışı)", c.unscored_hypothesis);
+    }
+    println!("dosya          {}", c.files);
+    // Reported, never quoted as THE number: a large gap means performance
+    // depends on file length, which the pooled figure alone would hide.
+    println!(
+        "DER (macro avg){:.2}%  <- karşılaştırma için; korpus DER'i havuzlanmış olandır",
+        c.macro_der * 100.0
+    );
+    if !missing.is_empty() {
+        println!(
+            "UYARI: {} referansın hipotezi yok, tam kaçırma olarak puanlandı: {}",
+            missing.len(),
+            missing
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if worst > 0 {
+        println!("en kötü {worst}:");
+        for (id, der) in c.per_file.iter().take(worst) {
+            println!("  {id:20} {:.2}%", der * 100.0);
+        }
+    }
+    println!(
+        "koşul          collar={collar_secs:.2}s, örtüşme {}, bölge: {}",
+        if skip_overlap {
+            "puanlanmadı"
+        } else {
+            "dahil"
+        },
+        if uem.is_some() {
+            "UEM"
+        } else {
+            "referans aralığı"
         }
     );
     Ok(())
