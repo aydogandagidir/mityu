@@ -228,6 +228,7 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 ### H4 · Cross-platform CI for `diarize-helper`
 - Agent: qa-release-engineer · Cmd: /release · depends-on: H3a
 - AC: the helper is built on `windows-latest` and on macOS. Note the current gap: `ci.yml` builds and tests **only `ubuntu-latest`**, `release.yml` is Windows-only, and `build-macos.yml` is dispatch-only — so today a macOS break surfaces at release and a Windows break surfaces only in the release job.
+- **Also fix, found 2026-08-09:** `build.yml`'s **llama-helper** macOS/Linux step builds for the runner host and copies the result under `inputs.target`'s name. On an Intel runner asked for `aarch64-apple-darwin` that puts an x86_64 binary inside an ARM app under an ARM filename — it looks right and fails to launch. The diarize-helper step was written from that same template and has been corrected to build with `--target`; llama-helper's has not, and is left as its own change because the macOS release path cannot be exercised from here.
 
 ### H5 · Diarization runtime + memory on a 60–90 minute recording
 - Agent: qa-release-engineer · Cmd: /audio-debug · depends-on: H3a
