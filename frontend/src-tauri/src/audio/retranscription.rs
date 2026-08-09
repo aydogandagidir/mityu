@@ -146,7 +146,12 @@ pub async fn start_retranscription<R: Runtime>(
 
 /// Find audio file in meeting folder
 /// Tries common names first, then scans for any file with an audio extension
-fn find_audio_file(folder: &Path) -> Result<PathBuf> {
+///
+/// `pub(crate)` so diarization probes availability with the SAME definition
+/// retranscription uses. Two copies of "does this meeting still have audio?"
+/// would eventually disagree, and the disagreement would show up as a feature
+/// offering itself and then failing.
+pub(crate) fn find_audio_file(folder: &Path) -> Result<PathBuf> {
     let candidates = [
         "audio.mp4",
         "audio.m4a",

@@ -9,4 +9,7 @@
 //! post-hoc pass over a finished recording, so it can fail without affecting a
 //! recording in progress (`CLAUDE.md` §4).
 
+pub mod commands;
 pub mod models;
+pub mod service;
+pub mod sidecar;

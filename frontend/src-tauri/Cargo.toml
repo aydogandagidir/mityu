@@ -149,6 +149,10 @@ sha2 = "0.10"
 # already in Cargo.lock via sherpa-onnx-sys, so this adds no crate to the graph.
 tar = "0.4"
 bzip2 = "0.4"
+# Writing the 16 kHz mono WAV the diarization sidecar accepts. The sidecar
+# refuses to resample, so the conversion happens here through the app's own
+# decoder and this only serialises the result.
+hound = "3.5"
 
 sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "chrono"] }
 

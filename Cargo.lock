@@ -3828,6 +3828,7 @@ dependencies = [
  "futures",
  "futures-channel",
  "futures-util",
+ "hound",
  "infer 0.15.0",
  "keyring",
  "lazy_static",
