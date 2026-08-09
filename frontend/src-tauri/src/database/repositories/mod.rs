@@ -3,6 +3,7 @@ pub mod correction_event;
 pub mod learned_rule;
 pub mod meeting;
 pub mod setting;
+pub mod speaker_turn;
 pub mod summary;
 pub mod summary_draft;
 pub mod transcript;

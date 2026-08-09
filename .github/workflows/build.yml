@@ -595,6 +595,24 @@ jobs:
           Write-Host "Copied llama-helper to frontend/src-tauri/binaries/"
           Get-ChildItem "frontend/src-tauri/binaries/"
 
+      - name: Build diarize-helper sidecar (Windows)
+        if: contains(inputs.platform, 'windows')
+        shell: pwsh
+        run: |
+          # The archive bootstrap MUST run before cargo touches sherpa-onnx-sys:
+          # that crate downloads a prebuilt native archive with no integrity
+          # check of any kind, and its build script runs before any of ours
+          # (ADR-0035 decision 4). This fails closed on a bad digest or size.
+          python tools/diarization/fetch-sherpa-archive.py --github-env
+          if ($LASTEXITCODE -ne 0) { Write-Error "sherpa archive verification failed"; exit 1 }
+
+          cargo build --release -p diarize-helper
+          if ($LASTEXITCODE -ne 0) { Write-Error "Failed to build diarize-helper"; exit $LASTEXITCODE }
+
+          New-Item -ItemType Directory -Force -Path "frontend/src-tauri/binaries" | Out-Null
+          Copy-Item "target/release/diarize-helper.exe" -Destination "frontend/src-tauri/binaries/diarize-helper-x86_64-pc-windows-msvc.exe"
+          Get-ChildItem "frontend/src-tauri/binaries/"
+
       - name: Build llama-helper sidecar (macOS/Linux)
         if: "!contains(inputs.platform, 'windows')"
         shell: bash
@@ -622,6 +640,33 @@ jobs:
           # Copy binary to binaries directory
           mkdir -p frontend/src-tauri/binaries
           cp target/release/llama-helper frontend/src-tauri/binaries/llama-helper-${TARGET}
+
+      - name: Build diarize-helper sidecar (macOS/Linux)
+        if: "!contains(inputs.platform, 'windows')"
+        shell: bash
+        run: |
+          # Resolve the target FIRST and build for it explicitly. The app itself
+          # is cross-compiled (its bundle is read from target/<triple>/...), and
+          # `build-macos.yml` asks for aarch64-apple-darwin. Building the sidecar
+          # for the runner host and then copying it under the requested triple's
+          # name would put an x86_64 helper inside an ARM app under an ARM
+          # filename -- it would look right and fail to launch.
+          TARGET="${{ inputs.target }}"
+          if [[ -z "$TARGET" ]]; then
+            TARGET=$(rustc -vV | grep "host:" | awk '{print $2}')
+          fi
+          echo "building diarize-helper for $TARGET"
+
+          # The bootstrap needs the same triple: it fetches the native archive
+          # for the target platform, not for the runner. And it must precede
+          # cargo, because sherpa-onnx-sys downloads an unverified archive
+          # otherwise (ADR-0035 decision 4).
+          python3 tools/diarization/fetch-sherpa-archive.py --target "$TARGET" --github-env
+
+          cargo build --release -p diarize-helper --target "$TARGET"
+
+          mkdir -p frontend/src-tauri/binaries
+          cp "target/$TARGET/release/diarize-helper" "frontend/src-tauri/binaries/diarize-helper-${TARGET}"
 
           echo "Copied llama-helper to frontend/src-tauri/binaries/llama-helper-${TARGET}"
           ls -la frontend/src-tauri/binaries/
