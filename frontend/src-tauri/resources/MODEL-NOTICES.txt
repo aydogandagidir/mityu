@@ -32,5 +32,65 @@ Licensed under Creative Commons Attribution 4.0 (CC BY 4.0).
 Original model: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
 ONNX conversion: https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx
 
+pyannote segmentation-3.0 (speaker segmentation)
+------------------------------------------------
+Licensed under the MIT License.
+
+  Copyright (c) 2022 CNRS
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+Original model: https://huggingface.co/pyannote/segmentation-3.0
+ONNX conversion, as downloaded by Mityu:
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2
+
+That archive carries this MIT text and its CNRS copyright line, and Mityu keeps
+the file on disk beside the model as `segmentation.LICENSE` — it is verified by
+length and SHA-256 like the model itself, so deleting it makes the model report
+as unavailable rather than leaving the weights without their licence.
+
+3D-Speaker CAM++ (speaker embedding)
+-------------------------------------
+Licensed under the Apache License, Version 2.0.
+
+  Copyright (c) Alibaba DAMO Academy, 3D-Speaker project contributors
+
+  Licensed under the Apache License, Version 2.0 (the "License"); you may not
+  use this file except in compliance with the License. You may obtain a copy of
+  the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+  License for the specific language governing permissions and limitations under
+  the License.
+
+Original model: https://modelscope.cn/models/iic/speech_campplus_sv_zh-cn_16k-common
+Project: https://github.com/modelscope/3D-Speaker
+ONNX file, as downloaded by Mityu:
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
+
+Unlike the segmentation package, this model is published as a bare .onnx with no
+accompanying licence file, so this notice is supplied by Mityu rather than
+carried by the artifact.
+
 These notices do not replace the linked model terms. Review the applicable terms
 before downloading, using, modifying, or redistributing a model.

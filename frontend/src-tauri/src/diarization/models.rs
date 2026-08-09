@@ -390,6 +390,73 @@ where
 
 #[cfg(test)]
 mod tests {
+    /// Every model we ship a downloader for is attributed in the notice file.
+    ///
+    /// The notice is a redistribution obligation, not documentation: CAM++ is
+    /// published as a bare `.onnx` with no licence file, so if this list grows
+    /// and the notice does not, Mityu ships a model whose licence text exists
+    /// nowhere in the product. Reads the real file rather than a copy, so the
+    /// two cannot drift.
+    #[test]
+    fn every_downloaded_model_is_attributed_in_the_notice_file() {
+        let notices = include_str!("../../resources/MODEL-NOTICES.txt");
+        for source in SOURCES {
+            let asset = source.url.rsplit('/').next().expect("asset name");
+            assert!(
+                notices.contains(asset),
+                "resources/MODEL-NOTICES.txt does not mention {asset}, which Mityu downloads"
+            );
+        }
+        // The two obligations ADR-0034's amendment identified by name, each
+        // checked INSIDE its own section. Searching the whole file would not
+        // guard them: Qwen's section already carries the exact phrase "Apache
+        // License, Version 2.0", so a file-wide assertion passes even with
+        // CAM++'s attribution deleted -- it would advertise a guarantee it does
+        // not provide.
+        let section = |heading: &str| -> String {
+            let start = notices
+                .find(heading)
+                .unwrap_or_else(|| panic!("MODEL-NOTICES.txt has no '{heading}' section"));
+            let rest = &notices[start + heading.len()..];
+            // Step over this heading's OWN dashed underline before looking for
+            // the next one -- otherwise the very first match is the underline
+            // one line below the heading and every section comes back empty.
+            let after_underline = match rest.find("\n---") {
+                Some(i) => match rest[i + 1..].find('\n') {
+                    Some(j) => i + 1 + j + 1,
+                    None => rest.len(),
+                },
+                None => 0,
+            };
+            let body = &rest[after_underline..];
+            // Sections are separated by the next heading's underline.
+            match body.find("\n---") {
+                Some(end) => body[..end].to_string(),
+                None => body.to_string(),
+            }
+        };
+
+        let segmentation = section("pyannote segmentation-3.0");
+        assert!(
+            segmentation.contains("Copyright (c) 2022 CNRS"),
+            "the segmentation section lost its MIT copyright line"
+        );
+        assert!(
+            segmentation.contains("MIT License"),
+            "the segmentation section lost its licence name"
+        );
+
+        let campplus = section("3D-Speaker CAM++");
+        assert!(
+            campplus.contains("Apache License, Version 2.0"),
+            "the CAM++ section lost its Apache-2.0 attribution"
+        );
+        assert!(
+            campplus.contains("http://www.apache.org/licenses/LICENSE-2.0"),
+            "the CAM++ section lost the licence URL Apache-2.0 requires"
+        );
+    }
+
     /// The number on the download button, kept honest.
     ///
     /// The UI promises "Download models (35 MB)". That is what crosses the

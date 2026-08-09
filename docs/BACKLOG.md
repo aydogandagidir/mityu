@@ -238,9 +238,30 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 - Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: H3b-2
 - AC: a transcript row overlapping more than one turn shows more than one speaker (rows and turns do not align — see the migration's own note); talk-time is descriptive only, never a score or ranking; labels stay anonymous `Speaker N` and naming a speaker is a manual human action; the four states are distinguished — no audio / never ran / ran-inconclusive / has turns.
 
+### H10 · ⛔ BLOCKER — GPL-3.0 espeak-ng is statically linked into `diarize-helper`
+- Agent: qa-release-engineer · Cmd: /security-review · blocks: H7 (sherpa half), and shipping diarization at all
+- **Measured, not argued.** `sherpa-onnx-sys` 1.13.4's static link list names `espeak-ng` and `piper_phonemize` (`build.rs:23-24`), and the pinned prebuilt archive carries `lib/espeak-ng.lib`. The **release** binary (`cargo build -p diarize-helper --release`, 18,465,280 B) contains **51 espeak function symbols** (`espeak_Initialize`, `espeak_CompileDictionary`, …), 3 espeak runtime error strings and 2 espeak Windows registry keys. `/OPT:REF` does **not** discard it — this was checked precisely because it discarded all of sherpa in the earlier link spike.
+- **eSpeak NG is GPL-3.0** — verified from its own `COPYING` ("GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007"). Shipping this binary inside a closed commercial installer distributes GPL-3.0 object code without GPL terms or corresponding source.
+- **The clean fix exists upstream:** sherpa-onnx gates both libraries behind one CMake option — `option(SHERPA_ONNX_ENABLE_TTS "Whether to build TTS related code" ON)`; espeak-ng and piper-phonemize are pulled in only inside `if(SHERPA_ONNX_ENABLE_TTS)`. Diarization needs neither.
+- **But the crate cannot reach it:** `sherpa-onnx-sys` is prebuilt-only (`download_prebuilt_libs`, `SHERPA_ONNX_ARCHIVE_DIR`); it has no CMake path, so there is nowhere to pass `TTS=OFF`. Fixing this therefore needs BOTH a TTS-off archive AND a link list that omits `espeak-ng`/`piper_phonemize`.
+- **Checked, and it is far smaller than first recorded: k2-fsa already publishes `no-tts` prebuilts.** Queried the v1.13.4 release (303 assets). A `-no-tts-lib` twin exists for every target we pin except one:
+
+  | pinned target | current asset | `no-tts` twin |
+  |---|---|---|
+  | `x86_64-pc-windows-msvc` | `win-x64-static-MT-Release-lib` (119,847,445 B) | **yes** — `...-no-tts-lib` (116,684,776 B) |
+  | `x86_64-unknown-linux-gnu` | `linux-x64-static-lib` | **yes** (21,142,120 B) |
+  | `x86_64-apple-darwin` | `osx-x64-static-lib` | **yes** (18,236,816 B) |
+  | `aarch64-apple-darwin` | `osx-arm64-static-lib` | **yes** (18,353,357 B) |
+  | `aarch64-unknown-linux-gnu` | `linux-aarch64-static-lib` | **NO — upstream publishes none** |
+
+  So the fix is a **pin swap plus a ~6-line crate patch**, not a from-source build, and ADR-0035's "pinned upstream immutable release" story survives intact. Two hardcoded things in `sherpa-onnx-sys` must change: `archive_name()` builds the TTS-on filename with no switch, and `STATIC_LIBS` names `piper_phonemize`, `espeak-ng` and `ucd`. Vendor a patched copy, or upstream a `no-tts` cargo feature.
+- **The one gap is `aarch64-unknown-linux-gnu`**, for which upstream publishes no `no-tts` build at all. That target is pinned by `fetch-sherpa-archive.py` but is built by neither `ci.yml` nor `build.yml`, and ADR-0022 already records Linux system audio as broken — so the honest choices are to drop the pin (the bootstrap already fails closed on unpinned targets) or build that one target from source. Decide it explicitly rather than letting it ship TTS-on.
+- If the above is rejected: build every target from source with `SHERPA_ONNX_ENABLE_TTS=OFF` (H2's `SHERPA_ONNX_ARCHIVE_DIR` indirection makes this mechanically easy, but the pin then covers *our* artifact and H2's integrity story needs rewriting), or move to a different engine. **Owner decision — it touches ADR-0035.**
+- AC: the shipped `diarize-helper` binary contains zero espeak/piper symbols, proven the same way this was found (`strings` over the release binary), with that check wired into CI so it cannot regress.
+
 ### H7 · Third-party notices for the sidecar and models
 - Agent: qa-release-engineer · Cmd: /release · depends-on: H3b-2
-- AC: `resources/MODEL-NOTICES.txt` gains the MIT text + `Copyright (c) 2022 CNRS` for segmentation and the Apache-2.0 attribution for CAM++ (published as a bare `.onnx` with no licence file, so the notice is ours to supply); the statically linked Apache-2.0 sherpa-onnx binary is attributed the way ADR-0021 settled it for FFmpeg.
+- AC: `resources/MODEL-NOTICES.txt` gains the MIT text + `Copyright (c) 2022 CNRS` for segmentation and the Apache-2.0 attribution for CAM++ (published as a bare `.onnx` with no licence file, so the notice is ours to supply) — **DONE 2026-08-10**, guarded by `models::tests::every_downloaded_model_is_attributed_in_the_notice_file`, which fails if a pin is added without a notice. The sidecar half — attributing the statically linked sherpa-onnx binary the way ADR-0021 settled it for FFmpeg — is **BLOCKED on H10**: that binary is not purely Apache-2.0, it also contains GPL-3.0 espeak-ng, so writing an Apache-2.0 notice for it would be writing a false notice.
 
 ### H8 · DER instrument hardening
 - Agent: qa-release-engineer · Cmd: /fix-bug · depends-on: —
