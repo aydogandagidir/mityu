@@ -25,6 +25,27 @@
 - Frontend: component tests for review/consent/export; an e2e for record→approve→export where feasible.
 - A bug fix ships with a regression test.
 
+### Seeing a UI change, not just compiling it
+A UI change is not done until it has been looked at. `tsc`, lint and a mockup all
+pass on a screen that renders nothing.
+
+```bash
+python tools/ui/shoot.py --build design/report --expect "Action items"
+```
+
+It builds the static export, serves it over HTTP, screenshots each route and
+**fails** if the PNG is suspiciously small or the rendered DOM is missing the
+text you named. Two traps it exists to close, both of which produce a valid PNG
+of nothing:
+- Opening the export over `file://` gives an unstyled shell — the assets are
+  referenced by absolute path, so `/` resolves to the filesystem root.
+- Pages that call `invoke()` cannot render outside the Tauri runtime; they sit
+  on a loading state forever. Screenshot the `/design/*` route with fixture data
+  instead, which is what those routes are for.
+
+Shots land in `target/ui-shots/` (ignored). This does not replace running the
+real app — it catches "renders nothing" early, not "wrong in the app".
+
 ## Git / PR
 - Branches: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `refactor/<slug>`.
 - Conventional commits: `feat: …`, `fix: …`, `refactor: …`, `docs: …`, `test: …`, `chore: …`.
