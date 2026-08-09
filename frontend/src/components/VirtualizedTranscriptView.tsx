@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useReducer, startTransition, useEffect, useState, memo } from "react";
+import { useCallback, useMemo, useRef, useReducer, startTransition, useEffect, useState, memo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useTranscriptStreaming } from "@/hooks/useTranscriptStreaming";
@@ -9,6 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { RecordingStatusBar } from "./RecordingStatusBar";
 import { motion, AnimatePresence } from "framer-motion";
 import { TranscriptSegmentData } from "@/types";
+import { SpeakerChips } from "./report/SpeakerTurns";
+import { hasCrosstalk, speakersForRow, talkTime, type SpeakerTurn } from "@/lib/speakerTurns";
 
 export interface VirtualizedTranscriptViewProps {
     /** Transcript segments to display */
@@ -25,6 +27,14 @@ export interface VirtualizedTranscriptViewProps {
     enableStreaming?: boolean;
     /** Show confidence indicators */
     showConfidence?: boolean;
+    /**
+     * Stored speaker turns for this meeting, if a diarization pass has run.
+     *
+     * Optional and defaulted to empty, so every existing caller keeps today's
+     * behaviour: a meeting that was never diarized shows no speaker chips at
+     * all rather than a row of "Unknown".
+     */
+    speakerTurns?: SpeakerTurn[];
     /** Completely disable auto-scroll behavior (for meeting details page) */
     disableAutoScroll?: boolean;
 
@@ -88,6 +98,9 @@ const TranscriptSegment = memo(function TranscriptSegment({
     showConfidence,
     isHighlighted = false,
     onSeek,
+    speakers,
+    speakerOrder,
+    crosstalk,
 }: {
     id: string;
     timestamp: number;
@@ -98,6 +111,17 @@ const TranscriptSegment = memo(function TranscriptSegment({
     isHighlighted?: boolean;
     /** Jump audio playback to this segment (meeting report view only). */
     onSeek?: (sec: number) => void;
+    /**
+     * Speakers audible during this row -- a LIST, because a row can span a
+     * change of speaker (rows and turns come from separate passes and do not
+     * align). Empty means nothing is claimed, which is also what an
+     * un-diarized meeting and a row without timings both look like.
+     */
+    speakers?: string[];
+    /** Speaker order, so a speaker keeps one colour down the whole transcript. */
+    speakerOrder?: string[];
+    /** Two people talking at once here -- not merely two speakers in the row. */
+    crosstalk?: boolean;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
 
@@ -133,6 +157,13 @@ const TranscriptSegment = memo(function TranscriptSegment({
                     </TooltipContent>
                 </Tooltip>
                 <div className="flex-1">
+                    {speakers && speakers.length > 0 && (
+                        <SpeakerChips
+                            speakers={speakers}
+                            order={speakerOrder ?? []}
+                            crosstalk={crosstalk}
+                        />
+                    )}
                     {isStreaming ? (
                         <div className="bg-muted border border-border rounded-lg px-3 py-2">
                             <p className="text-[15px] text-foreground leading-relaxed">{displayText}</p>
@@ -164,7 +195,35 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     onSeekToTime,
     scrollNonce,
     onRequestSegment,
+    speakerTurns,
 }) => {
+    // Speaker order is fixed for the whole transcript so one speaker keeps one
+    // colour from top to bottom. It comes from `talkTime`, which orders by first
+    // appearance -- NOT by who spoke longest, which would make the colours a
+    // ranking (ADR-0034).
+    const speakerOrder = useMemo(
+        () => (speakerTurns?.length ? talkTime(speakerTurns).map((r) => r.label) : []),
+        [speakerTurns]
+    );
+    // Real simultaneous speech, which is rarer and more interesting than a row
+    // simply spanning a handover.
+    const crosstalkFor = useCallback(
+        (segment: TranscriptSegmentData) =>
+            speakerTurns?.length
+                ? hasCrosstalk({ start: segment.timestamp, end: segment.endTime }, speakerTurns)
+                : false,
+        [speakerTurns]
+    );
+    // Per-row, because a row can overlap more than one turn. Cheap: only the
+    // rows the virtualizer actually mounts are ever asked.
+    const speakersFor = useCallback(
+        (segment: TranscriptSegmentData) =>
+            speakerTurns?.length
+                ? speakersForRow({ start: segment.timestamp, end: segment.endTime }, speakerTurns)
+                : undefined,
+        [speakerTurns]
+    );
+
     // Create scroll ref first - shared between virtualizer and auto-scroll hook
     const scrollRef = useRef<HTMLDivElement>(null);
     // Ref for infinite scroll trigger element
@@ -404,6 +463,9 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
                                         isHighlighted={highlightedSegmentId === segment.id}
+                                        speakers={speakersFor(segment)}
+                                        speakerOrder={speakerOrder}
+                                        crosstalk={crosstalkFor(segment)}
                                     />
                                 </div>
                             );
@@ -462,6 +524,9 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
                                         isHighlighted={highlightedSegmentId === segment.id}
+                                        speakers={speakersFor(segment)}
+                                        speakerOrder={speakerOrder}
+                                        crosstalk={crosstalkFor(segment)}
                                     />
                                 </motion.div>
                             );

@@ -390,6 +390,25 @@ where
 
 #[cfg(test)]
 mod tests {
+    /// The number on the download button, kept honest.
+    ///
+    /// The UI promises "Download models (35 MB)". That is what crosses the
+    /// NETWORK, which is not the on-disk total: the segmentation model arrives
+    /// as a `.tar.bz2` (6.96 MB) and expands to 5.99 MB, so summing `ON_DISK`
+    /// would understate the download. Bumping a pin without updating
+    /// `MODEL_DOWNLOAD_MB` in `SpeakerTurns.tsx` fails here rather than leaving
+    /// the button quietly wrong.
+    #[test]
+    fn the_download_size_the_ui_promises() {
+        const CLAIMED_MB: u64 = 35;
+        let downloaded: u64 = SOURCES.iter().map(|s| s.size).sum();
+        assert_eq!(
+            downloaded / 1_000_000,
+            CLAIMED_MB,
+            "download is {downloaded} bytes; SpeakerTurns.tsx claims {CLAIMED_MB} MB"
+        );
+    }
+
     use super::*;
     use sha2::{Digest, Sha256};
 
