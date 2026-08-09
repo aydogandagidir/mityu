@@ -1,0 +1,29 @@
+# Post-hoc speaker diarization sidecar (ADR-0034 step c, ADR-0035).
+#
+# A SEPARATE PROCESS on purpose. sherpa-onnx statically links its own ONNX
+# Runtime; the app already links a different one through `ort` (Parakeet + the
+# silero VAD). In one binary the `static` combination does not link at all
+# (LNK1169) and the `shared` combination puts two independent runtimes in the
+# process that runs capture and transcription — CLAUDE.md §4's most fragile
+# subsystem. Out of process, neither is our problem: `parakeet_engine` is
+# untouched and the `silero_rs` -> `ort = "=2.0.0-rc.10"` pin stays intact.
+#
+# BEFORE BUILDING THIS: `tools/diarization/fetch-sherpa-archive.py` must have
+# run. `sherpa-onnx-sys` downloads a native archive with no integrity check of
+# any kind, and its build script runs before any of ours, so verification has to
+# happen outside cargo (ADR-0035 decision 4).
+[package]
+name = "diarize-helper"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.3", features = ["derive"] }
+hound = "3.5"
+# Default features = `static`: one self-contained binary with no sibling DLLs
+# (ADR-0035 decision 3). `shared` would mean shipping ~39 MB of loose libraries.
+sherpa-onnx = "1.13.4"

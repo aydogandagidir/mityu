@@ -207,24 +207,30 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 - AC: **met.** `tools/diarization/fetch-sherpa-archive.py` fetches the archive from a pinned release tag and URL and verifies **exact byte length and SHA-256** for all five static targets (Windows x64, Linux x64/aarch64, macOS x64/arm64), re-verifying on every run rather than trusting the cache. It fails closed on a wrong digest, a wrong size, a malformed pin, and — unlike `build/ffmpeg.rs`, deliberately — on an **unpinned target**, because a warning there would restore the unverified download it exists to prevent. The `ci.yml` step is self-activating: a no-op until `Cargo.lock` contains `sherpa-onnx-sys`, so it costs nothing today and cannot be forgotten in the PR that adds `diarize-helper`.
 - Proven end-to-end, with a control: with the verified directory supplied and `sherpa-onnx-sys` cleaned, the build completes and **never prints its download line**; from the *same* clean state with an empty directory it **fails** with `SHERPA_ONNX_ARCHIVE_DIR does not contain expected archive` — which is what proves the build script really re-ran, really consults the variable, and does not fall back to downloading.
 
-### H3 · `diarize-helper` sidecar (ADR-0034 step c)
-- Agent: rust-tauri-core-engineer · Cmd: /add-tauri-command then /feature · depends-on: H2
-- AC: new workspace member built with sherpa-onnx default (`static`) features — one self-contained binary, no sibling DLLs; `externalBin` entry in `tauri.conf.json` plus the CI build step `llama-helper` already needs; invoked post-hoc per meeting, never from the capture path (CLAUDE.md §4); availability probed with `find_audio_file`, so a transcripts-only meeting reports "not available" rather than failing; writes `speaker_turns` + `meetings.diarized_at` using the ADR-0035 decision 6 conversion (seconds→ms, `Speaker N` 1-based, confidence NULL); works with the network off.
+### H3a · `diarize-helper` binary (ADR-0034 step c, engine half) — DONE 2026-08-09
+- Agent: rust-tauri-core-engineer · Cmd: /feature · depends-on: H2
+- AC: **met.** New workspace member on sherpa-onnx default (`static`) features. Audio in, anonymous turns out; no state, no database, no network. Emits JSON in exactly the `speaker_turns` shape *or* RTTM, so its output is scoreable by `eval-harness der` with no conversion step in between that could itself be wrong. Refuses a non-16 kHz or non-mono WAV rather than resampling or downmixing silently — a hidden conversion there would move every timestamp. `num_clusters` defaults to `-1` (unknown, cluster by threshold), so no speaker count is imposed on a two-person meeting.
+- Proven on real audio: 16 s, two-speaker English sample with the real pyannote segmentation and CAM++ embedding models → **found exactly 2 speakers**, 4 turns, correct units and 1-based labels; its RTTM output re-scores 0.00% through `eval-harness der`. Fail-closed paths exercised: missing model, 8 kHz audio, stereo audio — all exit 1.
+- `externalBin` is deliberately **not** added here: `tauri-build` fails when a listed sidecar binary is absent, so declaring it before anything invokes it would break every developer build for no benefit. That belongs with H3b.
+
+### H3b · Wire the helper into the app
+- Agent: rust-tauri-core-engineer · Cmd: /add-tauri-command · depends-on: H3a
+- AC: `externalBin` entry in `tauri.conf.json` plus the CI build step `llama-helper` already needs; a Tauri command that runs the helper post-hoc per meeting, never from the capture path (CLAUDE.md §4); availability probed with `find_audio_file`, so a transcripts-only meeting reports "not available" rather than failing; converts the helper's JSON into `speaker_turns` rows and stamps `meetings.diarized_at`; model files resolved through the same revision-pinned, SHA-256-verified path Parakeet uses (ADR-0020); works with the network off.
 
 ### H4 · Cross-platform CI for `diarize-helper`
-- Agent: qa-release-engineer · Cmd: /release · depends-on: H3
+- Agent: qa-release-engineer · Cmd: /release · depends-on: H3a
 - AC: the helper is built on `windows-latest` and on macOS. Note the current gap: `ci.yml` builds and tests **only `ubuntu-latest`**, `release.yml` is Windows-only, and `build-macos.yml` is dispatch-only — so today a macOS break surfaces at release and a Windows break surfaces only in the release job.
 
 ### H5 · Diarization runtime + memory on a 60–90 minute recording
-- Agent: qa-release-engineer · Cmd: /audio-debug · depends-on: H3
+- Agent: qa-release-engineer · Cmd: /audio-debug · depends-on: H3a
 - AC: wall-clock and peak RSS measured on a long recording; decides whether H3 needs chunked progress reporting or can stay fire-and-forget. Clustering is superlinear in segment count, so a short-clip measurement does not answer this.
 
 ### H6 · Speaker labels + talk-time UI (ADR-0034 step d)
-- Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: H3
+- Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: H3b
 - AC: a transcript row overlapping more than one turn shows more than one speaker (rows and turns do not align — see the migration's own note); talk-time is descriptive only, never a score or ranking; labels stay anonymous `Speaker N` and naming a speaker is a manual human action; the four states are distinguished — no audio / never ran / ran-inconclusive / has turns.
 
 ### H7 · Third-party notices for the sidecar and models
-- Agent: qa-release-engineer · Cmd: /release · depends-on: H3
+- Agent: qa-release-engineer · Cmd: /release · depends-on: H3b
 - AC: `resources/MODEL-NOTICES.txt` gains the MIT text + `Copyright (c) 2022 CNRS` for segmentation and the Apache-2.0 attribution for CAM++ (published as a bare `.onnx` with no licence file, so the notice is ours to supply); the statically linked Apache-2.0 sherpa-onnx binary is attributed the way ADR-0021 settled it for FFmpeg.
 
 ### H8 · DER instrument hardening
