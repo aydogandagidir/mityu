@@ -145,6 +145,10 @@ ringbuf = "0.4.8"
 tempfile = "3.3.0"
 whatlang = "0.16.4"
 sha2 = "0.10"
+# Extracting the pinned diarization segmentation archive (ADR-0034). Both are
+# already in Cargo.lock via sherpa-onnx-sys, so this adds no crate to the graph.
+tar = "0.4"
+bzip2 = "0.4"
 
 sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "chrono"] }
 

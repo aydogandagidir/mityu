@@ -55,6 +55,7 @@ pub mod config;
 pub mod console_utils;
 pub mod context;
 pub mod database;
+pub mod diarization;
 pub mod groq;
 /// Local inference capability + backend selection (Tier-0 seam, DORMANT).
 /// One offline picture of what this device can run — shared by STT and the

@@ -213,9 +213,14 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 - Proven on real audio: 16 s, two-speaker English sample with the real pyannote segmentation and CAM++ embedding models → **found exactly 2 speakers**, 4 turns, correct units and 1-based labels; its RTTM output re-scores 0.00% through `eval-harness der`. Fail-closed paths exercised: missing model, 8 kHz audio, stereo audio — all exit 1.
 - `externalBin` is deliberately **not** added here: `tauri-build` fails when a listed sidecar binary is absent, so declaring it before anything invokes it would break every developer build for no benefit. That belongs with H3b.
 
-### H3b · Wire the helper into the app
-- Agent: rust-tauri-core-engineer · Cmd: /add-tauri-command · depends-on: H3a
-- AC: `externalBin` entry in `tauri.conf.json` plus the CI build step `llama-helper` already needs; a Tauri command that runs the helper post-hoc per meeting, never from the capture path (CLAUDE.md §4); availability probed with `find_audio_file`, so a transcripts-only meeting reports "not available" rather than failing; converts the helper's JSON into `speaker_turns` rows and stamps `meetings.diarized_at`; model files resolved through the same revision-pinned, SHA-256-verified path Parakeet uses (ADR-0020); works with the network off.
+### H3b-1 · Model manifest, verification and acquisition — DONE 2026-08-09
+- Agent: rust-tauri-core-engineer · Cmd: /feature · depends-on: H3a
+- AC: **met.** `src/diarization/models.rs` pins both artifacts by exact byte length and SHA-256 and verifies through `utils::verify_file_integrity` — the Parakeet shape, including its rule that an artifact **absent from the manifest is an error**. The segmentation archive's contents carry their own pins, because verifying the download says nothing about what is on disk a month later, and `status()` re-verifies on every call: a wrong model does not crash, it produces plausible and wrong speakers. The upstream MIT licence (`Copyright (c) 2022 CNRS`) is extracted and kept beside the model, since MIT requires the notice to travel with the copy. `tar` + `bzip2` add **no crate to the graph** — `sherpa-onnx-sys` already puts both in the lock file.
+- Proven end to end: the real 6,958,444 B archive and 28,281,138 B embedding download, verify, extract; a second call is a no-op rather than a re-download; the extracted licence still carries the CNRS line. And the digests the manifest pins are **byte-identical** to the model files the helper demonstrably found 2 speakers with — so the manifest describes the artifacts that actually work, not merely artifacts that hash consistently. The network-dependent half is `#[ignore]`d so the suite does not fail for reasons unrelated to the code.
+
+### H3b-2 · Wire the helper into the app
+- Agent: rust-tauri-core-engineer · Cmd: /add-tauri-command · depends-on: H3b-1
+- AC: `externalBin` entry in `tauri.conf.json` plus the CI build step `llama-helper` already needs; a Tauri command that runs the helper post-hoc per meeting, never from the capture path (CLAUDE.md §4); availability probed with `find_audio_file`, so a transcripts-only meeting reports "not available" rather than failing; the meeting's saved audio converted to 16 kHz mono through the existing FFmpeg sidecar, because the helper refuses to resample; converts the helper's JSON into `speaker_turns` rows and stamps `meetings.diarized_at`; works with the network off once the models are present.
 
 ### H4 · Cross-platform CI for `diarize-helper`
 - Agent: qa-release-engineer · Cmd: /release · depends-on: H3a
@@ -226,11 +231,11 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 - AC: wall-clock and peak RSS measured on a long recording; decides whether H3 needs chunked progress reporting or can stay fire-and-forget. Clustering is superlinear in segment count, so a short-clip measurement does not answer this.
 
 ### H6 · Speaker labels + talk-time UI (ADR-0034 step d)
-- Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: H3b
+- Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: H3b-2
 - AC: a transcript row overlapping more than one turn shows more than one speaker (rows and turns do not align — see the migration's own note); talk-time is descriptive only, never a score or ranking; labels stay anonymous `Speaker N` and naming a speaker is a manual human action; the four states are distinguished — no audio / never ran / ran-inconclusive / has turns.
 
 ### H7 · Third-party notices for the sidecar and models
-- Agent: qa-release-engineer · Cmd: /release · depends-on: H3b
+- Agent: qa-release-engineer · Cmd: /release · depends-on: H3b-2
 - AC: `resources/MODEL-NOTICES.txt` gains the MIT text + `Copyright (c) 2022 CNRS` for segmentation and the Apache-2.0 attribution for CAM++ (published as a bare `.onnx` with no licence file, so the notice is ours to supply); the statically linked Apache-2.0 sherpa-onnx binary is attributed the way ADR-0021 settled it for FFmpeg.
 
 ### H8 · DER instrument hardening
