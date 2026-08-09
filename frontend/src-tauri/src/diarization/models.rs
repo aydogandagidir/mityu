@@ -27,8 +27,12 @@
 //!
 //! The segmentation archive ships the upstream MIT licence with its original
 //! `Copyright (c) 2022 CNRS` line, and MIT requires that notice to accompany
-//! copies — so it is extracted and kept beside the model rather than discarded.
-//! It is not separately pinned because it arrives inside the verified archive.
+//! copies — so it is extracted, pinned, and required for the models to count as
+//! available. An earlier draft left it out of the manifest as "a notice, not an
+//! input"; the consequence was that a directory whose licence had been deleted
+//! still reported `Available`, `ensure()` early-returned, and the notice was
+//! never restored. The obligation this module documents has to be enforced by
+//! the same check as everything else, or it is not enforced at all.
 //! CAM++ is published as a bare `.onnx` with no licence file, so its Apache-2.0
 //! attribution is ours to supply at ship time (BACKLOG H7).
 
@@ -65,8 +69,9 @@ pub const SEGMENTATION_LICENSE: &str = "segmentation.LICENSE";
 
 /// Every file that must be present and correct for diarization to run.
 ///
-/// The licence is deliberately absent: it is a notice, not an input, and it
-/// arrives inside the archive this manifest already verifies.
+/// The licence is in here on purpose. It is not an input to inference, but
+/// shipping the model without it breaks the MIT terms we redistribute under, so
+/// "available" has to mean the notice is there too.
 const ON_DISK: &[ArtifactPin] = &[
     ArtifactPin {
         // pyannote segmentation-3.0, MIT (Copyright (c) 2022 CNRS), as
@@ -82,6 +87,13 @@ const ON_DISK: &[ArtifactPin] = &[
         filename: EMBEDDING_ONNX,
         size: 28_281_138,
         sha256: "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11",
+    },
+    ArtifactPin {
+        // The upstream MIT licence, carrying `Copyright (c) 2022 CNRS`. Pinned
+        // like the models: a notice that can silently go missing is not a notice.
+        filename: SEGMENTATION_LICENSE,
+        size: 1_061,
+        sha256: "14d7016ad68e7394d6e6b78d96cc2ae431c905287b89674cfdf021e79e62b8ba",
     },
 ];
 
@@ -355,11 +367,24 @@ where
     let mut written: u64 = 0;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.with_context(|| format!("read body of {url}"))?;
+        // Stop the moment the body exceeds the pin. The digest check downstream
+        // would reject an oversized response anyway, but only after writing all
+        // of it — and a mutable release endpoint or a redirect can serve a body
+        // of any length, so "reject afterwards" means filling the user's disk
+        // first.
+        if written + chunk.len() as u64 > expected_size {
+            bail!(
+                "{label} is larger than its pinned size ({expected_size} bytes);                  aborting the download rather than writing an unbounded body"
+            );
+        }
         file.write_all(&chunk).await.context("write model bytes")?;
         written += chunk.len() as u64;
         progress(label, written, expected_size);
     }
     file.flush().await.context("flush model file")?;
+    if written != expected_size {
+        bail!("{label} ended after {written} bytes, expected {expected_size}");
+    }
     Ok(())
 }
 
@@ -435,6 +460,34 @@ mod tests {
             }
             other => panic!("expected Corrupted, got {other:?}"),
         }
+    }
+
+    /// The licence is a redistribution obligation, so a directory that lost it
+    /// must not report `Available` — otherwise `ensure()` early-returns and the
+    /// notice is never restored, and the module's own promise goes unkept.
+    #[tokio::test]
+    async fn a_missing_licence_is_not_available() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let a = write(dir.path(), SEGMENTATION_ONNX, b"segmentation bytes");
+        let b = write(dir.path(), EMBEDDING_ONNX, b"embedding bytes");
+        let l = write(dir.path(), SEGMENTATION_LICENSE, b"MIT License CNRS");
+        assert!(matches!(
+            verify_all(dir.path(), &[a, b, l]).await,
+            ModelStatus::Available(_)
+        ));
+
+        std::fs::remove_file(dir.path().join(SEGMENTATION_LICENSE)).expect("remove licence");
+        match verify_all(dir.path(), &[a, b, l]).await {
+            ModelStatus::Corrupted { filename, .. } => assert_eq!(filename, SEGMENTATION_LICENSE),
+            other => panic!("expected Corrupted, got {other:?}"),
+        }
+    }
+
+    /// The licence must be in the real manifest, not only in the docs.
+    #[test]
+    fn the_licence_is_part_of_the_real_manifest() {
+        assert!(ON_DISK.iter().any(|p| p.filename == SEGMENTATION_LICENSE));
+        assert!(pin(SEGMENTATION_LICENSE).is_ok());
     }
 
     /// Mirrors Parakeet's rule: an artifact nobody pinned must be an error, not
