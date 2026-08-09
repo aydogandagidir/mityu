@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "frontend/src-tauri",
     "llama-helper",
+    "diarize-helper",
     "eval-harness",
     "tools/updater-signature-verifier"
 ]
