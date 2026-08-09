@@ -30,6 +30,14 @@ USAGE
     python tools/ui/shoot.py --out-dir shots design/report
 
 Routes are given without the `.html` suffix, relative to the export root.
+
+LIGHT MODE: `--force-prefers-color-scheme=light` does NOT flip this app. The
+theme is a class on `<html>`, not a media query, so the flag changes nothing and
+you get a dark screenshot that looks like the flag was ignored -- it was. To
+check light mode, set the class first and read the computed colours:
+
+    html.classList.remove('dark'); html.classList.add('light')
+    getComputedStyle(el).color
 """
 
 import argparse
@@ -83,9 +91,23 @@ def build() -> None:
         ["pnpm", "exec", "next", "build"],
         cwd=FRONTEND,
         shell=os.name == "nt",
+        capture_output=True,
+        text=True,
+        errors="replace",
     )
-    if r.returncode != 0:
-        raise SystemExit("FATAL: next build failed; nothing to screenshot")
+    if r.returncode == 0:
+        return
+    out = (r.stdout or "") + (r.stderr or "")
+    print(out[-4000:])
+    # Worth naming, because the message Next prints for it is just a stack trace
+    # and the real cause is almost always a server left running on the export.
+    if "EBUSY" in out or "EPERM" in out:
+        raise SystemExit(
+            f"FATAL: something is holding {EXPORT} open, so the build cannot replace it.\n"
+            "Usually a leftover static server or a shell sitting in that directory.\n"
+            "On Windows: Get-CimInstance Win32_Process | Where CommandLine -like '*http.server*'"
+        )
+    raise SystemExit("FATAL: next build failed; nothing to screenshot")
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
@@ -104,8 +126,14 @@ def serve(directory: str):
     return httpd, port
 
 
-def shoot(chrome: str, url: str, png: str, width: int, height: int) -> None:
-    subprocess.run(
+def shoot(chrome: str, url: str, png: str, width: int, height: int) -> int:
+    # Delete first. Otherwise a Chrome that fails or crashes leaves the PREVIOUS
+    # run's PNG in place, and every check below then validates a stale file --
+    # the tool would report "all routes rendered" having rendered nothing, which
+    # is the exact failure it exists to prevent.
+    if os.path.exists(png):
+        os.remove(png)
+    r = subprocess.run(
         [
             chrome,
             "--headless",
@@ -120,6 +148,7 @@ def shoot(chrome: str, url: str, png: str, width: int, height: int) -> None:
         ],
         capture_output=True,
     )
+    return r.returncode
 
 
 def dump_dom(chrome: str, url: str) -> str:
@@ -171,8 +200,11 @@ def main() -> int:
         for route in args.routes:
             url = f"http://127.0.0.1:{port}/{route.lstrip('/')}.html"
             png = os.path.join(args.out_dir, route.replace("/", "-") + ".png")
-            shoot(chrome, url, png, args.width, args.height)
+            code = shoot(chrome, url, png, args.width, args.height)
 
+            if code != 0:
+                failures.append(f"{route}: chrome exited {code} and rendered nothing")
+                continue
             if not os.path.exists(png):
                 failures.append(f"{route}: chrome produced no file")
                 continue
