@@ -749,7 +749,7 @@ The earlier analysis called the `/MT` clash "the kill risk" for the standalone b
 
 **Verification:** the arithmetic is pure and unit-tested (`frontend/src/lib/speakerTurns.test.ts`), and the tests were confirmed load-bearing by mutation: sorting by duration, attributing a row to only its dominant speaker, summing instead of unioning, and dropping the overlap floor each fail the suite. The rendered claims are asserted in `SpeakerTurns.test.tsx` so a redesign cannot quietly drop the caveats. The screen itself was **looked at**, not just typechecked, via `tools/ui/shoot.py` against `/design/speakers`, which renders all four states from fixture data.
 
-**One thing the screenshot found that no test would have:** `text-display`, `text-body`, `text-small` and `text-caption` are used across the report and `/design/*` screens as if they were a type scale, and are **defined nowhere** — they emit no CSS. Measured in a browser, an `<h1 class="text-display">`, a `.text-small` and a `.text-caption` all compute to `16px / weight 400`, identical to `body`; the apparent hierarchy comes entirely from font weight and colour. The two files added here were converted to real utilities. The other five files are pre-existing and left alone (one concern per PR).
+**One thing the screenshot found that no test would have:** `text-display`, `text-body`, `text-small` and `text-caption` are used across the report and `/design/*` screens as if they were a type scale, and are **defined nowhere** — they emit no CSS. Measured in a browser, an `<h1 class="text-display">`, a `.text-small` and a `.text-caption` all compute to `16px / weight 400`, identical to `body`; the apparent hierarchy comes entirely from font weight and colour. The two files added here were converted to real utilities; the other five were left for their own change, made in ADR-0037.
 
 **What this does NOT authorize:** any claim about *accuracy*. ADR-0034's ban stands — the A5 `multi` bucket holds zero recordings, so how often these labels are right is unmeasured on this project's own audio. It also does not add naming: there is no field, and no button, to attach a person to a voice.
 
@@ -766,3 +766,31 @@ The earlier analysis called the `/MT` clash "the kill risk" for the standalone b
 Each correction carries a test, and each test was confirmed load-bearing by restoring the defect and watching the suite fail.
 
 **Status:** Accepted (2026-08-09). Implements ADR-0034 step (d).
+
+
+## ADR-0037 — The named type scale was never real; the app's one typography vocabulary is Tailwind's own
+
+**Context.** ADR-0036 recorded that `text-display`, `text-body`, `text-small` and `text-caption` were used as a type scale and defined nowhere — not in `globals.css`, not in the Tailwind config, absent from the built CSS. Two files were converted then; five were left. Reading those five turned up two more of the same kind, `text-h1` and `text-h2` (10 occurrences), which the original count missed. Two of them are the `<h1>` page titles of `/design/hitl` and `/design/learning`: because Tailwind's preflight resets `h1` to inherit size and weight, those titles rendered at `16px / 400` — the page heading was the same size as its own subtitle.
+
+**Decision.** Delete the vocabulary rather than implement it. The six names were replaced with Tailwind utilities:
+
+| was | now | computes to |
+|---|---|---|
+| `text-display` | `text-2xl font-semibold` | 24 / 600 |
+| `text-h1` | `text-xl font-semibold` | 20 / 600 |
+| `text-h2` | `text-lg font-medium` | 18 / 500 |
+| `text-body` | `text-[15px]` | 15 / 400 |
+| `text-small` | `text-sm` | 14 / 400 |
+| `text-caption` | `text-xs` | 12 / 400 |
+
+**Why not define the scale instead.** It was the other option and it loses on three counts. (1) **There is no design system to make real.** `docs/DESIGN_READAI.md` — the doc the vocabulary was assumed to come from — contains no typography section, no tier names and no sizes. Nothing in the repo defines these names. Implementing them would have been inventing a design system and backdating it, not honouring one. (2) **It would create a second vocabulary, not a first.** The app already has one: Tailwind's scale, ~640 usages across 99 of 149 `.tsx` files. The six phantom names survived in five, all but one of them `/design/*` preview routes. Adding `text-body` alongside `text-base` and `text-small` alongside `text-sm` gives two ways to say one thing, and the smaller one is the newcomer. (3) **The mechanism assumed doesn't exist here.** This project is on Tailwind **3.4.19** with a `tailwind.config.js`; `@theme` and `@utility` are v4 features. It was still doable via `theme.extend.fontSize`, but the premise was wrong and worth stating.
+
+The first-order argument is simpler: two files had already been converted this way, and consistency with what shipped beat consistency with what was imagined.
+
+**The one thing that changed beyond a rename.** `/design`'s typography specimen advertised sizes it did not render — "Display — 32 / 700" on a line computing to 16/400. Since the mapping puts display at 24/600, applying it verbatim would have replaced one false label with another. Each row now prints the utilities it uses (`Display — text-2xl font-semibold — 24 / 600`), so the label cannot drift from the line again.
+
+**Verification — measured, not typechecked.** `tsc`, `next lint` and 176 vitest tests all passed *before* this change too; they cannot see a class that emits no CSS. So each route was built and measured in headless Chrome via `getComputedStyle`, the check that found the bug, with a control: an element carrying the *old* class name injected into each rendered page. On every route all six controls still compute to `16px / 400` while every converted element resolves to its intended size — one measurement showing both that the names were dead and that the replacements are live. `/design`, `/design/report`, `/design/hitl`, `/design/learning` and `/settings` (for `ThemeToggle`) were each verified, and the four `/design` routes screenshot with `tools/ui/shoot.py`.
+
+**Known gap, not fixed here.** Nothing prevents the next `text-h3`. An undefined utility is invisible to `tsc`, to `next lint` and to any test that does not rasterize — which is how these survived. A check that greps `className` for `text-*` tokens absent from the built CSS would close it and does not exist yet.
+
+**Status:** Accepted (2026-08-09). Completes the cleanup ADR-0036 deferred.

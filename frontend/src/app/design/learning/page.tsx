@@ -215,8 +215,8 @@ export default function LearningPreviewPage() {
     <div className="bg-background text-foreground min-h-screen p-8">
       <div className="max-w-3xl mx-auto space-y-6">
         <header className="space-y-1">
-          <h1 className="text-h2">Learning settings</h1>
-          <p className="text-small text-muted-foreground">
+          <h1 className="text-lg font-medium">Learning settings</h1>
+          <p className="text-sm text-muted-foreground">
             Real component, fixture data, no IPC. {empty ? 'A brand-new workspace.' : ''}
           </p>
         </header>

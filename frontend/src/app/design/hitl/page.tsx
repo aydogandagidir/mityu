@@ -96,8 +96,8 @@ export default function HitlPreviewPage() {
   return (
     <div className="bg-background text-foreground min-h-screen p-8 space-y-6">
       <header className="space-y-1">
-        <h1 className="text-h2">HITL review controls</h1>
-        <p className="text-small text-muted-foreground">
+        <h1 className="text-lg font-medium">HITL review controls</h1>
+        <p className="text-sm text-muted-foreground">
           Real components, fixture data, no IPC. Reject a block: the reason field is
           optional and Enter submits it blank.
         </p>
