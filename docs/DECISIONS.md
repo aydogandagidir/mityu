@@ -726,3 +726,31 @@ The earlier analysis called the `/MT` clash "the kill risk" for the standalone b
 - **Any statement about runtime or memory on a 60–90 minute recording.** Unmeasured; clustering is superlinear in segment count, and this determines whether the sidecar needs chunked progress reporting.
 
 **Status:** Accepted (2026-08-09). Closes the implementation-approach question ADR-0034 left open, and supersedes that paragraph only. ADR-0034's item 2 (model provenance) is untouched; its licence-verification obligation was **discharged on 2026-08-09** — see that ADR's amendment of the same date — so the one remaining shipping prerequisite here is decision 4's archive integrity bootstrap.
+
+---
+
+## ADR-0036 — Talk time is a share of *speech*, not of the meeting; speakers are listed in the order they spoke, never ranked
+
+**Context:** ADR-0034 step (d) — the UI for speaker labels and talk time — leaves two numeric decisions open that look like formatting and are actually claims about people.
+
+**Decisions:**
+
+1. **The denominator is the sum of attributed speech, not the meeting's duration.** People talk over each other, so speaking time exceeds elapsed time: 30 s of recording with a 10 s overlap contains 40 s of speech, and shares over duration would read 100% and 33%, summing to 133%. Dividing by total speech makes the shares sum to 1 and makes them true. The screen states which denominator it is and why, because "40%" with an unstated denominator is the part a reader fills in wrongly.
+
+2. **Each speaker's own time is the UNION of their turns**, not the sum. Segmentation can emit turns for one speaker that overlap themselves; summing would credit that speaker twice for one stretch of audio.
+
+3. **Speakers are ordered by first appearance. Never by duration.** Sorting by talk time turns a description into a leaderboard, and a leaderboard of who talked most is the employee-performance reading `CLAUDE.md` §10 and ADR-0034 refuse. The panel says outright that speaking time is not a measure of contribution. Colour is assigned by that same order and identifies a speaker across the page; the palette is deliberately flat, with no red/green and nothing that reads as good or bad.
+
+4. **A transcript row is attributed to a LIST of speakers, never to one.** Rows and turns come from separate passes over the same audio and do not align — the `speaker_turns` migration says so in its own note. Choosing "the dominant speaker" would print one confident name over a stretch where two people spoke. Overlaps below **250 ms, or 15% of the row for short rows**, are discarded as boundary artefacts: without a floor, touching edges put two names on nearly every row, which reads as constant crosstalk and hides the genuine overlaps.
+
+5. **A row with no timings shows nothing at all**, not "Unknown". Recordings predating recording-relative timestamps have no extent to match against, and an empty space says "we cannot tell" where a chip would assert something.
+
+6. **The four states stay four.** No audio / never ran / ran-and-separated-nothing / has turns each get different words, and only the states where an action is possible show a button. Collapsing "ran and found nothing" into "never ran" — the natural mistake, since both have an empty turn list — would either keep offering a pass that already happened or tell someone their single-voice recording was never analysed. This is why the repository stamps `diarized_at` even for an empty result.
+
+**Verification:** the arithmetic is pure and unit-tested (`frontend/src/lib/speakerTurns.test.ts`), and the tests were confirmed load-bearing by mutation: sorting by duration, attributing a row to only its dominant speaker, summing instead of unioning, and dropping the overlap floor each fail the suite. The rendered claims are asserted in `SpeakerTurns.test.tsx` so a redesign cannot quietly drop the caveats. The screen itself was **looked at**, not just typechecked, via `tools/ui/shoot.py` against `/design/speakers`, which renders all four states from fixture data.
+
+**One thing the screenshot found that no test would have:** `text-display`, `text-body`, `text-small` and `text-caption` are used across the report and `/design/*` screens as if they were a type scale, and are **defined nowhere** — they emit no CSS. Measured in a browser, an `<h1 class="text-display">`, a `.text-small` and a `.text-caption` all compute to `16px / weight 400`, identical to `body`; the apparent hierarchy comes entirely from font weight and colour. The two files added here were converted to real utilities. The other five files are pre-existing and left alone (one concern per PR).
+
+**What this does NOT authorize:** any claim about *accuracy*. ADR-0034's ban stands — the A5 `multi` bucket holds zero recordings, so how often these labels are right is unmeasured on this project's own audio. It also does not add naming: there is no field, and no button, to attach a person to a voice.
+
+**Status:** Accepted (2026-08-09). Implements ADR-0034 step (d).

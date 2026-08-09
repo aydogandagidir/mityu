@@ -171,6 +171,35 @@ mod tests {
         assert!(meeting_audio(dir.path().to_str()).is_none());
     }
 
+    /// The exact JSON the frontend receives. Asserted rather than assumed
+    /// because serde's `rename_all` on an enum renames the VARIANTS but leaves
+    /// struct-variant fields alone -- so the tag is `modelsMissing` while the
+    /// field beside it is `diarized_at`. A UI written to the plausible-looking
+    /// `diarizedAt` would render `undefined` and still typecheck.
+    #[test]
+    fn the_wire_shape_the_ui_is_written_against() {
+        assert_eq!(
+            serde_json::to_string(&Availability::Done {
+                diarized_at: "2026-08-09T10:00:00Z".into(),
+                turns: 3,
+            })
+            .expect("serialize"),
+            r#"{"status":"done","diarized_at":"2026-08-09T10:00:00Z","turns":3}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Availability::NoAudio).expect("serialize"),
+            r#"{"status":"noAudio"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Availability::Ready).expect("serialize"),
+            r#"{"status":"ready"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Availability::ModelsMissing).expect("serialize"),
+            r#"{"status":"modelsMissing"}"#
+        );
+    }
+
     #[test]
     fn a_folder_with_audio_resolves_to_it() {
         let dir = tempfile::tempdir().expect("tempdir");

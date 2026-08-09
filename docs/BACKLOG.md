@@ -234,7 +234,7 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 - Agent: qa-release-engineer · Cmd: /audio-debug · depends-on: H3a
 - AC: wall-clock and peak RSS measured on a long recording; decides whether H3 needs chunked progress reporting or can stay fire-and-forget. Clustering is superlinear in segment count, so a short-clip measurement does not answer this.
 
-### H6 · Speaker labels + talk-time UI (ADR-0034 step d)
+### H6 · Speaker labels + talk-time UI (ADR-0034 step d) — ✅ DONE (ADR-0036)
 - Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: H3b-2
 - AC: a transcript row overlapping more than one turn shows more than one speaker (rows and turns do not align — see the migration's own note); talk-time is descriptive only, never a score or ranking; labels stay anonymous `Speaker N` and naming a speaker is a manual human action; the four states are distinguished — no audio / never ran / ran-inconclusive / has turns.
 

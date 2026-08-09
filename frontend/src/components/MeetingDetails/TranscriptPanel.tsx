@@ -7,6 +7,8 @@ import { TranscriptButtonGroup } from './TranscriptButtonGroup';
 import { FileText } from 'lucide-react';
 import { useMemo } from 'react';
 import { TOUR_ANCHORS } from '@/lib/tour';
+import { TalkTimePanel } from '@/components/report/SpeakerTurns';
+import { useDiarization } from '@/hooks/useDiarization';
 
 interface TranscriptPanelProps {
   transcripts: Transcript[];
@@ -78,6 +80,11 @@ export function TranscriptPanel({
     }));
   }, [transcripts, usePagination, segments]);
 
+  // Speaker separation is a POST-HOC pass over a finished recording (ADR-0034),
+  // so it is offered only once recording has stopped. Showing it mid-recording
+  // would advertise an action that cannot run yet.
+  const diarization = useDiarization(isRecording ? undefined : meetingId);
+
   return (
     // Layout-neutral root: width, borders, and responsive show/hide are owned by
     // the wrapper in page-content.tsx so the split can be rebalanced and made
@@ -106,10 +113,28 @@ export function TranscriptPanel({
         />
       </div>
 
+      {/* Who spoke, and for how long. Absent entirely while recording, and while
+          we have not yet been able to ask -- an empty space says nothing, which
+          is the honest thing to say when we do not know. */}
+      {diarization.state && (
+        <div className="border-b border-border px-4 py-3">
+          <TalkTimePanel
+            state={diarization.state}
+            onRun={diarization.run}
+            onGetModels={diarization.downloadModels}
+            busy={diarization.busy}
+          />
+          {diarization.error && (
+            <p className="mt-2 text-xs text-destructive">{diarization.error}</p>
+          )}
+        </div>
+      )}
+
       {/* Transcript content - use virtualized view for better performance */}
       <div className="flex-1 overflow-hidden pb-4">
         <VirtualizedTranscriptView
           segments={convertedSegments}
+          speakerTurns={diarization.turns}
           isRecording={isRecording}
           isPaused={false}
           isProcessing={false}
