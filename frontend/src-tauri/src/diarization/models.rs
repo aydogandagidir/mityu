@@ -390,6 +390,34 @@ where
 
 #[cfg(test)]
 mod tests {
+    /// Every model we ship a downloader for is attributed in the notice file.
+    ///
+    /// The notice is a redistribution obligation, not documentation: CAM++ is
+    /// published as a bare `.onnx` with no licence file, so if this list grows
+    /// and the notice does not, Mityu ships a model whose licence text exists
+    /// nowhere in the product. Reads the real file rather than a copy, so the
+    /// two cannot drift.
+    #[test]
+    fn every_downloaded_model_is_attributed_in_the_notice_file() {
+        let notices = include_str!("../../resources/MODEL-NOTICES.txt");
+        for source in SOURCES {
+            let asset = source.url.rsplit('/').next().expect("asset name");
+            assert!(
+                notices.contains(asset),
+                "resources/MODEL-NOTICES.txt does not mention {asset}, which Mityu downloads"
+            );
+        }
+        // The two obligations ADR-0034's amendment identified by name.
+        assert!(
+            notices.contains("Copyright (c) 2022 CNRS"),
+            "the segmentation model's MIT copyright line is missing"
+        );
+        assert!(
+            notices.contains("Apache License, Version 2.0"),
+            "the CAM++ Apache-2.0 attribution is missing"
+        );
+    }
+
     /// The number on the download button, kept honest.
     ///
     /// The UI promises "Download models (35 MB)". That is what crosses the
