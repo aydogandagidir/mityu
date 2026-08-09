@@ -82,7 +82,17 @@ fn secs_to_ms(secs: f32) -> i64 {
 
 /// Render turns as RTTM, so the helper's own output can be scored directly by
 /// `eval-harness der` without a conversion step in between.
-pub fn to_rttm(file_id: &str, turns: &[SpeakerTurn]) -> String {
+///
+/// Rejects a `file_id` containing whitespace. RTTM is whitespace-separated, so
+/// `meeting 1` would emit an extra field and every later column would shift —
+/// the parser would read `meeting` as the file, the wrong times, and `<NA>` as
+/// the speaker. Rejected rather than mangled like the speaker label is, because
+/// the id is how a reference and a hypothesis are matched to the same recording
+/// (`ensure_same_recording`); silently rewriting it would break that pairing.
+pub fn to_rttm(file_id: &str, turns: &[SpeakerTurn]) -> Result<String> {
+    if file_id.is_empty() || file_id.chars().any(char::is_whitespace) {
+        bail!("RTTM file id must be a single non-empty token without whitespace, got {file_id:?}");
+    }
     let mut out = String::new();
     for t in turns {
         out.push_str(&format!(
@@ -95,7 +105,7 @@ pub fn to_rttm(file_id: &str, turns: &[SpeakerTurn]) -> String {
             t.speaker_label.replace(' ', "_"),
         ));
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -158,11 +168,23 @@ mod tests {
         assert!(to_speaker_turns(&[(0.0, 1.0, -1)]).is_err());
     }
 
+    /// A file id with a space would add a field and shift every later column,
+    /// so our own parser would read the wrong times and `<NA>` as the speaker --
+    /// output that claims to be directly scoreable but is not.
+    #[test]
+    fn an_rttm_file_id_with_whitespace_is_refused() {
+        let turns = to_speaker_turns(&[(0.0, 9.0, 0)]).expect("converted");
+        assert!(to_rttm("meeting 1", &turns).is_err());
+        assert!(to_rttm("", &turns).is_err());
+        assert!(to_rttm("meeting	1", &turns).is_err());
+        assert!(to_rttm("meeting_1", &turns).is_ok());
+    }
+
     /// RTTM is whitespace-separated, so `Speaker 1` must not ship as two fields.
     #[test]
     fn rttm_labels_carry_no_spaces() {
         let turns = to_speaker_turns(&[(0.0, 9.0, 0)]).expect("converted");
-        let rttm = to_rttm("meeting1", &turns);
+        let rttm = to_rttm("meeting1", &turns).expect("rendered");
         let fields: Vec<&str> = rttm.split_whitespace().collect();
         assert_eq!(fields.len(), 10, "one RTTM record is 10 fields: {rttm}");
         assert_eq!(fields[7], "Speaker_1");

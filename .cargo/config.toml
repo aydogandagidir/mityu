@@ -1,0 +1,25 @@
+# Repo-wide cargo settings.
+#
+# SHERPA_ONNX_ARCHIVE_DIR closes the last way the unverified native download can
+# happen (ADR-0035 decision 4, BACKLOG H2).
+#
+# `sherpa-onnx-sys` fetches a ~20-120 MB prebuilt archive with NO integrity check
+# of any kind. `tools/diarization/fetch-sherpa-archive.py` verifies it by exact
+# byte length and SHA-256 — but it only closes the hole where it is invoked, and
+# CI was the only place invoking it. `docs/SETUP.md` tells every developer to run
+# `cargo clippy --all-targets`, which since `diarize-helper` joined the workspace
+# builds `sherpa-onnx-sys` and, without this, would take the download branch on
+# every machine.
+#
+# A build script of ours cannot police that: cargo runs a dependency's script
+# before the dependent's, so ours would execute after the bytes were already on
+# disk. Setting the variable HERE reaches the sys crate's own build script, and
+# it treats a missing archive as an ERROR rather than falling back to
+# downloading. So the failure mode becomes "run the bootstrap first", stated
+# plainly, instead of a silent unverified fetch.
+#
+# `relative = true` resolves against this file's parent, i.e. the repo root, so
+# it matches the bootstrap's default cache directory. Cargo does not override an
+# environment variable that is already set, so CI's explicit value still wins.
+[env]
+SHERPA_ONNX_ARCHIVE_DIR = { value = "target/sherpa-archive", relative = true }
