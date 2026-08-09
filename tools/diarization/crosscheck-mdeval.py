@@ -26,7 +26,11 @@ It has already earned its keep twice. Both of these passed every unit test:
 RESULT AFTER BOTH FIXES
 -----------------------
 216 files x 6 perturbations = 1296 comparisons per collar, at collars 0.0, 0.25
-and 0.5: exact agreement, max |ours - md-eval| = 0.0000 percentage points.
+and 0.5: the two scorers agree on every comparison at the printed resolution,
+max |ours - md-eval| = 0.00 pp. Both sides print two decimals, so "agree to
+0.01 pp" is the strongest claim this method supports -- not bit-identical
+arithmetic. A small number of pairs are self-scores (see `noops` below) and
+prove agreement only on a trivial case.
 
 USAGE
 -----
@@ -228,8 +232,12 @@ def main():
     )
     ap.add_argument("--cache", default=os.path.join(os.environ.get("TEMP", "/tmp"),
                                                     "mityu-diarization-crosscheck"))
-    ap.add_argument("--tolerance", type=float, default=0.05,
-                    help="percentage points; md-eval prints 2 decimals")
+    # 0 by default: both scorers print two decimals, so the finest OBSERVABLE
+    # difference is 0.01 pp. A 0.05 default would silently accept a real
+    # 0.01-0.04 pp disagreement while the documentation published "0.0000".
+    ap.add_argument("--tolerance", type=float, default=0.0,
+                    help="percentage points; both scorers print 2 decimals, so 0 means "
+                         "identical at the printed resolution")
     args = ap.parse_args()
 
     if not os.path.exists(args.exe):
@@ -263,6 +271,7 @@ def main():
     print(f"files={len(files)} perturbations={len(PERTURBATIONS)} collar={args.collar}")
 
     disagreements, checked, skipped, worst = [], 0, 0, 0.0
+    noops, noop_kinds = 0, {}
     for name in files:
         path = os.path.join(dev, name)
         base = name[:-5]
@@ -271,7 +280,16 @@ def main():
             # Seed from the file name so a rerun reproduces byte for byte.
             rnd = lcg(0x20260808 ^ (int(hashlib.md5(base.encode()).hexdigest()[:8], 16)))
             hp = os.path.join(work, f"{base}.{pname}.rttm")
-            write(hp, fn(turns, rnd))
+            hyp = fn(turns, rnd)
+            # A perturbation that returns the reference unchanged makes the pair
+            # a SELF-SCORE -- the very thing this tool's docstring says it exists
+            # to avoid. `merge` does exactly that on a single-speaker file, and
+            # 22 of the 216 VoxConverse dev files are single-speaker. Count them
+            # so the coverage claim stays honest instead of inflated.
+            if hyp == turns:
+                noops += 1
+                noop_kinds[pname] = noop_kinds.get(pname, 0) + 1
+            write(hp, hyp)
             a = ours(args.exe, path, hp, args.collar)
             b = md_eval(mdeval, path, hp, args.collar)
             if a is None or b is None:
@@ -289,7 +307,10 @@ def main():
             if d > args.tolerance:
                 disagreements.append((base, pname, a, b, d))
 
-    print(f"\nchecked={checked} skipped={skipped}")
+    print(f"\nchecked={checked} skipped={skipped} self-scoring={noops} {noop_kinds}")
+    if noops:
+        print(f"  note: {noops} pair(s) compared a reference against itself because the"
+              f" perturbation did not change it; those prove agreement on a trivial case only")
     print(f"max |ours - md-eval| = {worst:.4f} percentage points")
 
     failed = False

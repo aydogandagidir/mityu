@@ -68,9 +68,30 @@ pub type Micros = i64;
 
 const MICROS_PER_SEC: f64 = 1_000_000.0;
 
+/// Largest time this module accepts, in seconds. A hundred days is far beyond
+/// any meeting and far below the point where microsecond arithmetic overflows.
+const MAX_SECS: f64 = 100.0 * 24.0 * 60.0 * 60.0;
+
 /// Convert seconds to exact microseconds, rounding to the nearest microsecond.
+///
+/// Callers must reject out-of-range input first ([`checked_secs_to_micros`]).
+/// Rust's float→int `as` cast SATURATES, so a huge value would silently become
+/// `i64::MAX` and the turn would be dropped rather than reported.
 pub fn secs_to_micros(secs: f64) -> Micros {
     (secs * MICROS_PER_SEC).round() as Micros
+}
+
+/// Convert seconds to microseconds, refusing anything outside a sane range.
+///
+/// This exists because the plain cast fails OPEN: `secs_to_micros(1e30)` is
+/// `i64::MAX`, and downstream that turn simply vanishes with no error — a
+/// shorter reference and therefore a better-looking score. Parsing goes through
+/// this; the unchecked form stays for callers holding known-good values.
+pub fn checked_secs_to_micros(secs: f64) -> Option<Micros> {
+    if !secs.is_finite() || secs.abs() > MAX_SECS {
+        return None;
+    }
+    Some(secs_to_micros(secs))
 }
 
 /// Convert microseconds back to seconds, for reporting only.
@@ -224,7 +245,13 @@ pub fn parse_rttm(text: &str, file_id: Option<&str>) -> Result<Rttm> {
 
     for (idx, raw) in text.lines().enumerate() {
         let lineno = idx + 1;
-        let line = raw.trim();
+        // A UTF-8 BOM is not whitespace, so without this the first record's
+        // type token is "\u{feff}SPEAKER", it fails the match below, and the
+        // turn is silently SKIPPED -- a shorter reference and a better-looking
+        // score, from a file that looks fine in every editor. `Set-Content
+        // -Encoding utf8` on PowerShell 5.1 writes exactly this, and that is
+        // the command this harness's own error messages tell users to run.
+        let line = raw.trim_start_matches('\u{feff}').trim();
         if line.is_empty() || line.starts_with(";;") || line.starts_with('#') {
             continue;
         }
@@ -254,19 +281,28 @@ pub fn parse_rttm(text: &str, file_id: Option<&str>) -> Result<Rttm> {
         let tdur: f64 = f[4]
             .parse()
             .with_context(|| format!("RTTM satır {lineno}: süre okunamadı ({})", f[4]))?;
-        if !tbeg.is_finite() || !tdur.is_finite() {
-            bail!("RTTM satır {lineno}: zaman değeri sonlu değil");
-        }
         if tdur < 0.0 {
             bail!("RTTM satır {lineno}: negatif süre ({tdur})");
+        }
+        if tbeg < 0.0 {
+            bail!("RTTM satır {lineno}: negatif başlangıç zamanı ({tbeg})");
         }
         let speaker = f[7].to_string();
         if speaker.is_empty() || speaker == "<NA>" {
             bail!("RTTM satır {lineno}: konuşmacı adı yok");
         }
 
-        let start = secs_to_micros(tbeg);
-        let end = start + secs_to_micros(tdur);
+        // Range-checked: the plain cast saturates, so an absurd time would
+        // otherwise become i64::MAX and the turn would vanish without a word.
+        let (Some(start), Some(dur)) = (checked_secs_to_micros(tbeg), checked_secs_to_micros(tdur))
+        else {
+            bail!(
+                "RTTM satır {lineno}: zaman değeri aralık dışı (tbeg={tbeg}, tdur={tdur}); \
+                 en fazla {} saniye kabul edilir",
+                MAX_SECS
+            );
+        };
+        let end = start + dur;
         if end > start {
             turns.push(Turn {
                 speaker,
@@ -340,7 +376,8 @@ pub fn parse_uem(text: &str, file_id: Option<&str>) -> Result<Vec<(Micros, Micro
     let mut spans: Vec<(Micros, Micros)> = Vec::new();
     for (idx, raw) in text.lines().enumerate() {
         let lineno = idx + 1;
-        let line = raw.trim();
+        // Same BOM hazard as the RTTM parser above.
+        let line = raw.trim_start_matches('\u{feff}').trim();
         if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
             continue;
         }
@@ -359,10 +396,13 @@ pub fn parse_uem(text: &str, file_id: Option<&str>) -> Result<Vec<(Micros, Micro
         let end: f64 = f[3]
             .parse()
             .with_context(|| format!("UEM satır {lineno}: bitiş okunamadı ({})", f[3]))?;
-        if !beg.is_finite() || !end.is_finite() || end <= beg {
+        if end <= beg || beg < 0.0 {
             bail!("UEM satır {lineno}: geçersiz aralık ({beg}, {end})");
         }
-        spans.push((secs_to_micros(beg), secs_to_micros(end)));
+        let (Some(b), Some(e)) = (checked_secs_to_micros(beg), checked_secs_to_micros(end)) else {
+            bail!("UEM satır {lineno}: zaman değeri aralık dışı ({beg}, {end})");
+        };
+        spans.push((b, e));
     }
     spans.sort_unstable();
     for pair in spans.windows(2) {
@@ -1368,6 +1408,46 @@ SPEAKER meeting1 1 2.500 1.000 <NA> <NA> spk1 <NA> <NA>
         let text = "SPEAKER m 1 0.000 2.500 <NA> <NA> spk0 <NA> <NA>\nSPEAKER m 1 oops 1.0 <NA> <NA> spk1 <NA> <NA>\n";
         let e = parse_rttm(text, None).expect_err("must refuse");
         assert!(e.to_string().contains("satır 2"), "{e}");
+    }
+
+    /// A BOM is invisible in every editor and is exactly what `Set-Content
+    /// -Encoding utf8` writes — the command this harness's own error messages
+    /// recommend. Without stripping it, the first SPEAKER record fails the type
+    /// match and is SKIPPED, silently shortening the reference.
+    #[test]
+    fn a_utf8_bom_does_not_swallow_the_first_record() {
+        let body = "SPEAKER m 1 0.000 5.000 <NA> <NA> A <NA> <NA>\n\
+                    SPEAKER m 1 5.000 5.000 <NA> <NA> B <NA> <NA>\n";
+        let plain = parse_rttm(body, None).expect("parsed");
+        let bommed = parse_rttm(&format!("\u{feff}{body}"), None).expect("parsed");
+        assert_eq!(bommed.turns.len(), 2, "the BOM cost a turn");
+        assert_eq!(bommed, plain, "a BOM must change nothing at all");
+
+        // Same for the UEM parser, where a BOM would defeat the file-id filter.
+        let uem = parse_uem("\u{feff}m 1 0.0 10.0\n", Some("m")).expect("parsed");
+        assert_eq!(uem.len(), 1);
+    }
+
+    /// The float→int cast saturates, so without a range check an absurd time
+    /// becomes `i64::MAX` and the turn disappears — a shorter reference and a
+    /// better-looking score, with no error.
+    #[test]
+    fn an_out_of_range_time_is_an_error_not_a_vanished_turn() {
+        assert!(checked_secs_to_micros(1e30).is_none());
+        assert!(checked_secs_to_micros(f64::NAN).is_none());
+        assert!(checked_secs_to_micros(f64::INFINITY).is_none());
+        assert!(checked_secs_to_micros(3600.0).is_some());
+
+        let e = parse_rttm("SPEAKER m 1 1e30 5.000 <NA> <NA> A <NA> <NA>\n", None)
+            .expect_err("must refuse");
+        assert!(e.to_string().contains("aralık dışı"), "{e}");
+    }
+
+    #[test]
+    fn a_negative_start_time_is_an_error() {
+        let e = parse_rttm("SPEAKER m 1 -1.000 5.000 <NA> <NA> A <NA> <NA>\n", None)
+            .expect_err("must refuse");
+        assert!(e.to_string().contains("negatif başlangıç"), "{e}");
     }
 
     #[test]
