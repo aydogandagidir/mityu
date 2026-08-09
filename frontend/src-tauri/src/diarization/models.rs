@@ -407,14 +407,53 @@ mod tests {
                 "resources/MODEL-NOTICES.txt does not mention {asset}, which Mityu downloads"
             );
         }
-        // The two obligations ADR-0034's amendment identified by name.
+        // The two obligations ADR-0034's amendment identified by name, each
+        // checked INSIDE its own section. Searching the whole file would not
+        // guard them: Qwen's section already carries the exact phrase "Apache
+        // License, Version 2.0", so a file-wide assertion passes even with
+        // CAM++'s attribution deleted -- it would advertise a guarantee it does
+        // not provide.
+        let section = |heading: &str| -> String {
+            let start = notices
+                .find(heading)
+                .unwrap_or_else(|| panic!("MODEL-NOTICES.txt has no '{heading}' section"));
+            let rest = &notices[start + heading.len()..];
+            // Step over this heading's OWN dashed underline before looking for
+            // the next one -- otherwise the very first match is the underline
+            // one line below the heading and every section comes back empty.
+            let after_underline = match rest.find("\n---") {
+                Some(i) => match rest[i + 1..].find('\n') {
+                    Some(j) => i + 1 + j + 1,
+                    None => rest.len(),
+                },
+                None => 0,
+            };
+            let body = &rest[after_underline..];
+            // Sections are separated by the next heading's underline.
+            match body.find("\n---") {
+                Some(end) => body[..end].to_string(),
+                None => body.to_string(),
+            }
+        };
+
+        let segmentation = section("pyannote segmentation-3.0");
         assert!(
-            notices.contains("Copyright (c) 2022 CNRS"),
-            "the segmentation model's MIT copyright line is missing"
+            segmentation.contains("Copyright (c) 2022 CNRS"),
+            "the segmentation section lost its MIT copyright line"
         );
         assert!(
-            notices.contains("Apache License, Version 2.0"),
-            "the CAM++ Apache-2.0 attribution is missing"
+            segmentation.contains("MIT License"),
+            "the segmentation section lost its licence name"
+        );
+
+        let campplus = section("3D-Speaker CAM++");
+        assert!(
+            campplus.contains("Apache License, Version 2.0"),
+            "the CAM++ section lost its Apache-2.0 attribution"
+        );
+        assert!(
+            campplus.contains("http://www.apache.org/licenses/LICENSE-2.0"),
+            "the CAM++ section lost the licence URL Apache-2.0 requires"
         );
     }
 
