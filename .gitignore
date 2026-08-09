@@ -102,3 +102,5 @@ experiments/
 target/
 
 frontend/src-tauri/binaries/
+__pycache__/
+*.pyc
