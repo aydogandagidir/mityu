@@ -696,7 +696,7 @@ Three things that were *assumed* when ADR-0034 was written turned out to be wron
    - a **bootstrap step run before `cargo build`** (developer command and CI step) that fetches the archive, checks **exact byte length and SHA-256** against a pinned release tag and URL — the full ADR-0020 precedent, not a digest alone — fails closed on mismatch, and hands it over through the documented `SHERPA_ONNX_ARCHIVE_DIR` / `SHERPA_ONNX_LIB_DIR`; or
    - a **vendored/patched `sherpa-onnx-sys`** whose build script does the check itself.
 
-   The bootstrap is preferred: it leaves the upstream crate untouched and therefore upgradable.
+   The bootstrap is preferred: it leaves the upstream crate untouched and therefore upgradable. **Built 2026-08-09** as `tools/diarization/fetch-sherpa-archive.py`, wired into `ci.yml` behind a `Cargo.lock` guard so it activates by itself when the helper lands.
 
    **This is a prerequisite for making `diarize-helper` a workspace member, not merely for shipping.** `ci.yml:36-38` runs `cargo clippy --all-targets` and `cargo test --all` on `ubuntu-latest` for every push and pull request, so from the moment the helper joins the workspace, **every PR performs the unverified download this decision forbids** — on a runner, unattended. Adding the crate before the bootstrap exists is therefore the wrong order, not a shortcut.
 
