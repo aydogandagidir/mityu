@@ -15,7 +15,7 @@
  */
 
 import { SpeakerChips, TalkTimePanel } from '@/components/report/SpeakerTurns';
-import { speakersForRow, talkTime, type SpeakerTurn } from '@/lib/speakerTurns';
+import { hasCrosstalk, speakersForRow, talkTime, type SpeakerTurn } from '@/lib/speakerTurns';
 
 const turn = (start_ms: number, end_ms: number, speaker_label: string): SpeakerTurn => ({
   start_ms,
@@ -51,14 +51,14 @@ const ROWS: Array<{ id: string; start?: number; end?: number; text: string; note
     start: 4.2,
     end: 9.8,
     text: 'Before that — did we ever hear back from their security team?',
-    note: 'spans a handover: two speakers',
+    note: 'spans a handover: two speakers, but NOT at the same time',
   },
   {
     id: 'c',
     start: 60,
     end: 66,
     text: 'We can hold the managed tier — sorry, go ahead — no, you first.',
-    note: 'simultaneous speech',
+    note: 'genuinely simultaneous speech',
   },
   {
     id: 'd',
@@ -68,7 +68,8 @@ const ROWS: Array<{ id: string; start?: number; end?: number; text: string; note
 ];
 
 function Row({ row, order }: { row: (typeof ROWS)[number]; order: string[] }) {
-  const speakers = speakersForRow({ start: row.start, end: row.end }, TURNS);
+  const extent = { start: row.start, end: row.end };
+  const speakers = speakersForRow(extent, TURNS);
   return (
     <div className="rounded-lg px-2 py-1.5 hover:bg-muted/40">
       <div className="flex items-start gap-2">
@@ -80,7 +81,7 @@ function Row({ row, order }: { row: (typeof ROWS)[number]; order: string[] }) {
               ).padStart(2, '0')}]`}
         </span>
         <div className="flex-1">
-          <SpeakerChips speakers={speakers} order={order} />
+          <SpeakerChips speakers={speakers} order={order} crosstalk={hasCrosstalk(extent, TURNS)} />
           <p className="text-[15px] leading-relaxed text-foreground">{row.text}</p>
           <p className="text-xs text-muted-foreground/70">{row.note}</p>
         </div>

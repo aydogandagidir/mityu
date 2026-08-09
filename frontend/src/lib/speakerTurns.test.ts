@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatTalkTime,
+  hasCrosstalk,
   speakerCount,
   speakersForRow,
   talkTime,
@@ -195,5 +196,50 @@ describe('speakerCount', () => {
         turn(2_000, 3_000, 'Speaker 1'),
       ])
     ).toBe(2);
+  });
+});
+
+describe('hasCrosstalk', () => {
+  /**
+   * The distinction a review caught: a row can hold two speakers without them
+   * ever speaking at the same time. Calling that "overlapping" described an
+   * ordinary change of speaker as people talking over each other.
+   */
+  it('does NOT call a sequential handover crosstalk', () => {
+    const turns = [turn(0, 5_000, 'Speaker 1'), turn(5_000, 12_000, 'Speaker 2')];
+    const row = { start: 3, end: 8 };
+    // ...even though the row genuinely has two speakers.
+    expect(speakersForRow(row, turns)).toEqual(['Speaker 1', 'Speaker 2']);
+    expect(hasCrosstalk(row, turns)).toBe(false);
+  });
+
+  it('does call genuinely simultaneous speech crosstalk', () => {
+    const turns = [turn(0, 8_000, 'Speaker 1'), turn(2_000, 6_000, 'Speaker 2')];
+    expect(hasCrosstalk({ start: 1, end: 7 }, turns)).toBe(true);
+  });
+
+  /** A speaker overlapping THEMSELVES is a segmentation artefact, not crosstalk. */
+  it('ignores one speaker overlapping their own turns', () => {
+    const turns = [turn(0, 8_000, 'Speaker 1'), turn(4_000, 12_000, 'Speaker 1')];
+    expect(hasCrosstalk({ start: 0, end: 12 }, turns)).toBe(false);
+  });
+
+  /** Two speakers overlapping OUTSIDE this row is not this row's crosstalk. */
+  it('only counts overlap that falls inside the row', () => {
+    const turns = [turn(20_000, 30_000, 'Speaker 1'), turn(25_000, 35_000, 'Speaker 2')];
+    expect(hasCrosstalk({ start: 0, end: 10 }, turns)).toBe(false);
+    expect(hasCrosstalk({ start: 24, end: 31 }, turns)).toBe(true);
+  });
+
+  /** A few milliseconds of touching edges is rounding, not two people talking. */
+  it('ignores a sliver of overlap at a boundary', () => {
+    const turns = [turn(0, 5_030, 'Speaker 1'), turn(5_000, 12_000, 'Speaker 2')];
+    expect(hasCrosstalk({ start: 0, end: 12 }, turns)).toBe(false);
+  });
+
+  it('says nothing about a row with no timings', () => {
+    const turns = [turn(0, 8_000, 'Speaker 1'), turn(2_000, 6_000, 'Speaker 2')];
+    expect(hasCrosstalk({}, turns)).toBe(false);
+    expect(hasCrosstalk({ start: 5, end: 5 }, turns)).toBe(false);
   });
 });

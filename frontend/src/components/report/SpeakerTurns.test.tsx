@@ -91,6 +91,20 @@ describe('TalkTimePanel: what the numbers are allowed to claim', () => {
     expect(text).toContain('more than 100%');
   });
 
+  /**
+   * ADR-0034 binds this feature to the A5 sprint: "no speaker-accuracy claim
+   * may be made in product copy, and the feature ships labelled best-effort,
+   * until the `multi` bucket is collected and a human has reviewed the result".
+   * The `multi` bucket still holds zero recordings, so this label is mandatory
+   * on the SCREEN -- saying it only in the ADR does not discharge the rule.
+   */
+  it('labels the result best-effort, as ADR-0034 requires until A5 multi exists', () => {
+    render(<TalkTimePanel state={{ kind: 'done', diarizedAt: 'x', turns: TURNS }} />);
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('best-effort estimate');
+    expect(text).toMatch(/has not been measured/);
+  });
+
   /** Naming a voice is a human act; nothing here may offer to do it. */
   it('keeps labels anonymous and offers no way to name a speaker', () => {
     render(<TalkTimePanel state={{ kind: 'done', diarizedAt: 'x', turns: TURNS }} />);
@@ -102,17 +116,40 @@ describe('TalkTimePanel: what the numbers are allowed to claim', () => {
 });
 
 describe('SpeakerChips', () => {
-  it('marks a row that spans more than one speaker', () => {
+  it('shows every speaker in a row that spans more than one', () => {
     render(<SpeakerChips speakers={['Speaker 1', 'Speaker 2']} order={['Speaker 1', 'Speaker 2']} />);
     const text = document.body.textContent ?? '';
     expect(text).toContain('Speaker 1');
     expect(text).toContain('Speaker 2');
-    expect(text).toContain('overlapping');
   });
 
-  it('does not call a single-speaker row overlapping', () => {
-    render(<SpeakerChips speakers={['Speaker 1']} order={['Speaker 1']} />);
-    expect(document.body.textContent).not.toContain('overlapping');
+  /**
+   * Caught in review: a row can hold two speakers without them ever speaking at
+   * once. Marking every multi-speaker row as simultaneous described an ordinary
+   * handover as people talking over each other.
+   */
+  it('does not claim simultaneous speech for a plain handover', () => {
+    render(
+      <SpeakerChips speakers={['Speaker 1', 'Speaker 2']} order={['Speaker 1', 'Speaker 2']} />
+    );
+    expect(document.body.textContent).not.toContain('at the same time');
+  });
+
+  it('marks genuine simultaneous speech', () => {
+    render(
+      <SpeakerChips
+        speakers={['Speaker 1', 'Speaker 2']}
+        order={['Speaker 1', 'Speaker 2']}
+        crosstalk
+      />
+    );
+    expect(document.body.textContent).toContain('at the same time');
+  });
+
+  /** Crosstalk needs two speakers; one speaker cannot talk over themselves. */
+  it('never marks a single-speaker row', () => {
+    render(<SpeakerChips speakers={['Speaker 1']} order={['Speaker 1']} crosstalk />);
+    expect(document.body.textContent).not.toContain('at the same time');
   });
 
   /** An empty list is "we cannot say" and must render as nothing at all. */

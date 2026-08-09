@@ -21,6 +21,14 @@
 
 import { Users } from 'lucide-react';
 
+/**
+ * Megabytes actually fetched over the network, not what lands on disk: the
+ * segmentation model arrives as a `.tar.bz2` and expands. Pinned on the Rust
+ * side by `models::tests::the_download_size_the_ui_promises`, so bumping a
+ * model pin fails the build rather than quietly making this button lie.
+ */
+const MODEL_DOWNLOAD_MB = 35;
+
 import {
   formatTalkTime,
   type SpeakerTalkTime,
@@ -63,7 +71,21 @@ export function swatchFor(label: string, order: string[]) {
  * row has no timestamps to match against -- an empty space is honest, a
  * "Unknown" chip would assert something.
  */
-export function SpeakerChips({ speakers, order }: { speakers: string[]; order: string[] }) {
+export function SpeakerChips({
+  speakers,
+  order,
+  crosstalk,
+}: {
+  speakers: string[];
+  order: string[];
+  /**
+   * Two people genuinely talking at once -- NOT the same as a row having two
+   * speakers, which is usually just a row spanning a handover. Only real
+   * simultaneous speech is marked: two chips already say "two speakers", and a
+   * word there would describe an ordinary change of speaker as crosstalk.
+   */
+  crosstalk?: boolean;
+}) {
   if (speakers.length === 0) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-1 align-middle">
@@ -79,9 +101,12 @@ export function SpeakerChips({ speakers, order }: { speakers: string[]; order: s
           </span>
         );
       })}
-      {speakers.length > 1 && (
-        <span className="text-[10px] text-muted-foreground" title="This segment spans a change of speaker">
-          overlapping
+      {crosstalk && speakers.length > 1 && (
+        <span
+          className="text-[10px] text-muted-foreground"
+          title="Two speakers were talking at the same time here"
+        >
+          at the same time
         </span>
       )}
     </span>
@@ -178,7 +203,7 @@ export function TalkTimePanel({
               disabled={busy}
               className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-60"
             >
-              {busy ? 'Downloading…' : 'Download models (34 MB)'}
+              {busy ? 'Downloading…' : `Download models (${MODEL_DOWNLOAD_MB} MB)`}
             </button>
           )
         }
@@ -240,7 +265,9 @@ export function TalkTimePanel({
       </ul>
       <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
         {count} {count === 1 ? 'voice' : 'voices'} separated on-device, listed in the order they
-        first spoke. Percentages are each speaker&apos;s share of the <em>speech</em>, not of the
+        first spoke. This is a <strong className="font-medium">best-effort estimate</strong>: how
+        often it gets the speakers right has not been measured on recordings like yours, so check it
+        before relying on it. Percentages are each speaker&apos;s share of the <em>speech</em>, not of the
         meeting — people talk over each other, so shares of the meeting would add up to more than
         100%. Speaking time describes the recording; it is not a measure of contribution. Labels are
         anonymous: matching a voice to a person is yours to do.

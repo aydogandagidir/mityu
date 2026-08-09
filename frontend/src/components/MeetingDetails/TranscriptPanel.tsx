@@ -116,16 +116,32 @@ export function TranscriptPanel({
       {/* Who spoke, and for how long. Absent entirely while recording, and while
           we have not yet been able to ask -- an empty space says nothing, which
           is the honest thing to say when we do not know. */}
-      {diarization.state && (
+      {(diarization.state || diarization.error) && (
         <div className="border-b border-border px-4 py-3">
-          <TalkTimePanel
-            state={diarization.state}
-            onRun={diarization.run}
-            onGetModels={diarization.downloadModels}
-            busy={diarization.busy}
-          />
+          {diarization.state && (
+            <TalkTimePanel
+              state={diarization.state}
+              onRun={diarization.run}
+              onGetModels={diarization.downloadModels}
+              busy={diarization.busy}
+            />
+          )}
+          {/* Rendered whether or not there is a state. When the very first
+              availability query fails the hook has no state to report -- gating
+              the error on the state would make the whole feature vanish with no
+              explanation, which reads as "this meeting has no speakers" rather
+              than "we could not find out". */}
           {diarization.error && (
-            <p className="mt-2 text-xs text-destructive">{diarization.error}</p>
+            <p className="text-xs text-destructive" role="status">
+              Speakers could not be checked: {diarization.error}{' '}
+              <button
+                type="button"
+                onClick={diarization.refresh}
+                className="underline underline-offset-2 hover:no-underline"
+              >
+                Try again
+              </button>
+            </p>
           )}
         </div>
       )}

@@ -10,7 +10,7 @@ import { RecordingStatusBar } from "./RecordingStatusBar";
 import { motion, AnimatePresence } from "framer-motion";
 import { TranscriptSegmentData } from "@/types";
 import { SpeakerChips } from "./report/SpeakerTurns";
-import { speakersForRow, talkTime, type SpeakerTurn } from "@/lib/speakerTurns";
+import { hasCrosstalk, speakersForRow, talkTime, type SpeakerTurn } from "@/lib/speakerTurns";
 
 export interface VirtualizedTranscriptViewProps {
     /** Transcript segments to display */
@@ -100,6 +100,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     onSeek,
     speakers,
     speakerOrder,
+    crosstalk,
 }: {
     id: string;
     timestamp: number;
@@ -119,6 +120,8 @@ const TranscriptSegment = memo(function TranscriptSegment({
     speakers?: string[];
     /** Speaker order, so a speaker keeps one colour down the whole transcript. */
     speakerOrder?: string[];
+    /** Two people talking at once here -- not merely two speakers in the row. */
+    crosstalk?: boolean;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
 
@@ -155,7 +158,11 @@ const TranscriptSegment = memo(function TranscriptSegment({
                 </Tooltip>
                 <div className="flex-1">
                     {speakers && speakers.length > 0 && (
-                        <SpeakerChips speakers={speakers} order={speakerOrder ?? []} />
+                        <SpeakerChips
+                            speakers={speakers}
+                            order={speakerOrder ?? []}
+                            crosstalk={crosstalk}
+                        />
                     )}
                     {isStreaming ? (
                         <div className="bg-muted border border-border rounded-lg px-3 py-2">
@@ -196,6 +203,15 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     // ranking (ADR-0034).
     const speakerOrder = useMemo(
         () => (speakerTurns?.length ? talkTime(speakerTurns).map((r) => r.label) : []),
+        [speakerTurns]
+    );
+    // Real simultaneous speech, which is rarer and more interesting than a row
+    // simply spanning a handover.
+    const crosstalkFor = useCallback(
+        (segment: TranscriptSegmentData) =>
+            speakerTurns?.length
+                ? hasCrosstalk({ start: segment.timestamp, end: segment.endTime }, speakerTurns)
+                : false,
         [speakerTurns]
     );
     // Per-row, because a row can overlap more than one turn. Cheap: only the
@@ -449,6 +465,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         isHighlighted={highlightedSegmentId === segment.id}
                                         speakers={speakersFor(segment)}
                                         speakerOrder={speakerOrder}
+                                        crosstalk={crosstalkFor(segment)}
                                     />
                                 </div>
                             );
@@ -509,6 +526,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         isHighlighted={highlightedSegmentId === segment.id}
                                         speakers={speakersFor(segment)}
                                         speakerOrder={speakerOrder}
+                                        crosstalk={crosstalkFor(segment)}
                                     />
                                 </motion.div>
                             );

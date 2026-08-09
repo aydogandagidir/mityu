@@ -106,6 +106,50 @@ export function speakersForRow(row: RowExtent, turns: SpeakerTurn[]): string[] {
   return [...seen.entries()].sort((a, b) => a[1] - b[1]).map(([label]) => label);
 }
 
+/**
+ * Overlap between two DIFFERENT speakers below which this is rounding, not
+ * crosstalk. Smaller than {@link MIN_OVERLAP_MS} because genuine interruptions
+ * are short -- "sorry, go ahead" is under a second -- but not zero, because
+ * turns that merely touch at a handover must not be reported as people talking
+ * over each other.
+ */
+const MIN_CROSSTALK_MS = 100;
+
+/**
+ * Did two different people actually speak AT THE SAME TIME during this row?
+ *
+ * Distinct from "this row has more than one speaker", which is the far more
+ * common case of a row spanning a handover: turns `[0, 5s]` and `[5s, 12s]` are
+ * sequential and do not overlap each other at all. Calling that crosstalk would
+ * describe an ordinary change of speaker as people talking over one another.
+ */
+export function hasCrosstalk(row: RowExtent, turns: SpeakerTurn[]): boolean {
+  if (row.start === undefined || row.end === undefined) return false;
+  const start = secondsToMs(row.start);
+  const end = secondsToMs(row.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false;
+
+  // Clip each turn to the row, then look for two clipped turns from different
+  // speakers that intersect. Clipping matters: two speakers may overlap outside
+  // the row while this row itself contains only one of them.
+  const clipped = turns
+    .map((t) => ({
+      label: t.speaker_label,
+      s: Math.max(start, t.start_ms),
+      e: Math.min(end, t.end_ms),
+    }))
+    .filter((t) => t.e > t.s);
+
+  for (let i = 0; i < clipped.length; i++) {
+    for (let j = i + 1; j < clipped.length; j++) {
+      if (clipped[i].label === clipped[j].label) continue;
+      const overlap = Math.min(clipped[i].e, clipped[j].e) - Math.max(clipped[i].s, clipped[j].s);
+      if (overlap >= MIN_CROSSTALK_MS) return true;
+    }
+  }
+  return false;
+}
+
 export interface SpeakerTalkTime {
   label: string;
   /** Union of this speaker's turns, so self-overlap is not counted twice. */

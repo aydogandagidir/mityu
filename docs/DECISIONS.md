@@ -753,4 +753,16 @@ The earlier analysis called the `/MT` clash "the kill risk" for the standalone b
 
 **What this does NOT authorize:** any claim about *accuracy*. ADR-0034's ban stands — the A5 `multi` bucket holds zero recordings, so how often these labels are right is unmeasured on this project's own audio. It also does not add naming: there is no field, and no button, to attach a person to a voice.
 
+**Amendment (2026-08-09, same day, after review):** four corrections, all of them claims the screen was making that the code or the rules did not support.
+
+1. **A row with two speakers is not crosstalk.** The chip said `overlapping` on every multi-speaker row, but most such rows merely span a handover — turns `[0, 5s]` and `[5s, 12s]` are sequential and do not overlap each other at all, so an ordinary change of speaker was being described as people talking over one another. `hasCrosstalk()` now asks whether two *different* speakers' turns actually intersect inside the row (100 ms floor, below which it is rounding), and only genuine simultaneous speech is marked, as "at the same time". Two chips already say "two speakers"; a word there added nothing but a false claim.
+
+2. **The result is labelled best-effort on screen.** ADR-0034 states that "the feature ships labelled best-effort" until the A5 `multi` bucket is collected and reviewed. That bucket still holds zero recordings. Decision 7 of this ADR said accuracy was not claimed — but saying so in an ADR does not discharge a rule about **product copy**. The panel now says the separation is a best-effort estimate whose accuracy has not been measured on the reader's own recordings.
+
+3. **A failure to ask was invisible.** The hook correctly reported a failed availability query as an `error` with no state — and the panel then gated the entire block on that state, so a database or command failure made the whole feature vanish silently. A reader could not tell "this meeting has no speakers" from "we could not find out", and only the second has a retry. The error now renders independently, with a Try again.
+
+4. **The download button understated the download.** It said 34 MB, which is the on-disk total; the segmentation model arrives as a `.tar.bz2` and expands, so 35.2 MB actually crosses the network. Corrected to 35 MB and pinned by `models::tests::the_download_size_the_ui_promises`, so bumping a model pin fails the build instead of leaving the button quietly wrong.
+
+Each correction carries a test, and each test was confirmed load-bearing by restoring the defect and watching the suite fail.
+
 **Status:** Accepted (2026-08-09). Implements ADR-0034 step (d).
