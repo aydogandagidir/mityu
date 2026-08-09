@@ -30,6 +30,21 @@ jobs:
           cargo build -p llama-helper
           mkdir -p frontend/src-tauri/binaries
           cp target/debug/llama-helper "frontend/src-tauri/binaries/llama-helper-$(rustc -vV | grep 'host:' | awk '{print $2}')"
+      - name: verify sherpa-onnx native archive before cargo can download it (ADR-0035 §4)
+        # `sherpa-onnx-sys` fetches a ~22 MB prebuilt native archive with NO
+        # integrity check of any kind, and its build script runs before any of
+        # ours — so the verification has to happen here, outside cargo.
+        #
+        # Self-activating on purpose: it is a no-op until something in the
+        # workspace actually depends on sherpa, and it turns itself on the moment
+        # `diarize-helper` lands, so this cannot be forgotten in that PR. The
+        # tool fails closed on a bad digest, a wrong size, or an unpinned target.
+        run: |
+          if grep -q '^name = "sherpa-onnx-sys"$' Cargo.lock; then
+            python3 tools/diarization/fetch-sherpa-archive.py --github-env
+          else
+            echo "no sherpa-onnx-sys in Cargo.lock — nothing to verify yet"
+          fi
       - name: clippy
         # Warnings are advisory until the ~140-warning upstream baseline is burned
         # down (ADR-0017); deny-by-default correctness lints still fail the job.
