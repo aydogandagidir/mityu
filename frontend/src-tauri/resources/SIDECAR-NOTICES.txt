@@ -30,7 +30,7 @@ Mityu therefore distributes NO GPL-licensed code in this executable. Every
 component below is under a permissive licence, each verified from its own
 upstream repository rather than assumed:
 
-  sherpa-onnx (c-api, core, cxx-api)  Apache-2.0
+  sherpa-onnx (c-api, core)           Apache-2.0
     https://github.com/k2-fsa/sherpa-onnx
   kaldi-decoder                       Apache-2.0
     https://github.com/k2-fsa/kaldi-decoder

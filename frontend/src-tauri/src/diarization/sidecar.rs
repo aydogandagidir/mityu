@@ -259,6 +259,19 @@ mod notice {
     /// This is the drift that matters most: bump the pin, forget the notice,
     /// and Mityu ships a document attesting to the provenance of a binary it
     /// no longer builds.
+    /// The pin block for one target, so a hash is checked against the entry it
+    /// belongs to. Searching the whole file would accept the Linux digest under
+    /// the Windows filename -- a contradictory pair, shipped as provenance.
+    fn pin_block(target: &str) -> &'static str {
+        let key = format!("\"{target}\"");
+        let start = PINS
+            .find(&key)
+            .unwrap_or_else(|| panic!("fetch-sherpa-archive.py has no {target} pin"));
+        let rest = &PINS[start..];
+        let end = rest.find("},").expect("pin entry is not closed with `},`");
+        &rest[..end]
+    }
+
     #[test]
     fn the_notice_quotes_the_archive_that_is_actually_pinned() {
         let sha = NOTICE
@@ -266,11 +279,44 @@ mod notice {
             .map(str::trim)
             .find(|l| l.len() == 64 && l.chars().all(|c| c.is_ascii_hexdigit()))
             .expect("SIDECAR-NOTICES.txt quotes no 64-hex archive digest");
+        // The notice describes the Windows x64 distribution, so it is the
+        // Windows entry that has to match -- not merely some entry.
+        let windows = pin_block("x86_64-pc-windows-msvc");
         assert!(
-            PINS.contains(sha),
-            "SIDECAR-NOTICES.txt quotes archive sha256 {sha}, which no longer \
-             appears in fetch-sherpa-archive.py -- the notice describes a build \
-             we do not make"
+            windows.contains(sha),
+            "SIDECAR-NOTICES.txt quotes archive sha256 {sha}, which is not the \
+             x86_64-pc-windows-msvc pin -- the notice describes a build we do \
+             not make for the platform it claims to describe"
+        );
+    }
+
+    /// The exact hole this closes: swap the Windows digest for the Linux one
+    /// and the old whole-file search still passed, approving a filename/hash
+    /// pair that contradict each other.
+    #[test]
+    fn a_digest_from_another_platform_is_not_accepted() {
+        let linux = pin_block("x86_64-unknown-linux-gnu");
+        let windows = pin_block("x86_64-pc-windows-msvc");
+        let hex = |b: &str| {
+            b.lines()
+                .map(str::trim)
+                .find_map(|l| {
+                    let t = l
+                        .trim_start_matches("\"sha256\": \"")
+                        .trim_end_matches("\",");
+                    (t.len() == 64 && t.chars().all(|c| c.is_ascii_hexdigit()))
+                        .then(|| t.to_string())
+                })
+                .expect("pin block has no sha256")
+        };
+        assert_ne!(
+            hex(linux),
+            hex(windows),
+            "the two pins must differ for this to mean anything"
+        );
+        assert!(
+            !windows.contains(&hex(linux)),
+            "the Linux digest appears inside the Windows pin block"
         );
     }
 
