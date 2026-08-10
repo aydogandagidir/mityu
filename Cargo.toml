@@ -39,3 +39,17 @@ tokio = { version = "1.32.0", features = ["full"] }
 # builds fine on the MSVC toolchain we ship with. Do not re-add it.
 [patch.crates-io]
 cpal = { git = "https://github.com/RustAudio/cpal", rev = "51c3b43" }
+
+# sherpa-onnx-sys 1.13.4 with two lines changed, vendored so the change is
+# reviewable in-tree rather than trusted to a fork.
+#
+# Upstream hardcodes BOTH the archive filename and the static link list, and
+# both name TTS: the archive it fetches is built with SHERPA_ONNX_ENABLE_TTS=ON
+# and the link list includes `espeak-ng`, which is GPL-3.0. That is not
+# theoretical -- the release `diarize-helper` carried 51 espeak symbols and
+# /OPT:REF did not strip them, so a closed commercial installer would have
+# shipped GPL-3.0 object code without GPL terms or source (BACKLOG H10).
+#
+# The patch points every static target at upstream's own `-no-tts` archive and
+# drops the three TTS libraries from the link list. Diarization uses no TTS.
+sherpa-onnx-sys = { path = "vendor/sherpa-onnx-sys" }
