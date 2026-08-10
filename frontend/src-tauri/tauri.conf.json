@@ -96,7 +96,9 @@
             "resources/FFMPEG-BUILDS-LICENSE.txt",
             "resources/COPYING.LGPLv3",
             "resources/COPYING.GPLv3",
-            "resources/MODEL-NOTICES.txt"
+            "resources/MODEL-NOTICES.txt",
+            "resources/SIDECAR-NOTICES.txt",
+            "resources/COPYING.Apache-2.0.txt"
         ],
         "externalBin": [
             "binaries/llama-helper",

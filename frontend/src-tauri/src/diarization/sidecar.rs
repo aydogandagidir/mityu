@@ -241,3 +241,102 @@ mod tests {
         std::env::remove_var("MITYU_DIARIZE_HELPER");
     }
 }
+
+/// Guards for the sidecar's third-party notice.
+///
+/// The notice makes legal claims about a binary built from a pinned archive.
+/// Every claim in it can go stale silently -- a pin bump, a rename, a resource
+/// list that forgets to ship the file -- and a stale legal notice is worse than
+/// none, because it asserts something untrue with apparent authority.
+#[cfg(test)]
+mod notice {
+    const NOTICE: &str = include_str!("../../resources/SIDECAR-NOTICES.txt");
+    const PINS: &str = include_str!("../../../../tools/diarization/fetch-sherpa-archive.py");
+    const TAURI_CONF: &str = include_str!("../../tauri.conf.json");
+
+    /// The archive hash the notice quotes must be the one actually fetched.
+    ///
+    /// This is the drift that matters most: bump the pin, forget the notice,
+    /// and Mityu ships a document attesting to the provenance of a binary it
+    /// no longer builds.
+    #[test]
+    fn the_notice_quotes_the_archive_that_is_actually_pinned() {
+        let sha = NOTICE
+            .lines()
+            .map(str::trim)
+            .find(|l| l.len() == 64 && l.chars().all(|c| c.is_ascii_hexdigit()))
+            .expect("SIDECAR-NOTICES.txt quotes no 64-hex archive digest");
+        assert!(
+            PINS.contains(sha),
+            "SIDECAR-NOTICES.txt quotes archive sha256 {sha}, which no longer \
+             appears in fetch-sherpa-archive.py -- the notice describes a build \
+             we do not make"
+        );
+    }
+
+    /// ...and the archive filename, so a same-hash rename is caught too.
+    #[test]
+    fn the_notice_names_the_archive_that_is_actually_pinned() {
+        let archive = "sherpa-onnx-v1.13.4-win-x64-static-MT-Release-no-tts-lib.tar.bz2";
+        assert!(
+            NOTICE.contains(archive),
+            "the notice does not name {archive}"
+        );
+        // The pin file builds the name from an f-string, so match the distinctive tail.
+        assert!(
+            PINS.contains("win-x64-static-MT-Release-no-tts-lib.tar.bz2"),
+            "fetch-sherpa-archive.py no longer pins the no-tts Windows archive"
+        );
+    }
+
+    /// A notice that is not bundled is not a notice.
+    ///
+    /// Apache-2.0 4(a) requires giving recipients a copy of the licence, and
+    /// MIT/BSD require reproducing their text in binary distributions. Writing
+    /// the file discharges nothing if `tauri.conf.json` does not ship it.
+    #[test]
+    fn the_notice_and_the_licence_text_are_actually_shipped() {
+        for resource in [
+            "resources/SIDECAR-NOTICES.txt",
+            "resources/COPYING.Apache-2.0.txt",
+        ] {
+            assert!(
+                TAURI_CONF.contains(resource),
+                "{resource} exists but tauri.conf.json does not bundle it, so no \
+                 user ever receives it"
+            );
+        }
+    }
+
+    /// Every permissive licence the binary carries has to appear by name, and
+    /// the GPL claim has to stay attached to the reason it is true.
+    #[test]
+    fn every_linked_licence_is_named() {
+        for licence in ["Apache-2.0", "MIT", "BSD-3-Clause"] {
+            assert!(
+                NOTICE.contains(licence),
+                "the notice never mentions {licence}"
+            );
+        }
+        // Each component, verified from its own upstream repository.
+        for component in [
+            "sherpa-onnx",
+            "kaldi-decoder",
+            "kaldifst",
+            "OpenFST",
+            "kaldi-native-fbank",
+            "simple-sentencepiece",
+            "ONNX Runtime",
+            "KISS FFT",
+        ] {
+            assert!(
+                NOTICE.contains(component),
+                "the notice omits {component}, which is statically linked in"
+            );
+        }
+        // The no-GPL claim is only true because of the no-tts build; keeping the
+        // two together stops the claim outliving its justification.
+        assert!(NOTICE.contains("no-tts"));
+        assert!(NOTICE.contains("GPL-3.0"));
+    }
+}
