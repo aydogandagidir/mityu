@@ -2,6 +2,8 @@
 
 Operational steps that must pass before Mityu's first public release. Complements the `/release` command and the BACKLOG gates (C8/D5). Local-first + HITL invariants are enforced elsewhere; this file covers the brand / keys / supply-chain items surfaced during the bluedev rebrand (ADR-0006 / 0009 / 0013).
 
+**v1.1.0 validation scope (ADR-0037, extending ADR-0027 on the same terms):** A5 and C8 remain `DEFERRED / NOT PASSED` for v1.1.0 publication. Diarization ships labelled best-effort with no accuracy claim; its runtime (~a quarter of the recording), its lack of a progress indicator (H12) and its >1 GB peak at 90 minutes are recorded as accepted, disclosed risks. Everything below still applies.
+
 **v1.0.4 validation scope (ADR-0027):** A5 target-environment benchmarking and the C8 human pilot are `DEFERRED / NOT PASSED` and are non-blocking for this patch only. Public copy must not claim measured field/noise/jargon/diarization accuracy, an SLA, or demonstrated pilot value. Signing, same-SHA CI, legal approval, legacy-lead disposition, and updater canary controls are unchanged.
 
 ## 0. Version consistency (BLOCKING)

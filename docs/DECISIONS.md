@@ -812,3 +812,33 @@ The first-order argument is simpler: two files had already been converted this w
 **Known gap, not fixed here.** Nothing prevents the next `text-h3`. An undefined utility is invisible to `tsc`, to `next lint` and to any test that does not rasterize — which is how these survived. A check that greps `className` for `text-*` tokens absent from the built CSS would close it and does not exist yet.
 
 **Status:** Accepted (2026-08-09). Completes the cleanup ADR-0036 deferred.
+
+---
+
+## ADR-0037 — v1.1.0 publishes under ADR-0027's terms; A5 and C8 are still NOT PASSED
+
+**Context:** ADR-0027 reclassified A5 and C8 as deferred evidence debt **for v1.0.4 publication only**, and said so twice — "this patch only" in `RELEASE_CHECKLIST.md`, "only for publication of v1.0.4" in BACKLOG C8. v1.1.0 is a **minor** release, not a patch: it adds on-device speaker diarization with talk time. The exception therefore does not reach it, and publishing without saying so would assert an authorisation that does not exist. On 2026-08-10 the product owner, having been shown exactly what the exception is and is not, directed that 1.1.0 publish.
+
+**What was checked before recording this, rather than assumed.** Every substantive constraint ADR-0027 imposed is satisfied by 1.1.0:
+
+| ADR-0027 constraint | 1.1.0 |
+|---|---|
+| no measured WER/CER or verified accuracy claim | none made |
+| **no diarization-quality claim** (named explicitly in ADR-0027 §2) | the panel says "best-effort estimate ... has not been measured on recordings like yours"; the landing page repeats it |
+| copy must say accuracy varies and output must be verified | unchanged, and the notices now state the fact rather than claiming a deferral |
+| does not unlock D1 / F0 / G1 | untouched |
+| signing, exact-SHA CI, updater continuity fail-closed | unchanged |
+
+ADR-0027 anticipated this shape: *"Later patches may carry the same honest limitation."* This records that the same limitation is carried, for a minor rather than a patch, with the owner's direction as its basis — the same basis ADR-0027 had.
+
+**Decision:** A5 and C8 remain **DEFERRED / NOT PASSED** for v1.1.0 publication. This is a sequencing exception on the same terms as ADR-0027, not a PASS, GO, CLOSE or waiver. Everything ADR-0027 forbade remains forbidden, and its clauses 1-6 carry forward verbatim.
+
+**Risks accepted that did NOT exist at v1.0.4, and are disclosed rather than buried:**
+
+1. **Diarization accuracy is unmeasured on real meetings.** The A5 `multi` bucket still holds zero recordings. Worse than "unmeasured": in the two synthetic runs, the 60-minute file produced **four** speakers and the 90-minute file, built from the same two voices by the same method, produced the correct **two**. Same material, same pipeline, different answer. The product copy claims nothing about accuracy, and H9 is now the gating work rather than a nice-to-have.
+2. **A diarization pass takes about a quarter of the recording's length** — measured 14 min 27 s for 60.1 min and 21 min 21 s for 90.1 min — **with no progress indicator and no cancel** (H12). A user watching an `Analysing…` label for fourteen minutes may reasonably conclude the app has hung. Disclosed on the landing page; H12 is filed.
+3. **Peak memory outgrows the input**: 600 MB at 60 minutes, **1033 MB** at 90. The 2-hour case is unmeasured and must not be extrapolated from two points.
+
+**What this does NOT authorize:** any accuracy or field-performance claim; any target-environment or industrial positioning; a pilot-proven value claim; or any downstream epic that depends on C8. A5 remains mandatory before those. The next release that wants to broaden validated scope needs the real human artifacts, not another ADR.
+
+**Status:** Accepted (2026-08-10; explicit product-owner direction, on the same basis as ADR-0027). A5 and C8 are deferred for v1.1.0 publication, not passed.
