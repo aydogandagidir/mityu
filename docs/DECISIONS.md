@@ -547,7 +547,25 @@ This required the frontend's first component-test infrastructure. `environment: 
 
 **Explicitly NOT decided here — legal applicability.** This is a source-level engineering verification: it establishes that the documented mechanisms exist and cannot be bypassed. Whether Art. 50(2) applies to HITL-approved summarisation at all, and whether the "assistive function / no substantial alteration" carve-out is engaged, is a question for counsel and is not answered by this ADR. Art. 50(1) (informing a person they are interacting with an AI system) is not triggered by today's surfaces, but the planned "Ask This Meeting" conversational surface (Wave 1) would engage it and must be assessed before it ships.
 
-**Status:** Accepted (2026-07-26). Verification PASS; legal applicability review still owed.
+**Amendment (2026-08-10) — the Art. 50(1) assessment this ADR left owed, for "Ask This Meeting".**
+
+This ADR closed with: *"Art. 50(1) ... is not triggered by today's surfaces, but the planned 'Ask This Meeting' conversational surface (Wave 1) would engage it and must be assessed before it ships."* BACKLOG C9 made that a release gate, due at the next tag. `SummaryPanel` mounts `AskPanel` whenever a transcript exists, so 1.1.0 would be that tag. The assessment:
+
+**The surface does engage Art. 50(1).** It is a conversational surface a person types into and receives generated answers from — an AI system intended to interact directly with a natural person. No carve-out is claimed; the "obvious to a reasonably well-informed person" exception is not relied on, because relying on it would be an argument rather than a control.
+
+**What was already there, and what was not.** `AskPanel` already rendered an always-on, non-dismissable note reading *"AI-generated · review required"*, unconditional and above the input. That is an Art. 50(**2**) content marking. Art. 50(**1**) is a different obligation — informing the person that they are *interacting with an AI system* — and the wording only implied it. Implication is not disclosure.
+
+**What changed.** The note now opens *"You are asking an AI assistant · answers are AI-generated and need your review"*, and its accessible name carries both halves. Three properties matter and each is now asserted separately, because a single check over both would stay green if either half were dropped:
+
+1. **Present before interaction.** It renders unconditionally above the input, not after an answer arrives — being told afterwards is not being informed that you are interacting with an AI.
+2. **Not dismissable.** No control inside the note, and no dismiss/close affordance in the panel.
+3. **Both obligations stated.** The interaction disclosure and the content marking are distinct assertions in `AskPanel.test.tsx`.
+
+**Proven, not asserted.** The tests were confirmed load-bearing by mutation — dropping the interaction sentence, dropping the interaction half of the accessible name, and gating the note on an answer having arrived each turn the suite red. The surface is also now rendered by the `/design/hitl` route, so a compliance disclosure that previously existed only as a jsdom assertion can be looked at.
+
+**Still not decided here.** The two counsel questions this ADR opened are untouched: whether Art. 50(2) reaches HITL-approved summarisation, and whether the assistive-function carve-out is engaged. This amendment discharges the engineering obligation C9 named — the disclosure exists, holds on every reachable path, and cannot regress silently — and nothing more.
+
+**Status:** Accepted (2026-07-26). Verification PASS; Art. 50(1) assessment for the Ask surface completed 2026-08-10 (amendment above); the Art. 50(2) applicability question remains for counsel.
 
 ---
 
