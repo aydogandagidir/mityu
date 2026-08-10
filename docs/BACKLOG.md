@@ -243,7 +243,7 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 | turns produced | 1491, none malformed, covering 0.3 s to 60.0 min |
 | speech detected | 40.0 min of the 60.1 min file |
 
-So a 90-minute meeting extrapolates to roughly 22 minutes and a similar memory ceiling. It completes; it is not pathological.
+The 60-minute case completes and is not pathological. **The 90-minute case is being measured separately and is not inferred from this one** -- the acceptance criterion above says clustering is superlinear in segment count, so a linear extrapolation would contradict the very risk it is meant to settle.
 
 **It answers ADR-0035's open question: yes, the pass needs progress reporting.** Fourteen minutes behind an "Analysing…" label with no percentage, no elapsed time and no cancel reads as a hung app. That is a UX gap, not a correctness one — filed as H12.
 
