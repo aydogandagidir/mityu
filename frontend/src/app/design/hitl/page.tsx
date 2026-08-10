@@ -1,5 +1,7 @@
 'use client';
 
+import { AskPanel } from '@/components/AskThisMeeting/AskPanel';
+
 /**
  * /design/hitl — a Tauri-free verification surface for the HITL review controls.
  *
@@ -102,6 +104,20 @@ export default function HitlPreviewPage() {
           optional and Enter submits it blank.
         </p>
       </header>
+
+      {/* The Art. 50 disclosures, which are compliance surfaces and were
+          previously impossible to look at: no design route rendered the Ask
+          panel, so the only proof they existed was a jsdom assertion.
+          Rendering it needs no IPC -- the disclosure is unconditional, and only
+          pressing Ask reaches the backend. */}
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-muted-foreground">
+          Ask This Meeting — EU AI Act Art. 50 disclosure
+        </h2>
+        <div className="border border-border rounded-lg p-4">
+          <AskPanel meetingId={MEETING_ID} modelProvider="ollama" modelName="qwen3.5:4b" />
+        </div>
+      </section>
 
       <div className="border border-border rounded-lg p-4">
         <DraftSummaryView
