@@ -609,6 +609,16 @@ jobs:
           cargo build --release -p diarize-helper
           if ($LASTEXITCODE -ne 0) { Write-Error "Failed to build diarize-helper"; exit $LASTEXITCODE }
 
+          # Checked BEFORE it is copied into the bundle. eSpeak NG is GPL-3.0,
+          # and upstream's default sherpa archives link it in -- measured at 51
+          # symbols in a release build, which /OPT:REF did NOT strip (H10). This
+          # is the workflow that produces the installer, so this is the last
+          # place the check is worth anything.
+          python tools/diarization/check-no-gpl-espeak.py --self-test
+          if ($LASTEXITCODE -ne 0) { Write-Error "espeak detector self-test failed"; exit 1 }
+          python tools/diarization/check-no-gpl-espeak.py target/release/diarize-helper.exe
+          if ($LASTEXITCODE -ne 0) { Write-Error "diarize-helper contains GPL-3.0 espeak-ng; refusing to bundle it"; exit 1 }
+
           New-Item -ItemType Directory -Force -Path "frontend/src-tauri/binaries" | Out-Null
           Copy-Item "target/release/diarize-helper.exe" -Destination "frontend/src-tauri/binaries/diarize-helper-x86_64-pc-windows-msvc.exe"
           Get-ChildItem "frontend/src-tauri/binaries/"
@@ -664,6 +674,10 @@ jobs:
           python3 tools/diarization/fetch-sherpa-archive.py --target "$TARGET" --github-env
 
           cargo build --release -p diarize-helper --target "$TARGET"
+
+          # Checked BEFORE it is copied into the bundle -- see the Windows step.
+          python3 tools/diarization/check-no-gpl-espeak.py --self-test
+          python3 tools/diarization/check-no-gpl-espeak.py "target/$TARGET/release/diarize-helper"
 
           mkdir -p frontend/src-tauri/binaries
           cp "target/$TARGET/release/diarize-helper" "frontend/src-tauri/binaries/diarize-helper-${TARGET}"

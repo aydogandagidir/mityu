@@ -63,30 +63,35 @@ RELEASE_BASE = f"https://github.com/k2-fsa/sherpa-onnx/releases/download/v{SHERP
 # Names mirror `archive_name()` in sherpa-onnx-sys' build.rs exactly; a
 # mismatch would make the sys crate look for a file we never wrote and fail.
 PINS = {
+    # The `-no-tts` variants, deliberately. Upstream's default archives bundle
+    # `espeak-ng.lib`, which is GPL-3.0, and the linker pulls it into the
+    # helper -- measured on a release build, where /OPT:REF did NOT discard it
+    # (BACKLOG H10). These carry no espeak at all: the Windows archive holds 11
+    # `.lib` files and none of them is espeak-ng, piper_phonemize or ucd.
+    #
+    # `aarch64-unknown-linux-gnu` is ABSENT on purpose: upstream publishes no
+    # `no-tts` build for it, and every other pinned target has one. An unpinned
+    # target already fails closed here, which is the correct outcome -- the
+    # alternative is silently shipping GPL-3.0 code on that target.
     "x86_64-pc-windows-msvc": {
-        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-win-x64-static-MT-Release-lib.tar.bz2",
-        "size": 119847445,
-        "sha256": "d81bd1d25112540862d2387072e76b2b6843ef962918d6b5c7db5a19c6276b4c",
+        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-win-x64-static-MT-Release-no-tts-lib.tar.bz2",
+        "size": 116684776,
+        "sha256": "79dc88ac71e7a33fd0bb7ac01ee0bc1148dbd6407f44aeca7fa7c0eb9930be33",
     },
     "x86_64-unknown-linux-gnu": {
-        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-linux-x64-static-lib.tar.bz2",
-        "size": 22276804,
-        "sha256": "98b0e31996426f6e78244dbce1955548f2c64e8f01c4be75b85af7cdaa2e8d5c",
-    },
-    "aarch64-unknown-linux-gnu": {
-        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-linux-aarch64-static-lib.tar.bz2",
-        "size": 20678521,
-        "sha256": "23b33616787cc949d5b1438e9794550f805e208a014c5c2245483207c58bbc0f",
+        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-linux-x64-static-no-tts-lib.tar.bz2",
+        "size": 21142120,
+        "sha256": "8ad24470f97e607d603789661ee96da5eef72c3f666a4cb7aa36da2cc1a0faaf",
     },
     "x86_64-apple-darwin": {
-        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-osx-x64-static-lib.tar.bz2",
-        "size": 19336737,
-        "sha256": "2bda2c10b31a1cfc45d9f9e14bd4983743ec3779d309e42d99a6c8fa1689043f",
+        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-osx-x64-static-no-tts-lib.tar.bz2",
+        "size": 18236816,
+        "sha256": "9dcac21c5ae3d22c729a7b5ae9b89622e243ce4c5e22a84741ee5ef32de84f84",
     },
     "aarch64-apple-darwin": {
-        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-osx-arm64-static-lib.tar.bz2",
-        "size": 19551872,
-        "sha256": "57801db2bbb786a5d343f515a38ff210b401842338bdc804fa075312d1cd2404",
+        "archive": f"sherpa-onnx-v{SHERPA_VERSION}-osx-arm64-static-no-tts-lib.tar.bz2",
+        "size": 18353357,
+        "sha256": "ca356bdd4fefc1245a2c30f2a5da5db5523430be941e72692b86df3e62424fb5",
     },
 }
 

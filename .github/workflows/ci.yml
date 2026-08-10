@@ -42,6 +42,16 @@ jobs:
           cargo build -p diarize-helper
           mkdir -p frontend/src-tauri/binaries
           cp target/debug/diarize-helper "frontend/src-tauri/binaries/diarize-helper-$(rustc -vV | grep 'host:' | awk '{print $2}')"
+      - name: the sidecar carries no GPL-3.0 espeak-ng
+        # One line away from silently reverting: bump the crate or repoint a pin
+        # and upstream's TTS-on archive comes back, taking GPL-3.0 espeak-ng
+        # into a binary we ship closed. It was measured at 51 symbols in a
+        # RELEASE build before the fix -- /OPT:REF did not strip it (H10).
+        # --self-test first, because a detector nobody has seen fail is
+        # indistinguishable from one that cannot.
+        run: |
+          python3 tools/diarization/check-no-gpl-espeak.py --self-test
+          python3 tools/diarization/check-no-gpl-espeak.py target/debug/diarize-helper
       - name: clippy
         # Warnings are advisory until the ~140-warning upstream baseline is burned
         # down (ADR-0017); deny-by-default correctness lints still fail the job.
