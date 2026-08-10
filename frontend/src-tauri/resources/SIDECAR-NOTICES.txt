@@ -1,0 +1,118 @@
+diarize-helper third-party notice - Mityu Windows x64 distribution
+
+Mityu uses `diarize-helper` as a separate executable for on-device speaker
+diarization. It is not a library inside the app: it runs as its own process,
+once per meeting, over a finished recording (ADR-0034, ADR-0035).
+
+The hash below is of the pinned SOURCE archive, not of diarize-helper.exe
+itself. Mityu compiles the helper per release, so its binary hash differs
+between builds; quoting one here would be stale, and wrong, the moment it
+shipped. The archive hash is the provenance fact that does not move, and it is
+verified before every build (tools/diarization/fetch-sherpa-archive.py).
+
+  Built from: sherpa-onnx 1.13.4 prebuilt static archive
+    sherpa-onnx-v1.13.4-win-x64-static-MT-Release-no-tts-lib.tar.bz2
+    SHA-256:
+      79dc88ac71e7a33fd0bb7ac01ee0bc1148dbd6407f44aeca7fa7c0eb9930be33
+  Upstream release:
+    https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.4
+
+WHY THE "no-tts" BUILD
+
+Upstream also publishes a default archive of the same version built with
+text-to-speech enabled. That one statically links eSpeak NG, which is
+GPL-3.0. Mityu deliberately builds against the `-no-tts` archive instead, and
+verifies on every build that the resulting binary contains no espeak code
+(`tools/diarization/check-no-gpl-espeak.py`, run in CI and again in the release
+workflow before the binary is bundled).
+
+Mityu therefore distributes NO GPL-licensed code in this executable. Every
+component below is under a permissive licence, each verified from its own
+upstream repository rather than assumed:
+
+  sherpa-onnx (c-api, core)           Apache-2.0
+    https://github.com/k2-fsa/sherpa-onnx
+  kaldi-decoder                       Apache-2.0
+    https://github.com/k2-fsa/kaldi-decoder
+  kaldifst                            Apache-2.0
+    https://github.com/k2-fsa/kaldifst
+  OpenFST (v1.8.5 fork)               Apache-2.0
+    https://github.com/csukuangfj/openfst
+  kaldi-native-fbank                  Apache-2.0
+    https://github.com/csukuangfj/kaldi-native-fbank
+  simple-sentencepiece (v0.7)         Apache-2.0
+    https://github.com/pkufool/simple-sentencepiece
+  ONNX Runtime                        MIT
+    https://github.com/microsoft/onnxruntime
+  KISS FFT                            BSD-3-Clause
+    https://github.com/mborgerding/kissfft
+
+The prebuilt archive ships no licence files of its own - it contains only
+`lib/*.lib` - so these notices are supplied by Mityu.
+
+--------------------------------------------------------------------------
+Apache License 2.0 components
+--------------------------------------------------------------------------
+
+sherpa-onnx, kaldi-decoder, kaldifst, OpenFST, kaldi-native-fbank and
+simple-sentencepiece are licensed under the Apache License, Version 2.0.
+
+The complete licence text accompanies this notice as COPYING.Apache-2.0.txt,
+and is also at http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------
+ONNX Runtime - MIT License
+--------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------
+KISS FFT - BSD 3-Clause License
+--------------------------------------------------------------------------
+
+Copyright (c) 2003-2010 Mark Borgerding . All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors
+may be used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
