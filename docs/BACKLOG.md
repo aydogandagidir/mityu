@@ -230,9 +230,26 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 - AC: the helper is built on `windows-latest` and on macOS. Note the current gap: `ci.yml` builds and tests **only `ubuntu-latest`**, `release.yml` is Windows-only, and `build-macos.yml` is dispatch-only — so today a macOS break surfaces at release and a Windows break surfaces only in the release job.
 - **Also fix, found 2026-08-09:** `build.yml`'s **llama-helper** macOS/Linux step builds for the runner host and copies the result under `inputs.target`'s name. On an Intel runner asked for `aarch64-apple-darwin` that puts an x86_64 binary inside an ARM app under an ARM filename — it looks right and fails to launch. The diarize-helper step was written from that same template and has been corrected to build with `--target`; llama-helper's has not, and is left as its own change because the macOS release path cannot be exercised from here.
 
-### H5 · Diarization runtime + memory on a 60–90 minute recording
+### H5 · Diarization runtime + memory on a 60–90 minute recording — ✅ MEASURED 2026-08-10 (60 min)
 - Agent: qa-release-engineer · Cmd: /audio-debug · depends-on: H3a
 - AC: wall-clock and peak RSS measured on a long recording; decides whether H3 needs chunked progress reporting or can stay fire-and-forget. Clustering is superlinear in segment count, so a short-clip measurement does not answer this.
+
+**Measured on Windows x64, release build, a 60.1-minute 16 kHz mono recording:**
+
+| | |
+|---|---|
+| wall time | **14 min 27 s** (~4x faster than real time) |
+| peak working set | **600 MB** |
+| turns produced | 1491, none malformed, covering 0.3 s to 60.0 min |
+| speech detected | 40.0 min of the 60.1 min file |
+
+So a 90-minute meeting extrapolates to roughly 22 minutes and a similar memory ceiling. It completes; it is not pathological.
+
+**It answers ADR-0035's open question: yes, the pass needs progress reporting.** Fourteen minutes behind an "Analysing…" label with no percentage, no elapsed time and no cancel reads as a hung app. That is a UX gap, not a correctness one — filed as H12.
+
+**Observed, and deliberately NOT reported as an accuracy result:** the test file alternates two voices and the pass reported **four** speakers — 18.9 / 16.1 / 4.8 / 0.3 minutes, so two spurious clusters holding ~13% of the speech. The material is not representative: the "second voice" is the same recording resampled to a higher pitch, which also speeds it up and adds artifacts, so it is not two humans. ADR-0034 forbids accuracy claims until the A5 `multi` bucket exists, and this measurement does not change that — it is a runtime and memory result only. It does suggest the `multi` bucket (H9) matters more than a nice-to-have.
+
+**A methodology note worth keeping.** The first harness reported the helper "hung" for 70 minutes. It had not: the harness redirected stdout to a PIPE and only read it after the process exited, so the child blocked writing 187 KB of JSON into a full kernel buffer while the parent waited for an exit that could not come. The app is unaffected — `sidecar.rs` uses tokio's `Command::output()`, which drains both pipes concurrently. Any future harness must redirect to a file or drain concurrently, or it will measure its own deadlock.
 
 ### H6 · Speaker labels + talk-time UI (ADR-0034 step d) — ✅ DONE (ADR-0036)
 - Agent: frontend-nextjs-engineer · Cmd: /feature · depends-on: H3b-2
@@ -274,6 +291,12 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 - Agent: rust-tauri-core-engineer · Cmd: /fix-bug · found while verifying H10
 - Pointed at a file that exists but is not a valid ONNX model, the helper dies with `fatal runtime error: Rust cannot catch foreign exceptions, aborting` — a C++ exception from sherpa crossing the FFI boundary with no catch. Low severity in practice: models are SHA-256 verified before use (H3b-1), and the sidecar is a separate process so it cannot take the app down (ADR-0035). But the app sees a crash rather than a message, so the user is told nothing useful.
 - AC: an unreadable model produces a clear error on stderr and a non-zero exit, not an abort.
+
+### H12 · A diarization pass needs progress reporting
+- Agent: rust-tauri-core-engineer · Cmd: /feature · found by H5
+- H5 measured 14.5 minutes for a 60-minute recording. The UI shows "Analysing…" on a disabled button for that whole time — no percentage, no elapsed time, no cancel. That reads as a hung app, and a user will kill it.
+- ADR-0035 flagged exactly this as the thing the measurement would decide: "this determines whether the sidecar needs chunked progress reporting." It does.
+- AC: the pass reports progress the UI can show, and can be cancelled; a long pass never looks indistinguishable from a hang.
 
 ### H8 · DER instrument hardening
 - Agent: qa-release-engineer · Cmd: /fix-bug · depends-on: —
