@@ -243,7 +243,21 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 | turns produced | 1491, none malformed, covering 0.3 s to 60.0 min |
 | speech detected | 40.0 min of the 60.1 min file |
 
-The 60-minute case completes and is not pathological. **The 90-minute case is being measured separately and is not inferred from this one** -- the acceptance criterion above says clustering is superlinear in segment count, so a linear extrapolation would contradict the very risk it is meant to settle.
+**And measured at 90 minutes too, rather than extrapolated:**
+
+| | 60.1 min | 90.1 min | ratio (audio is 1.5x) |
+|---|---|---|---|
+| wall time | 14 min 27 s | **21 min 21 s** | 1.48x |
+| peak working set | 600 MB | **1033 MB** | **1.72x** |
+| turns | 1491 | 1932 | 1.30x |
+| malformed turns | 0 | 0 | |
+
+Two things this settles, and one of them is not what the acceptance criterion assumed:
+
+- **Runtime is roughly linear in this range**, not superlinear -- 1.48x the time for 1.5x the audio. A 90-minute meeting takes about 21 minutes.
+- **Memory is the part that grows faster than the input**: 1.72x for 1.5x the audio, crossing **1 GB** at 90 minutes. That, not runtime, is the ceiling worth watching, and it is why the 2-hour case must be measured before anyone claims it works rather than extrapolated from these two points.
+
+**A third observation that reinforces ADR-0034's ban on accuracy claims:** the 60-minute file produced **four** speakers and the 90-minute file, built from the same two voices by the same method, produced the correct **two**. Same material, same pipeline, different answer. Whatever that instability is, it is exactly why speaker accuracy may not be claimed until the A5 `multi` bucket exists (H9).
 
 **It answers ADR-0035's open question: yes, the pass needs progress reporting.** Fourteen minutes behind an "Analysing…" label with no percentage, no elapsed time and no cancel reads as a hung app. That is a UX gap, not a correctness one — filed as H12.
 
