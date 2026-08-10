@@ -102,8 +102,8 @@ export function About() {
             </div>
 
             <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
-                <span className="font-semibold">v1.1.0 validation and storage notice:</span>{' '}
-                transcription quality varies by language, microphone, overlap, and noise; the target-environment benchmark and human pilot are deferred. Review important text against its source audio. Raw meeting audio remains local on this device until you delete the meeting.
+                <span className="font-semibold">Validation and storage notice:</span>{' '}
+                transcription quality varies by language, microphone, overlap, and noise; the target-environment benchmark and human pilot have not been performed. Review important text against its source audio. Raw meeting audio remains local on this device until you delete the meeting.
             </div>
 
             {/* Why Mityu - three pillars, aligned with the landing page copy */}
