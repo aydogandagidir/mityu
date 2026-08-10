@@ -393,6 +393,11 @@ a{color:inherit;text-decoration:none}
   .ld-caret{display:none}
 }
 </style>
+<!-- Vercel Web Analytics (cookieless, privacy-friendly). Script and its beacon are
+     both same-origin /_vercel/insights/*, so the site CSP (script-src 'self',
+     connect-src 'self') already allows them — no CSP change needed. Static-site
+     method: this single defer script auto-tracks page views; no React component. -->
+<script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -429,7 +434,7 @@ a{color:inherit;text-decoration:none}
         <a class="btn btn-gray" href="#pricing">See pricing</a>
       </div>
       <p class="platforms">Windows 10/11 (64-bit) · macOS in development</p>
-      <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. v1.0.4 target-environment validation and the human pilot are deferred; review important output against its source audio. Raw meeting audio remains local until you delete the meeting.</p>
+      <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. v1.1.0 target-environment validation and the human pilot are deferred; review important output against its source audio. Speaker separation is a best-effort estimate, runs after the recording ends rather than live, and takes roughly a quarter of the recording&rsquo;s length; speaker labels are anonymous and naming a voice is yours to do. Raw meeting audio remains local until you delete the meeting.</p>
     </div>
   </section>
 
@@ -530,6 +535,7 @@ a{color:inherit;text-decoration:none}
         <div class="divider"></div>
         <ul class="checks">
           <li><span class="ck">✓</span><span>Whisper large-v3 &amp; Parakeet, fully offline</span></li>
+          <li><span class="ck">✓</span><span>Speaker separation and talk time, on-device</span></li>
           <li><span class="ck">✓</span><span>SQLCipher when secure OS key storage is available</span></li>
           <li><span class="ck">✓</span><span>Opt-in PII redaction</span></li>
         </ul>
