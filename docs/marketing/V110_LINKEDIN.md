@@ -35,9 +35,10 @@ değil. Strateji belgesinin wedge'i de tam olarak bu.
 > toplantı özeti değildir; bir performans ölçümüdür. Biz o ürünü yapmıyoruz, ve
 > bu bir slogan değil — kodda böyle yazılı, testle korunuyor.
 >
-> **Etiketler anonim kalıyor.** "Konuşmacı 1", "Konuşmacı 2". Bir sese isim
-> vermek sizin elinizle yapacağınız bir iş; çünkü saklanan bir ses→kişi
-> eşlemesi KVKK ve GDPR açısından biyometrik veridir.
+> **Etiketler anonim kalıyor — ve isim verme özelliği yok.** "Konuşmacı 1",
+> "Konuşmacı 2"; onları yeniden adlandıracak bir alanı bilerek koymadık. Hangi
+> sesin kime ait olduğunu saklamak KVKK ve GDPR anlamında biyometrik veri
+> olurdu.
 >
 > **Duygu, katılım ya da kişilik çıkarımı yok.** Olmayacak da. EU AI Act'in
 > duygu tanıma yasağı 2 Ağustos 2026'da yürürlüğe girdi.
@@ -65,9 +66,9 @@ ilk iki satır kancayı taşımalı — taşıyor).
 > summary, it's a performance review. We're not building that — and it isn't a
 > slogan, it's how the code is written and what the tests enforce.
 >
-> **Labels stay anonymous.** "Speaker 1", "Speaker 2". Matching a voice to a
-> person is yours to do, because a stored voice-to-name map is biometric data
-> under GDPR and Türkiye's KVKK.
+> **Labels stay anonymous — and there is no rename control.** "Speaker 1",
+> "Speaker 2", with no field to change them, deliberately. Storing which voice
+> belongs to whom would be biometric data under GDPR and Türkiye's KVKK.
 >
 > **No emotion, engagement or personality inference.** There won't be. The EU AI
 > Act's emotion-recognition ban took effect on 2 August 2026.
@@ -85,8 +86,8 @@ ilk iki satır kancayı taşımalı — taşıyor).
 > Mityu 1.1.0: konuşmacı ayrımı, tamamen cihazda.
 >
 > Konuşma süresini kimin çok konuştuğuna göre sıralamıyoruz — o bir toplantı
-> özeti değil, performans ölçümüdür. Etiketler anonim; bir sese isim vermek
-> sizin işiniz, çünkü saklanan ses→kişi eşlemesi biyometrik veri.
+> özeti değil, performans ölçümüdür. Etiketler anonim ve isim verme özelliği
+> yok, çünkü saklanan ses→kişi eşlemesi biyometrik veri.
 >
 > En iyi çaba tahmini; doğruluğunu ölçmedik ve ürün bunu söylüyor.
 
@@ -176,10 +177,12 @@ Türkçe post için `#KVKK` ve `#YapayZeka`; İngilizce için `#GDPR` ve `#EUAIA
 > kayıtlardan oluşan bir değerlendirme setimiz henüz yok; o olmadan söylenecek
 > her rakam uydurma olur. Ürünün içinde de "en iyi çaba" yazıyor.
 
-**"Neden konuşmacılara isim veremiyorum?"**
-> Verebilirsiniz — elle. Otomatik yapmıyoruz çünkü saklanan bir ses→kişi
-> eşlemesi KVKK ve GDPR açısından biyometrik veri, ve o kapıyı bir kolaylık
-> özelliği olarak açmak istemiyoruz.
+**"Konuşmacılara nasıl isim veriyorum?"**
+> Vermiyorsunuz — Mityu'da öyle bir alan yok, ve bu bilinçli. Etiketler
+> "Konuşmacı 1", "Konuşmacı 2" olarak kalıyor. Hangi sesin kime ait olduğunu
+> saklamak KVKK m.6 ve GDPR Art. 9 anlamında biyometrik özel nitelikli veri
+> olurdu; saklamamak işlemeyi o kategorinin dışında tutuyor. İsim gerekiyorsa
+> kendi notunuza yazarsınız.
 
 **"Talk-time yüzdeleri neyin yüzdesi?"**
 > Konuşmanın, toplantı süresinin değil. İnsanlar üst üste konuştuğu için
