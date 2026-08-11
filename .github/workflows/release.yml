@@ -43,10 +43,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # v1.0.4 ships updater-signed only (ADR-0029): Windows Authenticode is
-          # deferred by owner decision, matching the v1.0.0-v1.0.3 release line.
+          # Releases ship updater-signed only (ADR-0029): Windows Authenticode is
+          # deferred by owner decision, and remains so — no SM_* certificate secrets
+          # are configured, so SmartScreen warnings continue.
           # The Tauri updater key stays fail-closed and mandatory so the
-          # v1.0.3 -> v1.0.4 auto-update signature chain cannot break.
+          # the auto-update signature chain from the previous release cannot break.
           required=(
             TAURI_SIGNING_PRIVATE_KEY
             TAURI_SIGNING_PRIVATE_KEY_PASSWORD
@@ -66,7 +67,7 @@ jobs:
             exit 1
           fi
 
-          echo "Updater signing configuration is present. Windows Authenticode is deferred for v1.0.4 (ADR-0029)."
+          echo "Updater signing configuration is present. Windows Authenticode is deferred (ADR-0029)."
 
       - name: Validate synchronized app version and check tag
         id: get-version
@@ -160,7 +161,8 @@ jobs:
             console.log(`Created draft release with ID: ${data.id}`)
             return data.id
 
-  # STEP 2: v1.0.4 keeps the published v1.0.3 platform scope: Windows x64.
+  # STEP 2: the published platform scope is Windows x64. macOS and Linux are
+  # built by dispatch-only workflows and are not part of a release yet.
   # macOS stays excluded until its FFmpeg provenance, signing/notarization and
   # physical smoke-test gates are complete.
   build-windows:
@@ -173,7 +175,7 @@ jobs:
       target: "x86_64-pc-windows-msvc"
       ref: ${{ github.sha }}
       build-args: ""
-      sign-binaries: false  # v1.0.4: updater-signed only, Windows Authenticode deferred (ADR-0029)
+      sign-binaries: false  # updater-signed only; Windows Authenticode deferred (ADR-0029)
       production-release: true
       # Ends up as latest.json `notes` = the changelog older versions show in
       # their update dialog. Empty here means build.yml falls back to a link.
@@ -302,7 +304,7 @@ jobs:
 
       # Any failure above makes cleanup-failed-draft delete the draft, which takes
       # ~40 minutes of build AND the evidence with it (exactly what happened on the
-      # first v1.0.4 attempt). Keep the small artifacts so the next attempt starts
+      # first attempt). Keep the small artifacts so the next attempt starts
       # from a diagnosis instead of another full rebuild. The installers are not
       # uploaded: they are large and re-derivable.
       - name: Preserve verification evidence on failure
