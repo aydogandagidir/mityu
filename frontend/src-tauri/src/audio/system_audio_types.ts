@@ -1,15 +1,12 @@
 // TypeScript type definitions for system audio functionality
 
+// NOTE: these are detection commands only — none of them capture audio.
+// The capture-flavoured commands this file used to declare
+// (startSystemAudioCaptureCommand, listSystemAudioDevicesCommand,
+// checkSystemAudioPermissionsCommand) wrapped a dead Rust surface that has been
+// removed; see audio/capture/mod.rs. Permission checks go through the
+// audio::permissions::* commands instead.
 export interface SystemAudioCommands {
-  // Start system audio capture (returns success message)
-  startSystemAudioCaptureCommand(): Promise<string>;
-
-  // List available system audio devices
-  listSystemAudioDevicesCommand(): Promise<string[]>;
-
-  // Check if the app has permission to access system audio
-  checkSystemAudioPermissionsCommand(): Promise<boolean>;
-
   // Start monitoring system audio usage by other applications
   startSystemAudioMonitoring(): Promise<void>;
 
@@ -38,16 +35,6 @@ await invoke('start_system_audio_monitoring');
 const unlisten = await listen<string[]>('system-audio-started', (event) => {
   console.log('Apps using system audio:', event.payload);
 });
-
-// Check permissions
-const hasPermission = await invoke('check_system_audio_permissions_command');
-if (!hasPermission) {
-  console.warn('No system audio permissions');
-}
-
-// List available devices
-const devices = await invoke('list_system_audio_devices_command');
-console.log('System audio devices:', devices);
 
 // Stop monitoring when component unmounts
 await invoke('stop_system_audio_monitoring');

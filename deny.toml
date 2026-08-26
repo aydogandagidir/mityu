@@ -1,0 +1,119 @@
+# cargo-deny configuration — dependency licence, advisory and source policy.
+#
+# Why this file exists
+# --------------------
+# Mityu is distributed as a closed, commercially licensed desktop binary
+# (ADR-0023) built on an MIT base (CLAUDE.md §9). A copyleft dependency that
+# reaches the shipped artefact is therefore a licence violation, not a style
+# nit — and it has already happened once: the release `diarize-helper` linked
+# GPL-3.0 espeak-ng and would have shipped GPL object code inside a closed
+# installer (BACKLOG H10). That was caught by hand, after the fact, by a
+# bespoke symbol scan wired into `ci.yml`.
+#
+# This file replaces "catch it by hand, once, for one sidecar" with a policy
+# the whole dependency graph is checked against on every PR — which matters
+# most when a dependency arrives from outside the team.
+#
+# Run locally:  cargo deny check
+# Run one part: cargo deny check licenses | advisories | bans | sources
+
+[graph]
+# Check the graph as it is actually built. `all-features` would pull in
+# optional GPU/back-end features that no shipped artefact links.
+all-features = false
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Advisories — RustSec vulnerability and maintenance database
+# ---------------------------------------------------------------------------
+[advisories]
+version = 2
+# A yanked crate is a maintenance signal, not a vulnerability; do not fail the
+# build over one, but do surface it.
+yanked = "warn"
+# Flag unmaintained crates that this workspace depends on directly. Set to
+# "all" once the transitive backlog (18 crates as of 2026-08-26, almost all
+# reached through tauri/wry/gtk) has been worked through — as "all" it is noise
+# nobody can act on, which is how a gate stops being read.
+unmaintained = "workspace"
+# Every entry here MUST carry a dated justification. An empty list is the
+# correct state; a growing list is a debt to pay down, not a place to hide.
+ignore = []
+
+# ---------------------------------------------------------------------------
+# Licences
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+# Permissive licences only. Notably ABSENT, deliberately: GPL-*, AGPL-*,
+# LGPL-* and SSPL. If a dependency needs one of those, that is a product
+# decision (an ADR), not a config edit.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "CDLA-Permissive-2.0",
+    # Weak, file-level copyleft. Acceptable for a closed binary because the
+    # obligation attaches to modified MPL files, which we do not modify — but
+    # it is listed explicitly so that adding one is a visible decision.
+    "MPL-2.0",
+]
+confidence-threshold = 0.8
+# Per-crate exceptions go here, each with a comment naming the crate and the
+# reason. Keep this empty if at all possible.
+exceptions = []
+
+# Our own workspace members (mityu, llama-helper, diarize-helper, eval-harness,
+# updater-signature-verifier) are `publish = false` internal crates. Their
+# licence is the repository's, not a per-manifest field, and they are not a
+# third-party compliance question.
+[licenses.private]
+ignore = true
+
+# ---------------------------------------------------------------------------
+# Bans
+# ---------------------------------------------------------------------------
+[bans]
+# This tree is large and transitively duplicates common crates (windows-sys,
+# syn, bitflags …). Failing on that today would produce noise, not safety.
+multiple-versions = "allow"
+# Advisory rather than fatal: cargo-deny counts a `git` dependency with no
+# `version` as a wildcard, and both hits (`cidre`, `silero`) are pinned to an
+# exact `rev`, which is reproducible. The [sources] section below is what
+# actually gates those. Revisit if a crates.io `"*"` requirement ever appears.
+wildcards = "warn"
+allow-wildcard-paths = true
+deny = []
+
+# ---------------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+# Deny git dependencies by default so that a new one cannot arrive unnoticed
+# in a pull request; the one we do take is listed below.
+unknown-git = "deny"
+
+# The git dependencies we do take. Each is pinned to an exact rev; adding to
+# this list should be a deliberate, reviewed act.
+allow-git = [
+    # Workspace-root [patch.crates-io], rev 51c3b43 = cpal#946 "Fix macos
+    # non-default audio output". Rationale inline in Cargo.toml.
+    "https://github.com/RustAudio/cpal",
+    # macOS Core Audio / AVFoundation bindings behind the Core Audio tap
+    # backend (audio/capture/core_audio.rs), rev a9587fa.
+    "https://github.com/yury/cidre",
+    # Silero VAD (audio/vad.rs), rev 26a6460.
+    "https://github.com/emotechlab/silero-rs",
+]

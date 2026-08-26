@@ -808,12 +808,16 @@ pub fn run() {
             notifications::commands::initialize_notification_manager_manual,
             notifications::commands::test_notification_with_auto_consent,
             notifications::commands::get_notification_stats,
-            // System audio capture commands
-            // The unused raw system-audio capture start command is deliberately
-            // not exposed to renderer IPC. Supported recording starts flow only
-            // through the consent-ticket-protected commands above.
-            audio::system_audio_commands::list_system_audio_devices_command,
-            audio::system_audio_commands::check_system_audio_permissions_command,
+            // System audio *monitoring* commands: they detect other applications
+            // playing audio and emit events; they capture nothing. Supported
+            // recording starts flow only through the consent-ticket-protected
+            // commands above.
+            //
+            // `list_system_audio_devices_command` and
+            // `check_system_audio_permissions_command` were registered here and
+            // invoked by no frontend code; they wrapped the dead capture surface
+            // removed from audio/capture/. The live permission commands are the
+            // audio::permissions::* ones registered just below.
             audio::system_audio_commands::start_system_audio_monitoring,
             audio::system_audio_commands::stop_system_audio_monitoring,
             audio::system_audio_commands::get_system_audio_monitoring_status,

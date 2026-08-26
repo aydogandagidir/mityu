@@ -20,9 +20,13 @@ jobs:
       - name: fmt
         run: cargo fmt --all --check
       - name: install native dependencies (Tauri/audio — mirrors build.yml's ubuntu list, unpinned)
+        # libpipewire-0.3-dev is not used by any code that ships today: Linux is
+        # microphone-only (ADR-0022). It is installed here so that the Linux
+        # system-audio backend epic can be built and reviewed in CI without a
+        # separate infrastructure change landing in the same PR as the backend.
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
+          sudo apt-get install -y ffmpeg libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libpipewire-0.3-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
       - uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with: { workspaces: ". -> target" }
       - name: build llama-helper sidecar (tauri-build fails without binaries/llama-helper-<target>)
@@ -58,6 +62,39 @@ jobs:
         run: cargo clippy --all-targets
       - name: test
         run: cargo test --all
+  dependency-policy:
+    # Licence, source and ban policy for the whole dependency graph (deny.toml).
+    # Its own job on purpose: cargo-deny reads Cargo.lock and `cargo metadata`,
+    # so it needs neither the native Tauri/audio libraries nor the sidecars, and
+    # it does not have to queue behind the rust job's full build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with: { workspaces: ". -> target" }
+      - name: install cargo-deny
+        # Version-pinned so a policy verdict is reproducible; built from source
+        # rather than pulled from a third-party action, to keep every workflow
+        # dependency SHA-pinned as the rest of this file is.
+        run: cargo install --locked cargo-deny@0.20.2
+      - name: licences, sources and bans
+        # The blocking half. This is what stops a copyleft dependency, or a new
+        # unvetted git source, from reaching a closed commercial binary — the
+        # class of defect that put GPL-3.0 espeak-ng in a shipped diarize-helper
+        # (BACKLOG H10) and was caught only by a bespoke symbol scan after the
+        # fact.
+        run: cargo deny check licenses sources bans
+      - name: advisories
+        # Reports, does not block. The graph carries advisories that predate this
+        # gate — as of 2026-08-26: RUSTSEC-2026-0258 (h2), RUSTSEC-2026-0194 and
+        # RUSTSEC-2026-0195 (quick-xml), all reached transitively through
+        # tauri/wry. Failing on day one would block every unrelated PR on debt
+        # nobody in this PR chose. Triage them, then delete continue-on-error.
+        continue-on-error: true
+        run: cargo deny check advisories
   frontend:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: frontend } }

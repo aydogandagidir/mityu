@@ -13,14 +13,42 @@ If you're new to building on Linux, start here. These simple commands work for m
 ```bash
 # Ubuntu/Debian
 sudo apt update
-sudo apt install build-essential cmake git
+sudo apt install build-essential cmake git pkg-config
 
 # Fedora/RHEL
-sudo dnf install gcc-c++ cmake git
+sudo dnf install gcc-c++ cmake git pkgconf-pkg-config
 
 # Arch Linux
-sudo pacman -S base-devel cmake git
+sudo pacman -S base-devel cmake git pkgconf
 ```
+
+### 1b. Install Audio and Tauri System Libraries
+
+The Rust core links against ALSA at build time, and Tauri needs the WebKitGTK
+stack. Without these the build fails in `cpal`/`gdk-sys` before any Mityu code
+is compiled.
+
+```bash
+# Ubuntu/Debian
+sudo apt install libasound2-dev libpipewire-0.3-dev \
+  libwebkit2gtk-4.1-dev libgtk-3-dev libappindicator3-dev librsvg2-dev patchelf \
+  libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
+
+# Fedora/RHEL
+sudo dnf install alsa-lib-devel pipewire-devel \
+  webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel librsvg2-devel patchelf \
+  openblas-devel libX11-devel libXtst-devel libXrandr-devel
+
+# Arch Linux
+sudo pacman -S alsa-lib pipewire webkit2gtk-4.1 gtk3 libappindicator-gtk3 librsvg patchelf \
+  openblas libx11 libxtst libxrandr
+```
+
+> **On `libpipewire-0.3-dev`:** nothing in the shipping build uses it yet — Linux
+> is **microphone-only** today (see [ADR-0022](DECISIONS.md)). It is listed here,
+> and installed by CI, so that the Linux system-audio backend can be built and
+> reviewed without a separate build-infrastructure change. If you are only
+> building today's microphone-only Mityu, you may omit it.
 
 ### 2. Build and Run
 

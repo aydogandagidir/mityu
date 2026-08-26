@@ -57,22 +57,15 @@ pub use devices::{
     DeviceControl, DeviceType, LAST_AUDIO_CAPTURE,
 };
 
-// Export system audio capture functionality
-pub use capture::{
-    check_system_audio_permissions, list_system_audio_devices, start_system_audio_capture,
-    SystemAudioCapture, SystemAudioStream,
-};
-
 // Export system audio detection functionality
 pub use system_detector::{
     new_system_audio_callback, SystemAudioCallback, SystemAudioDetector, SystemAudioEvent,
 };
 
-// Export system audio commands
+// Export system audio monitoring commands (detection only — these do not capture)
 pub use system_audio_commands::{
-    check_system_audio_permissions_command, get_system_audio_monitoring_status,
-    init_system_audio_state, list_system_audio_devices_command, start_system_audio_capture_command,
-    start_system_audio_monitoring, stop_system_audio_monitoring,
+    get_system_audio_monitoring_status, init_system_audio_state, start_system_audio_monitoring,
+    stop_system_audio_monitoring,
 };
 
 // Export new simplified components

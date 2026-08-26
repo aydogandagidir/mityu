@@ -6,6 +6,11 @@ export interface BackendInfo {
   id: string;
   name: string;
   description: string;
+  /**
+   * Whether this backend may be chosen. Supplied by `get_audio_backend_info`;
+   * optional so that a frontend built against an older core still renders.
+   */
+  selectable?: boolean;
 }
 
 interface AudioBackendSelectorProps {
@@ -129,9 +134,11 @@ export function AudioBackendSelector({
 
       <div className="space-y-2">
         {backends.map((backend) => {
-          // Disable Core Audio option
-          const isCoreAudio = backend.id === 'screencapturekit';
-          const isDisabled = disabled || isCoreAudio;
+          // Whether a backend can be picked is the core's call, not a guess
+          // from its id — off macOS the only backend used to be reported as
+          // 'screencapturekit', so this comparison disabled the sole option.
+          const isSelectable = backend.selectable ?? true;
+          const isDisabled = disabled || !isSelectable;
 
           return (
             <label
@@ -161,7 +168,7 @@ export function AudioBackendSelector({
                       Active
                     </span>
                   )}
-                  {isCoreAudio && (
+                  {!isSelectable && (
                     <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
                       Disabled
                     </span>
