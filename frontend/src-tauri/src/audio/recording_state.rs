@@ -7,7 +7,20 @@ use tokio::sync::mpsc;
 use super::buffer_pool::AudioBufferPool;
 use super::devices::AudioDevice;
 
-/// Device type for audio chunks
+/// Which of Mityu's two audio sources a chunk came from.
+///
+/// **This is the source-identity contract.** `CLAUDE.md` §4 is explicit that the
+/// two sources are named "microphone" and "system", never "input"/"output", and
+/// this is the enum that carries that naming through the pipeline, the mixer and
+/// storage. A capture backend — including the Linux PipeWire/PulseAudio one
+/// ADR-0022 left open — hands its samples over tagged with *this* type.
+///
+/// Do not confuse it with [`crate::audio::devices::configuration::DeviceType`],
+/// which is a different enum with `Input`/`Output` variants. That one describes
+/// an *operating-system endpoint scope* used while resolving a cpal device; this
+/// one describes *what the audio is* once resolved. The two are deliberately not
+/// merged: on Windows the "system" source is captured from an endpoint whose
+/// scope is `Output`, so a single enum would have to lie about one of them.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeviceType {
     Microphone,

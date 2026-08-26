@@ -38,9 +38,31 @@ yanked = "warn"
 # reached through tauri/wry/gtk) has been worked through — as "all" it is noise
 # nobody can act on, which is how a gate stops being read.
 unmaintained = "workspace"
-# Every entry here MUST carry a dated justification. An empty list is the
-# correct state; a growing list is a debt to pay down, not a place to hide.
-ignore = []
+# Every entry MUST carry a dated justification and a way out, and each one has a
+# BACKLOG item whose completion deletes it (EPIC J). This list is why the
+# advisories check can BLOCK: a new advisory fails CI, while these three are
+# documented rather than silently tolerated. Do not add a line here to make a
+# red build green.
+ignore = [
+    # RUSTSEC-2026-0258 — h2 0.3.27 queues empty DATA frames without limit (low
+    # severity). Reached only through our own `reqwest = "0.11"` -> hyper 0.14.
+    # Fixable by us, not upstream: reqwest 0.13 (which posthog-rs already uses)
+    # retires hyper 0.14 and h2 0.3 outright. Held back because it swaps the
+    # TLS stack of every network call in a paid product and needs a real
+    # request against each provider on macOS and Windows. Owner: BACKLOG J1.
+    # Dated 2026-08-26.
+    "RUSTSEC-2026-0258",
+    # RUSTSEC-2026-0194 / RUSTSEC-2026-0195 — quick-xml 0.37.5 quadratic
+    # attribute checking and unbounded namespace allocation. Upstream-blocked:
+    # tauri-plugin-notification -> notify-rust -> tauri-winrt-notification pins
+    # quick-xml ^0.37 and the fix is >= 0.41.0, a semver-major bump only
+    # upstream can make. `tauri-winrt-notification` is notify-rust's *Windows*
+    # backend, so macOS and Linux builds never link the affected code.
+    # Re-check on every tauri-plugin-notification bump. Owner: BACKLOG J2.
+    # Dated 2026-08-26.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
 
 # ---------------------------------------------------------------------------
 # Licences

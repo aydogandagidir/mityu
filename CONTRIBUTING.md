@@ -2,6 +2,32 @@
 
 Thank you for your interest in contributing to Mityu! This document provides guidelines and instructions for contributing to this project.
 
+## Licensing and Sign-off
+
+Mityu is derived from Meetily (MIT, Zackriya Solutions — that copyright notice
+stays in `LICENSE.md`) and is distributed as a commercial product. So we need to be
+able to say, without ambiguity, that we have the right to ship every line in the
+tree.
+
+We use a **Developer Certificate of Origin** rather than a separate contributor
+licence agreement: there is nothing to sign, nothing for us to administer, and
+you keep your copyright. Add a `Signed-off-by` line to every commit —
+`git commit -s` writes it for you:
+
+```
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+That line means you certify [DCO 1.1](https://developercertificate.org/): the
+work is yours to contribute, and you are contributing it under this repository's
+licence (MIT). Use your real name and an address you can be reached at.
+
+If a contribution includes code, models, or binaries you did **not** write, say
+so in the pull request and name the licence — including transitive dependencies.
+`cargo deny check` runs in CI and rejects copyleft licences and unvetted git
+sources (see `deny.toml`); a dependency that needs an exception needs an ADR, not
+a config edit.
+
 ## Development Workflow
 
 ### Branch Strategy
@@ -55,11 +81,12 @@ Before starting work on a new feature or bug fix:
 
 1. Create a PR from your feature branch to `main`
 2. Link the PR to the related issue using the issue number (e.g., "Fixes #123")
-3. Fill out the PR template completely
-4. Ensure CI checks pass
-5. Request review from at least one maintainer
-6. Address any review comments
-7. Once approved, the PR will be merged into `main`
+3. Sign off every commit (`git commit -s`) — see **Licensing and Sign-off** above
+4. Fill out the PR template completely
+5. Ensure CI checks pass
+6. Request review from at least one maintainer
+7. Address any review comments
+8. Once approved, the PR will be merged into `main`
 
 ### PR Template
 

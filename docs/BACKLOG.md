@@ -283,6 +283,42 @@ The app ships deliberately unconnected; an Integrations section lets the user co
 - Agent: — (owner decision) · Cmd: /phase0-validate · depends-on: —
 - AC: `eval/raw/multi/` holds zero clips and `A5_SPRINT.md` instructs annotators **not** to write speaker labels or timestamps, so filling the bucket as specified can never yield a DER. Either the A5 protocol gains an RTTM reference for the `multi` clips, or ADR-0034's ban on speaker-accuracy claims becomes permanent rather than temporary. Until this is decided, H3–H6 ship best-effort with no accuracy claim.
 
+## EPIC I — Linux system audio (closes the epic ADR-0022 opened)
+
+> ADR-0022(e) chose "honest microphone-only" over dropping the `deb`/`appimage` targets, and left "a real PulseAudio/PipeWire capture backend" as its own epic. That epic is this one. **I1 gates I3 and is not optional**: without a known-good microphone-only baseline on real Linux hardware, a fault in a system-audio change cannot be told apart from a fault that was already there — and the same ADR records that the baseline has never been run. ADR-0039 prepared the seams (dead capture surface removed, `AudioCaptureBackend` platform-honest, `libpipewire-0.3-dev` in CI); it deliberately added no backend.
+
+### I1 · Linux microphone-only record→transcript on real hardware ⛔ GATE — OWED SINCE ADR-0022
+- Agent: qa-release-engineer · Cmd: /audio-debug · depends-on: —
+- AC: on a Linux box with a working microphone (not a container — `/dev/snd` must exist), a dev build records, transcribes and persists a meeting, and the result is read back. Record the machine, distro, desktop session (X11/Wayland), sound server (`pactl info` / `pw-cli info 0`) and the capture device name in the ADR-0022 status line, replacing "still owed".
+- Steps, in order, so the result is comparable to the Windows run already in ADR-0022: (1) `pnpm install && pnpm run tauri:dev` from `frontend/`; (2) confirm the log says `No default system audio available` **and** that recording continues — that is the ADR-0022(e) degradation working, not a failure; (3) confirm the device picker lists **no** entry containing `System Audio`; (4) record ≥ 60 s of speech; (5) confirm ≥ 1 transcript segment appears, `audio.mp4`, `metadata.json` and `transcripts.json` are written, and the meeting is read back from SQLite after a restart; (6) confirm **no** ERROR/WARN/panic after recording start, other than the expected system-audio degradation warning.
+- Note: the hardware-free half of this is already pinned as regression tests — `frontend/src-tauri/tests/linux_audio_degradation.rs` asserts the four ADR-0022 invariants without an audio device. Those passing is **not** a substitute for this item.
+
+### I2 · Decide the device-name contract for a monitor source ⛔ DECIDE BEFORE I3 — DECIDED 2026-08-26 (ADR-0039)
+- Agent: rust-tauri-core-engineer · Cmd: — (decision) · depends-on: —
+- AC: **decided — no new name suffix.** `AudioDevice::from_name` (`devices/configuration.rs`) accepts only names ending `(input)` or `(output)`, and that same string is what `preferred_system_device` persists; a third suffix such as `(system)` would parse on a new build and hard-error on an older one, so a downgrade would drop the user's system-device preference. A PipeWire monitor source is therefore presented as **`"<sink name> (output)"`** — the sink's own user-visible name, in the Output scope that `RecordingManager` and `get_device_and_config` already ask for — and the backend resolves it to that sink's `.monitor` source internally. The mapping is the backend's private business; the name contract does not move. `linux_audio_degradation.rs::the_old_synthetic_system_audio_name_still_does_not_round_trip` pins the rejected form.
+
+### I3 · PipeWire/PulseAudio system-audio capture backend
+- Agent: audio-pipeline-engineer · Cmd: /audio-debug then /feature · depends-on: I1, I2
+- AC — scope: **microphone and system only.** Application-level (per-app) capture is out of scope: Mityu's model is two named sources (`CLAUDE.md` §4) and per-app capture is new product surface with its own consent, redaction, UI and privacy-policy consequences. It needs its own ADR, not a line in this one.
+- AC — shape: a new `AudioCaptureBackend` variant, **behind a feature flag, off by default**, wired into the live path (`audio/stream.rs` + `audio/devices/platform/linux.rs`) and **not** into a standalone capture struct — `audio/capture/mod.rs` documents why. macOS and Windows code paths unchanged, byte for byte.
+- AC — invariants: 48 kHz at the capture boundary (`CLAUDE.md` §4); sources stay named `microphone`/`system`, never `input`/`output`; ducking, mixing, transcription, storage, UI and privacy behaviour unchanged; no network dependency anywhere in the path; the app still starts and records the microphone when PipeWire is absent or the flag is off.
+- AC — evidence, not assertion: the I1 procedure re-run with system audio on, on real hardware, producing a transcript that contains speech **only present in the system stream** (play a recording the microphone cannot hear — headphones on). A PR that cannot show this is not reviewable, whoever wrote it.
+- AC — housekeeping: `README.md`'s Linux section and the About card lose "experimental — microphone only"; the four `linux_audio_degradation.rs` invariants are updated **in the same commit** with the ADR that authorises the change; `docs/building_in_linux.md` moves `libpipewire-0.3-dev` from "not used yet" to required; an ADR supersedes ADR-0022(e).
+- AC — third-party crate, if one is proposed: licence and **transitive** licence tree pass `cargo deny check licenses sources bans` (ADR-0039) with no new `exceptions` or `allow-git` entry that is not separately justified; any sidecar binary gets the `diarize-helper` treatment (pinned URL, byte length + SHA-256 verified on every run, third-party notice) per ADR-0035; crate maturity and maintenance risk stated explicitly, because this is the subsystem `CLAUDE.md` §4 calls the most fragile.
+
+## EPIC J — Dependency hygiene (the `cargo deny` backlog, ADR-0039)
+
+> `deny.toml` blocks licences, sources and bans, and — since ADR-0039 — advisories too. The three advisories below are `ignore`d **with dated justifications** rather than hidden: the gate stays red for anything new. Each entry here is what it takes to delete one of those `ignore` lines.
+
+### J1 · reqwest 0.11 → 0.13 retires hyper 0.14 and h2 0.3 (RUSTSEC-2026-0258)
+- Agent: rust-tauri-core-engineer + qa-release-engineer · Cmd: /feature · depends-on: —
+- AC: `frontend/src-tauri/Cargo.toml` declares `reqwest = "0.11"` in three places (`[build-dependencies]`, the main table, and the macOS section). That is the **only** thing pulling `hyper 0.14` and therefore `h2 0.3.27`; `posthog-rs` is already on reqwest 0.13, so the bump also deduplicates hyper and reqwest out of the binary rather than adding to it. The API surface actually used is narrow and stable across the versions — `Client`, `Client::builder`, `Client::new`, `redirect::Policy::none`, `StatusCode`, `blocking::Client`, `header` — so the risk is not the call sites.
+- The risk is the **TLS stack**: 0.11 links vendored OpenSSL through `native-tls`, and the shipped binary's HTTPS behaviour is what changes. Deliberately not done inside ADR-0039, which could not run the app: this touches every network call in a paid product — five LLM providers, Polar licence activation, the updater, analytics — so it needs a real request against each on macOS and Windows, not a green `cargo check`. Delete the `RUSTSEC-2026-0258` ignore from `deny.toml` in the same commit.
+
+### J2 · quick-xml 0.37 is upstream-blocked (RUSTSEC-2026-0194, RUSTSEC-2026-0195)
+- Agent: — (watch) · Cmd: — · depends-on: —
+- AC: the chain is `tauri-plugin-notification 2.3.3` → `notify-rust 4.17.0` → `tauri-winrt-notification 0.7.2` → `quick-xml ^0.37`; the fix is `>= 0.41.0`, a semver-major bump only upstream can make. Nothing in this repo can resolve it, and `tauri-winrt-notification` is the **Windows** backend of notify-rust, so macOS and Linux builds never link the affected code. Re-check on each `tauri-plugin-notification` bump; delete both ignores when the tree no longer carries 0.37.
+
 ---
 
 ## Cross-cutting (apply on every task)

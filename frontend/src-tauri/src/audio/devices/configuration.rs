@@ -46,6 +46,20 @@ pub struct DeviceControl {
     pub is_paused: bool,
 }
 
+/// The operating-system endpoint scope of a device being resolved.
+///
+/// This is a *device-lookup* concept, not a source-identity one: it decides
+/// which side of the sound system `get_device_and_config` asks cpal for, and it
+/// is the half of the `AudioDevice` name contract that [`AudioDevice::from_name`]
+/// parses out of the `(input)`/`(output)` suffix — the same string that is
+/// persisted as `preferred_mic_device` / `preferred_system_device`. Adding a
+/// variant therefore changes a persisted format; see BACKLOG I2.
+///
+/// The source identity a recording is tagged with is the *other* `DeviceType`,
+/// [`crate::audio::recording_state::DeviceType`] (`Microphone`/`System`), which
+/// is what `CLAUDE.md` §4's "never input/output" rule is about. On Windows the
+/// `System` source is captured from an `Output`-scoped endpoint via WASAPI
+/// loopback, which is exactly why these two cannot be one enum.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Debug, Deserialize)]
 pub enum DeviceType {
     Input,

@@ -88,12 +88,11 @@ jobs:
         # fact.
         run: cargo deny check licenses sources bans
       - name: advisories
-        # Reports, does not block. The graph carries advisories that predate this
-        # gate — as of 2026-08-26: RUSTSEC-2026-0258 (h2), RUSTSEC-2026-0194 and
-        # RUSTSEC-2026-0195 (quick-xml), all reached transitively through
-        # tauri/wry. Failing on day one would block every unrelated PR on debt
-        # nobody in this PR chose. Triage them, then delete continue-on-error.
-        continue-on-error: true
+        # Blocking. The three advisories the graph already carried were triaged
+        # rather than tolerated: each is an `ignore` entry in deny.toml with a
+        # dated justification, a named owner (BACKLOG J1 / J2) and the condition
+        # that deletes it. That is what lets this step fail on anything NEW.
+        # Do not add an ignore line to turn this green.
         run: cargo deny check advisories
   frontend:
     runs-on: ubuntu-latest

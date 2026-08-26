@@ -22,12 +22,18 @@
 - [ ] No documentation needed
 
 ## Checklist
+- [ ] Every commit is signed off (`git commit -s`) — see CONTRIBUTING.md
 - [ ] Code follows project style
 - [ ] Self-reviewed the code
 - [ ] Added comments for complex code
 - [ ] Updated README if needed
 - [ ] Branch is up to date with devtest
 - [ ] No merge conflicts
+
+## Dependencies
+- [ ] No new third-party dependency
+- [ ] New dependency added — licence and transitive licence tree named below, and
+      `cargo deny check` passes without a new `exceptions`/`allow-git` entry
 
 ## Screenshots (if applicable)
 [Add screenshots here if your changes affect the UI]
