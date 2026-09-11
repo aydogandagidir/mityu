@@ -16,6 +16,12 @@
 //! (the ADR-0016 PostHog pattern): unset ⇒ activation reports "not configured"
 //! while trial mechanics keep working; release builds inject the real id. The
 //! id is public by design (it is in every checkout URL anyway).
+//!
+//! Requests pin Polar's date-based API version (`Polar-Version: YYYY-MM`, see
+//! [`DEFAULT_API_VERSION`]). The pin is **soft**: when Polar refuses the pinned
+//! version — which is what happens once a version is retired, and this binary
+//! cannot be recalled — the request is retried unpinned instead of surfacing as
+//! a 404, because a 404 is read here as a statement about the license.
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
@@ -27,6 +33,51 @@ pub const PRODUCTION_BASE_URL: &str = "https://api.polar.sh";
 /// Sandbox API host (Polar's test environment) — for manual/dev testing only;
 /// unit tests use a fake [`LicenseApi`] and never hit the network.
 pub const SANDBOX_BASE_URL: &str = "https://sandbox-api.polar.sh";
+
+/// Header Polar reads to pin the API version a request is answered with
+/// (`YYYY-MM`). Omitting it resolves to whatever is *Current* at the time of
+/// the call, which rotates every quarter.
+const VERSION_HEADER: &str = "Polar-Version";
+
+/// The Polar API version this build pins.
+///
+/// `2026-04` is Current at the time of writing and is the version Polar's
+/// rollout notice recommends pinning. The rotation on 2026-10-01 is a no-op
+/// for this client either way: the transitive request/response schemas of the
+/// three customer-portal endpoints below are identical in `2026-04` and
+/// `2026-10` (diffed from `https://api.polar.sh/<version>/openapi.json`). Bump
+/// this — and re-diff those documents — before the pinned version is retired
+/// (`2026-04` is removed at the January 2027 release).
+///
+/// Pinning is only safe because [`PolarApi::post`] falls back to an unpinned
+/// request when Polar refuses the pin; see [`is_version_rejection`].
+const DEFAULT_API_VERSION: &str = "2026-04";
+
+/// The API version requests are pinned to. A non-blank
+/// `MITYU_POLAR_API_VERSION` at build time overrides [`DEFAULT_API_VERSION`]
+/// (the same compile-time pattern as [`org_id`]), so a build can be aimed at a
+/// future version for testing without editing the source.
+pub fn api_version() -> &'static str {
+    match option_env!("MITYU_POLAR_API_VERSION") {
+        Some(raw) if !raw.trim().is_empty() => raw.trim(),
+        _ => DEFAULT_API_VERSION,
+    }
+}
+
+/// Whether a response is Polar refusing the pinned API version rather than
+/// answering the request.
+///
+/// Polar echoes the version it served in a `Polar-Version` response header on
+/// every request it routes — including application-level 404s such as "no such
+/// license key". A malformed, unknown, or removed version never reaches the
+/// endpoint: it comes back as a bare 404 with no echo. That pair is the only
+/// runtime signal available; Polar publishes no `Sunset`/`Deprecation` headers.
+/// Observed against the live API on 2026-09-11 — and if Polar ever stops
+/// echoing the header, the cost is one redundant unpinned retry, never a wrong
+/// licensing verdict.
+fn is_version_rejection(status: reqwest::StatusCode, headers: &reqwest::header::HeaderMap) -> bool {
+    status.as_u16() == 404 && !headers.contains_key(VERSION_HEADER)
+}
 
 /// The baked-in Polar organization id that owns the "Mityu Pro" product. Public
 /// by design — it is in every checkout URL and returned by Polar's public
@@ -225,14 +276,44 @@ impl PolarApi {
     /// POST a JSON body; map transport failures to `Err`. Never logs the body
     /// (it contains the license key).
     async fn post(&self, action: &str, body: &serde_json::Value) -> Result<reqwest::Response> {
-        self.client
+        let response = self
+            .client
             .post(self.url(action))
+            .header(VERSION_HEADER, api_version())
             .json(body)
             .send()
             .await
             .with_context(|| {
                 format!("licensing: request to the Polar '{action}' endpoint failed (offline?)")
-            })
+            })?;
+
+        // The pin ships inside a signed, installed binary we cannot recall, and
+        // every Polar version is eventually removed. Polar answers an unknown or
+        // removed version with a bare 404 — the same status this client reads as a
+        // verdict about the license, and on `validate` a sustained 404 deletes the
+        // stored key (see `super::state::run_validation`). Left unhandled, a stale
+        // pin would de-license the installed base. Retry once unpinned instead: an
+        // omitted header always resolves to Current, so the worst case is the
+        // unpinned behaviour this client shipped with before.
+        if is_version_rejection(response.status(), response.headers()) {
+            tracing::warn!(
+                pinned_version = api_version(),
+                action,
+                "licensing: Polar did not accept the pinned API version; retrying \
+                 unpinned (bump DEFAULT_API_VERSION)"
+            );
+            return self
+                .client
+                .post(self.url(action))
+                .json(body)
+                .send()
+                .await
+                .with_context(|| {
+                    format!("licensing: unpinned retry of the Polar '{action}' endpoint failed")
+                });
+        }
+
+        Ok(response)
     }
 }
 
@@ -405,6 +486,58 @@ mod tests {
                 .expect("parse revoked");
         assert_eq!(parsed.status, "revoked");
         assert_eq!(parsed.expires_at.as_deref(), Some("2026-01-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn pinned_api_version_is_a_polar_release_month() {
+        let version = api_version();
+        let (year, month) = version
+            .split_once('-')
+            .unwrap_or_else(|| panic!("Polar-Version must be YYYY-MM, got {version:?}"));
+        assert_eq!(year.len(), 4, "bad year in {version:?}");
+        assert!(
+            year.bytes().all(|byte| byte.is_ascii_digit()),
+            "bad year in {version:?}"
+        );
+        let month: u8 = month
+            .parse()
+            .unwrap_or_else(|_| panic!("bad month in {version:?}"));
+        // Polar cuts a version in the first week of January, April, July, October.
+        assert!(
+            matches!(month, 1 | 4 | 7 | 10),
+            "not a Polar release month: {version:?}"
+        );
+    }
+
+    #[test]
+    fn version_rejection_is_a_404_without_the_echoed_version_header() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+        use reqwest::StatusCode;
+
+        let mut echoed = HeaderMap::new();
+        // Polar echoes the header lowercased; the lookup must be case-insensitive.
+        echoed.insert("polar-version", HeaderValue::from_static("2026-04"));
+
+        // A routed 404 ("no such license key") is a real answer about the license.
+        assert!(!is_version_rejection(StatusCode::NOT_FOUND, &echoed));
+        // A 404 with no echo is the version being refused, not an answer.
+        assert!(is_version_rejection(
+            StatusCode::NOT_FOUND,
+            &HeaderMap::new()
+        ));
+        // Nothing else is ever read as a rejection.
+        for status in [
+            StatusCode::OK,
+            StatusCode::NO_CONTENT,
+            StatusCode::FORBIDDEN,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ] {
+            assert!(
+                !is_version_rejection(status, &HeaderMap::new()),
+                "{status} must not be treated as a version rejection"
+            );
+        }
     }
 
     #[test]
