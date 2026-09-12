@@ -83,7 +83,14 @@ pub enum CaptureProtection {
 
 /// The posture plus the exact words for it. `headline` is the chip in the panel;
 /// `detail` is the sentence under the Settings switch.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// **Serialize only, deliberately.** The wording is `&'static str` because it
+/// lives in the binary — the backend owns it so the UI cannot invent its own
+/// version — and `Deserialize` cannot produce a `&'static str` from borrowed
+/// input, which is a compile error rather than a runtime surprise. This type
+/// only ever travels backend → frontend, so there is nothing to deserialize.
+/// Do not re-add `Deserialize` without first changing these to `String`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtectionVerdict {
     pub level: CaptureProtection,

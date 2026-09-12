@@ -17,12 +17,15 @@
 use super::config::{CopilotConfig, KeybindAction};
 use super::policy::ProtectionVerdict;
 use super::{keybind, shortcuts, store, window};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 /// One row of the Settings shortcut list: what the binding is, whether it is
 /// actually registered, and — when it is not — why.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+///
+/// Serialize only — see [`ProtectionVerdict`] for why a struct holding
+/// `&'static str` cannot derive `Deserialize`.
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutInfo {
     /// Wire token of the action (`togglePanel`, `ask`, `captureScreen`).
@@ -38,7 +41,12 @@ pub struct ShortcutInfo {
 }
 
 /// Everything the panel and the Settings tab need in one read.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+///
+/// Serialize only, because it contains [`ProtectionVerdict`] and
+/// [`ShortcutInfo`]. The config *inside* it stays round-trippable: the UI sends
+/// a `CopilotConfig` back to `copilot_set_config`, and that type owns its
+/// strings.
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CopilotStatus {
     pub config: CopilotConfig,
