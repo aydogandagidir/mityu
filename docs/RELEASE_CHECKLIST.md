@@ -44,6 +44,19 @@ Provision `DOWNLOAD_RATE_LIMIT_HMAC_SECRET` as an encrypted Vercel secret in eve
 - The endpoint only proxies assets under `https://github.com/aydogandagidir/mityu/releases/download/` and only file names matching `Mityu_<x.y.z>_x64-setup.exe`. Anything else fails closed (502) — it is not a general-purpose proxy.
 - Covered by `landing/tests/download.test.mjs` (`npm test` in `landing/`): versioned naming, automatic pick-up of a new release, foreign-origin refusal, and every fail-closed path.
 
+## 2c. Polar API version pin (verify every release)
+
+The licensing client pins Polar's date-based API version (`Polar-Version`, `licensing/polar.rs::DEFAULT_API_VERSION`). Polar cuts a version in the first week of January, April, July and October, keeps three alive at a time, and answers a **removed or unknown version with a bare 404** — the same status this client otherwise reads as "this activation no longer exists". Confirm the pinned version is still served before cutting a release:
+
+```bash
+# keep this URL in step with DEFAULT_API_VERSION
+curl -s -o /dev/null -w '%{http_code}\n' https://api.polar.sh/2026-04/openapi.json
+```
+
+- **200** — the pin is alive, nothing to do. **404** — it has been removed: bump `DEFAULT_API_VERSION` to a live version. Before bumping, diff the two specs (`https://api.polar.sh/<version>/openapi.json`): compare `/v1/customer-portal/license-keys/{activate,validate,deactivate}` and everything they `$ref`, and confirm what this client actually parses is unchanged — `ActivateResponse.id`, `ValidateResponse.status`, the `granted`/`revoked`/`disabled` tokens, and the 403/404/422/204 branches.
+- A stale pin is a wasted round trip, not an outage: shipped binaries cannot be recalled, so `PolarApi::post` retries unpinned when Polar refuses the pin and the app keeps working on whatever is Current. It does mean that release is no longer getting the contract it was tested against.
+- `MITYU_POLAR_API_VERSION` overrides the constant at build time (deliberately unset in CI) for testing a future version before pinning it.
+
 ## 3. Third-party binaries & models (supply-chain)
 
 Windows/Linux binary provenance is technically resolved. Windows v1.0.4's FFmpeg engineering/publication evidence passes; authorised legal approval and the excluded macOS path remain open:

@@ -65,6 +65,11 @@ pub struct LicensingBlob {
     /// Human sentence set when Polar explicitly reported the key
     /// revoked/disabled. Cleared when a later validation grants again.
     pub revoked_reason: Option<String>,
+    /// Consecutive validation passes that came back 404 ("this activation
+    /// does not exist"). One 404 is not proof — see
+    /// `state::NOT_FOUND_PASSES_BEFORE_CLEARING`. Absent in blobs written
+    /// before this field existed, which `serde(default)` reads as 0.
+    pub not_found_streak: u32,
 }
 
 /// Read the workspace's blob. Missing row/NULL/corrupt JSON ⇒ [`Default`] (the
