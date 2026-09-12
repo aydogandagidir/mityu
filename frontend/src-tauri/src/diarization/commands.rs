@@ -65,7 +65,7 @@ pub async fn api_diarization_availability<R: Runtime>(
 /// Download and verify the diarization models.
 ///
 /// Separate from running a pass on purpose: this is the only part that touches
-/// the network, so a user can be asked before ~34 MB is fetched, and a machine
+/// the network, so a user can be asked before ~35 MB is fetched, and a machine
 /// that already has them never reaches out at all.
 #[tauri::command]
 pub async fn api_diarization_download_models<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
