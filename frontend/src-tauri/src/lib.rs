@@ -54,6 +54,11 @@ pub mod audio;
 pub mod config;
 pub mod console_utils;
 pub mod context;
+/// Live Copilot — the private in-meeting panel (BACKLOG EPIC I, ADR-0038).
+/// I1 is the shell: a window, a global shortcut and an honest screen-sharing
+/// posture. No AI, no capture of its own, and OFF by default — with the flag
+/// off nothing here registers a shortcut or creates a window.
+pub mod copilot;
 pub mod database;
 pub mod diarization;
 pub mod groq;
@@ -452,6 +457,15 @@ pub fn run() {
         }));
     }
 
+    // Global shortcuts for the copilot panel (BACKLOG I1). Registering the
+    // plugin costs nothing on its own: it holds no shortcut until
+    // `copilot::init` registers one, and it registers none while the copilot is
+    // disabled (ADR-0038 invariant 4).
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+    {
+        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    }
+
     builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -474,6 +488,11 @@ pub fn run() {
             if let Err(e) = tray::create_tray(_app.handle()) {
                 log::error!("Failed to create system tray: {}", e);
             }
+
+            // Live copilot (BACKLOG I1): registers its global shortcut only if
+            // the user enabled it. Default is off, so this is a no-op on a
+            // fresh install.
+            copilot::init(_app.handle());
 
             // Initialize notification system with proper defaults
             log::info!("Initializing notification system...");
@@ -697,6 +716,12 @@ pub fn run() {
             context::api_get_current_workspace_id,
             api::api_search_evidence,
             ask::commands::api_ask_meeting,
+            // Live copilot panel (BACKLOG I1, ADR-0038) — window + shortcuts only.
+            copilot::commands::copilot_get_status,
+            copilot::commands::copilot_set_config,
+            copilot::commands::copilot_toggle_panel,
+            copilot::commands::copilot_close_panel,
+            copilot::commands::copilot_focus_main_window,
             diarization::commands::api_diarization_availability,
             diarization::commands::api_diarization_download_models,
             diarization::commands::api_diarize_meeting,
