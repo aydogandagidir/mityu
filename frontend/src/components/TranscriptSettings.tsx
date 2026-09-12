@@ -154,7 +154,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                         </div>
                         <p className="mt-2 text-xs text-muted-foreground">
                             Accuracy varies with language, speaker, microphone, overlap, and noise.
-                            v1.0.4 target-environment validation is deferred; verify important text
+                            Target-environment validation has not been performed; verify important text
                             against the source audio.
                         </p>
                     </div>

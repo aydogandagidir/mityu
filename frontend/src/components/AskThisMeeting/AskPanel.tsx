@@ -38,12 +38,30 @@ interface AskPanelProps {
   onJumpToSource?: (sourceChunkId: string) => void;
 }
 
-/** Always-on marking: this panel renders model output. */
+/**
+ * Always-on marking: this panel renders model output, AND it is a conversational
+ * surface, which is a second and separate obligation.
+ *
+ * EU AI Act Art. 50(1) requires a person to be informed that they are
+ * *interacting with an AI system* — not merely that some content was
+ * AI-generated. ADR-0032 verified the content marking and explicitly left this
+ * one open: "the planned 'Ask This Meeting' conversational surface would engage
+ * it and must be assessed before it ships."
+ *
+ * So the first sentence names the interaction ("You are asking an AI
+ * assistant"), and the rest keeps the Art. 50(2) content marking that was
+ * already here. Both are stated, because they are different requirements and a
+ * reader who satisfies one has not necessarily satisfied the other.
+ *
+ * It renders unconditionally, above the input, so it is present before a person
+ * types rather than after an answer arrives — being told afterwards is not
+ * being informed that you are interacting with an AI.
+ */
 function AiGeneratedNote() {
   return (
     <div
       role="note"
-      aria-label="AI-generated content, human review required"
+      aria-label="You are interacting with an AI assistant; AI-generated content, human review required"
       className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-sm dark:border-amber-500/30 dark:bg-amber-500/10"
     >
       <AlertTriangle
@@ -51,7 +69,10 @@ function AiGeneratedNote() {
         aria-hidden="true"
       />
       <p className="text-amber-900 dark:text-amber-200">
-        <span className="font-semibold">AI-generated · review required.</span>{' '}
+        <span className="font-semibold">
+          You are asking an AI assistant · answers are AI-generated and need your
+          review.
+        </span>{' '}
         Answers are drawn only from this meeting&apos;s transcript. Open the
         source of each line to check it.
       </p>

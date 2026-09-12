@@ -2,6 +2,8 @@
 
 Operational steps that must pass before Mityu's first public release. Complements the `/release` command and the BACKLOG gates (C8/D5). Local-first + HITL invariants are enforced elsewhere; this file covers the brand / keys / supply-chain items surfaced during the bluedev rebrand (ADR-0006 / 0009 / 0013).
 
+**v1.1.0 validation scope (ADR-0037, extending ADR-0027 on the same terms):** A5 and C8 remain `DEFERRED / NOT PASSED` for v1.1.0 publication. Diarization ships labelled best-effort with no accuracy claim; its runtime (~a quarter of the recording), its lack of a progress indicator (H12) and its >1 GB peak at 90 minutes are recorded as accepted, disclosed risks. Everything below still applies.
+
 **v1.0.4 validation scope (ADR-0027):** A5 target-environment benchmarking and the C8 human pilot are `DEFERRED / NOT PASSED` and are non-blocking for this patch only. Public copy must not claim measured field/noise/jargon/diarization accuracy, an SLA, or demonstrated pilot value. Signing, same-SHA CI, legal approval, legacy-lead disposition, and updater canary controls are unchanged.
 
 ## 0. Version consistency (BLOCKING)
@@ -41,6 +43,19 @@ Provision `DOWNLOAD_RATE_LIMIT_HMAC_SECRET` as an encrypted Vercel secret in eve
 - **The unversioned `Mityu-Setup.exe` alias is no longer required.** It was hand-copied into v1.0.1–v1.0.4; forgetting it silently broke this endpoint (502) the moment a release without it became Latest. Releases from v1.0.5 on are not expected to carry it. Keep the alias on the existing published releases so old links keep resolving.
 - The endpoint only proxies assets under `https://github.com/aydogandagidir/mityu/releases/download/` and only file names matching `Mityu_<x.y.z>_x64-setup.exe`. Anything else fails closed (502) — it is not a general-purpose proxy.
 - Covered by `landing/tests/download.test.mjs` (`npm test` in `landing/`): versioned naming, automatic pick-up of a new release, foreign-origin refusal, and every fail-closed path.
+
+## 2c. Polar API version pin (verify every release)
+
+The licensing client pins Polar's date-based API version (`Polar-Version`, `licensing/polar.rs::DEFAULT_API_VERSION`). Polar cuts a version in the first week of January, April, July and October, keeps three alive at a time, and answers a **removed or unknown version with a bare 404** — the same status this client otherwise reads as "this activation no longer exists". Confirm the pinned version is still served before cutting a release:
+
+```bash
+# keep this URL in step with DEFAULT_API_VERSION
+curl -s -o /dev/null -w '%{http_code}\n' https://api.polar.sh/2026-04/openapi.json
+```
+
+- **200** — the pin is alive, nothing to do. **404** — it has been removed: bump `DEFAULT_API_VERSION` to a live version. Before bumping, diff the two specs (`https://api.polar.sh/<version>/openapi.json`): compare `/v1/customer-portal/license-keys/{activate,validate,deactivate}` and everything they `$ref`, and confirm what this client actually parses is unchanged — `ActivateResponse.id`, `ValidateResponse.status`, the `granted`/`revoked`/`disabled` tokens, and the 403/404/422/204 branches.
+- A stale pin is a wasted round trip, not an outage: shipped binaries cannot be recalled, so `PolarApi::post` retries unpinned when Polar refuses the pin and the app keeps working on whatever is Current. It does mean that release is no longer getting the contract it was tested against.
+- `MITYU_POLAR_API_VERSION` overrides the constant at build time (deliberately unset in CI) for testing a future version before pinning it.
 
 ## 3. Third-party binaries & models (supply-chain)
 

@@ -30,7 +30,7 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0  # Fetch all tags
           persist-credentials: false
@@ -43,10 +43,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # v1.0.4 ships updater-signed only (ADR-0029): Windows Authenticode is
-          # deferred by owner decision, matching the v1.0.0-v1.0.3 release line.
+          # Releases ship updater-signed only (ADR-0029): Windows Authenticode is
+          # deferred by owner decision, and remains so — no SM_* certificate secrets
+          # are configured, so SmartScreen warnings continue.
           # The Tauri updater key stays fail-closed and mandatory so the
-          # v1.0.3 -> v1.0.4 auto-update signature chain cannot break.
+          # the auto-update signature chain from the previous release cannot break.
           required=(
             TAURI_SIGNING_PRIVATE_KEY
             TAURI_SIGNING_PRIVATE_KEY_PASSWORD
@@ -66,7 +67,7 @@ jobs:
             exit 1
           fi
 
-          echo "Updater signing configuration is present. Windows Authenticode is deferred for v1.0.4 (ADR-0029)."
+          echo "Updater signing configuration is present. Windows Authenticode is deferred (ADR-0029)."
 
       - name: Validate synchronized app version and check tag
         id: get-version
@@ -144,7 +145,7 @@ jobs:
 
       - name: Create Draft Release
         id: create-release
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { data } = await github.rest.repos.createRelease({
@@ -160,7 +161,8 @@ jobs:
             console.log(`Created draft release with ID: ${data.id}`)
             return data.id
 
-  # STEP 2: v1.0.4 keeps the published v1.0.3 platform scope: Windows x64.
+  # STEP 2: the published platform scope is Windows x64. macOS and Linux are
+  # built by dispatch-only workflows and are not part of a release yet.
   # macOS stays excluded until its FFmpeg provenance, signing/notarization and
   # physical smoke-test gates are complete.
   build-windows:
@@ -173,7 +175,7 @@ jobs:
       target: "x86_64-pc-windows-msvc"
       ref: ${{ github.sha }}
       build-args: ""
-      sign-binaries: false  # v1.0.4: updater-signed only, Windows Authenticode deferred (ADR-0029)
+      sign-binaries: false  # updater-signed only; Windows Authenticode deferred (ADR-0029)
       production-release: true
       # Ends up as latest.json `notes` = the changelog older versions show in
       # their update dialog. Empty here means build.yml falls back to a link.
@@ -197,7 +199,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout the exact release commit
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -302,12 +304,12 @@ jobs:
 
       # Any failure above makes cleanup-failed-draft delete the draft, which takes
       # ~40 minutes of build AND the evidence with it (exactly what happened on the
-      # first v1.0.4 attempt). Keep the small artifacts so the next attempt starts
+      # first attempt). Keep the small artifacts so the next attempt starts
       # from a diagnosis instead of another full rebuild. The installers are not
       # uploaded: they are large and re-derivable.
       - name: Preserve verification evidence on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-summary-evidence-v${{ needs.create-release.outputs.version }}
           path: |
