@@ -4,16 +4,19 @@
  * What the copilot panel must never do, as tests rather than as comments
  * (BACKLOG I1, ADR-0038).
  *
- * Two of these assert an *absence*, which is the kind of guarantee that rots
- * quietly: nothing fails when a "Start recording" button is added to a panel
- * that is supposed to follow a session the user already consented to, and
- * nothing fails when a screen-sharing chip starts promising invisibility. Both
- * were confirmed load-bearing by mutation before being committed.
+ * Most of these assert an *absence*, which is the kind of guarantee that rots
+ * quietly. Nothing fails on its own when a "Start recording" button is added to
+ * a panel that is supposed to follow a session the user already consented to;
+ * when a screen-sharing chip starts promising invisibility; when the chip keeps
+ * printing the platform's verdict after the user switched the request off; or
+ * when a speaker label reappears on a transcript line that the pipeline cannot
+ * actually attribute. Every one of them was confirmed load-bearing by mutating
+ * the source and watching the test fail before being committed.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { CopilotPanel, appendLine, sideForSource, TAIL_LENGTH, PanelLine } from './CopilotPanel';
+import { CopilotPanel, appendLine, TAIL_LENGTH, PanelLine } from './CopilotPanel';
 import type { CopilotStatus } from '@/types/copilot';
 import type { TranscriptUpdate } from '@/types';
 
@@ -61,13 +64,13 @@ function update(overrides: Partial<TranscriptUpdate>): TranscriptUpdate {
 }
 
 describe('transcript tail', () => {
-  it('attributes a line by capture device, never by voice', () => {
-    // The microphone is the user; system audio is everyone else. Nothing here
-    // infers who is speaking from how they sound (ADR-0034).
-    expect(sideForSource('microphone')).toBe('me');
-    expect(sideForSource('Microphone (Realtek)')).toBe('me');
-    expect(sideForSource('system')).toBe('them');
-    expect(sideForSource('')).toBe('them');
+  it('stores a segment without inventing a speaker', () => {
+    // `source` is the only field that could tempt a me/them split, and the sole
+    // producer of `transcript-update` hardcodes it to "Audio" for microphone and
+    // system audio alike — so a line carries text and provenance, never a guess
+    // about who spoke (ADR-0034).
+    const [line] = appendLine([], update({ text: 'hello', source: 'Audio' }));
+    expect(Object.keys(line).sort()).toEqual(['id', 'text', 'timestamp']);
   });
 
   it('ignores partial segments', () => {
@@ -119,13 +122,50 @@ describe('the panel', () => {
     expect(document.body.textContent ?? '').not.toMatch(/undetectable|invisible/i);
   });
 
-  it('labels who was speaking', () => {
+  it('renders the tail with nothing attached to the words but the words', () => {
+    // Exact text, not a substring: a re-added "You"/"Them" prefix would make the
+    // list item read "Themtheir line" and fail here. A timestamp printed beside
+    // the text would fail here too — it is UTC from the worker, so it must not
+    // be shown as if it were a local clock time.
     const lines: PanelLine[] = [
-      { id: 1, side: 'them', text: 'their line', timestamp: '14:00:00' },
-      { id: 2, side: 'me', text: 'my line', timestamp: '14:00:05' },
+      { id: 1, text: 'their line', timestamp: '14:00:00' },
+      { id: 2, text: 'my line', timestamp: '14:00:05' },
     ];
     render(<CopilotPanel status={BASE_STATUS} lines={lines} />);
-    expect(screen.getByText('Them')).toBeTruthy();
-    expect(screen.getByText('You')).toBeTruthy();
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      'their line',
+      'my line',
+    ]);
+  });
+
+  it('reports the panel as visible when the user switched hiding off', () => {
+    // The bug this pins: the chip read the platform verdict only, so a user who
+    // turned the setting off still saw the platform's capability reported as
+    // fact — on Windows, literally "Hidden from screen sharing" over a panel
+    // that is not.
+    const off = {
+      ...BASE_STATUS,
+      config: { ...BASE_STATUS.config, contentProtection: false },
+    };
+    render(<CopilotPanel status={off} lines={[]} />);
+    expect(screen.getByText(/visible in screen shares/i)).toBeTruthy();
+    expect(screen.queryByText(BASE_STATUS.protection.headline)).toBeNull();
+  });
+
+  it('never shows an enforced verdict while the request is switched off', () => {
+    // The dangerous direction of the same bug: on the one platform that really
+    // does exclude the window, the chip must still not claim it.
+    const off = {
+      ...BASE_STATUS,
+      config: { ...BASE_STATUS.config, contentProtection: false },
+      protection: {
+        level: 'enforced' as const,
+        headline: 'Hidden from screen sharing',
+        detail: 'Windows excludes this panel from screen sharing and recording.',
+      },
+    };
+    render(<CopilotPanel status={off} lines={[]} />);
+    expect(screen.queryByText('Hidden from screen sharing')).toBeNull();
+    expect(document.body.textContent ?? '').not.toMatch(/hidden from screen/i);
   });
 });

@@ -181,10 +181,52 @@ pub struct PanelGeometry {
 }
 
 impl PanelGeometry {
-    /// Reject a stored geometry that would open the panel off-screen or too
-    /// small to use. A monitor that has been unplugged since the last session is
-    /// the ordinary way this happens, and the symptom — a panel that opens
-    /// nowhere — is indistinguishable from the feature being broken.
+    /// Build a geometry from a window's own metrics, or refuse to.
+    ///
+    /// Pure so the refusals can be tested without a window. Two of them:
+    ///
+    /// - **A maximized frame is never stored.** A bare `data-tauri-drag-region`
+    ///   makes double-clicking the panel header send `internal_toggle_maximize`
+    ///   (tauri 2.11.1 `src/window/scripts/drag.js`: `e.detail === 2`), and no
+    ///   attribute value keeps dragging while disabling that. The builder asks
+    ///   for `maximizable(false)`, but that is documented **Unsupported on
+    ///   Linux** — so without this guard a Linux user who double-clicks the
+    ///   header once has the maximized frame written to `copilot.json`, and the
+    ///   panel reopens full-screen every time thereafter. That is a stable trap:
+    ///   nothing in the app would ever write a small geometry back.
+    /// - **Implausible numbers are dropped** rather than stored — see
+    ///   [`PanelGeometry::is_plausible`].
+    ///
+    /// Coordinates are LOGICAL pixels, matching what
+    /// `WebviewWindowBuilder::position` consumes.
+    pub fn from_window_metrics(
+        maximized: bool,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Option<Self> {
+        if maximized {
+            return None;
+        }
+        let geometry = PanelGeometry {
+            x,
+            y,
+            width,
+            height,
+        };
+        geometry.is_plausible().then_some(geometry)
+    }
+
+    /// Reject a stored geometry that is too small to use or numerically absurd
+    /// (a corrupt store, a truncated write).
+    ///
+    /// It is deliberately **not** a monitor-containment check: tao already
+    /// discards a position that lands on no monitor and falls back to the OS
+    /// default (`tao-0.35.2/src/platform_impl/windows/window.rs`, the
+    /// `available_monitors()` scan before `CreateWindowExW`), and re-deriving
+    /// that here would compare these logical coordinates against Tauri's
+    /// physical monitor bounds — which misjudges every HiDPI display.
     pub fn is_plausible(&self) -> bool {
         self.width >= MIN_PANEL_WIDTH
             && self.height >= MIN_PANEL_HEIGHT
@@ -288,6 +330,35 @@ mod tests {
         );
     }
 
+    /// The Linux trap: `maximizable(false)` does not apply there, so this
+    /// guard is the only thing standing between one double-click on the header
+    /// and a panel that reopens full-screen forever.
+    #[test]
+    fn a_maximized_frame_is_never_stored() {
+        assert_eq!(
+            PanelGeometry::from_window_metrics(true, 100.0, 100.0, 1920.0, 1080.0),
+            None
+        );
+    }
+
+    #[test]
+    fn a_normal_frame_is_stored_verbatim() {
+        let geometry = PanelGeometry::from_window_metrics(false, 12.0, 34.0, 380.0, 560.0)
+            .expect("a plausible frame is stored");
+        assert_eq!(geometry.x, 12.0);
+        assert_eq!(geometry.y, 34.0);
+        assert_eq!(geometry.width, 380.0);
+        assert_eq!(geometry.height, 560.0);
+    }
+
+    #[test]
+    fn an_implausible_frame_is_refused_even_when_not_maximized() {
+        assert_eq!(
+            PanelGeometry::from_window_metrics(false, 0.0, 0.0, 10.0, 10.0),
+            None
+        );
+    }
+
     #[test]
     fn an_off_screen_or_tiny_geometry_is_rejected() {
         let sane = PanelGeometry {
@@ -298,7 +369,8 @@ mod tests {
         };
         assert!(sane.is_plausible());
 
-        // The unplugged-monitor case.
+        // Numbers no window ever legitimately reports — a corrupt or truncated
+        // store, not an unplugged monitor (tao handles that one itself).
         assert!(!PanelGeometry {
             x: 40_000.0,
             ..sane

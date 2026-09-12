@@ -80,6 +80,13 @@ fn open_with<R: Runtime>(app: &AppHandle<R>, config: &CopilotConfig) -> Result<(
     .resizable(true)
     .decorations(false)
     .always_on_top(true)
+    // Double-clicking a `data-tauri-drag-region` sends `internal_toggle_maximize`
+    // (tauri 2.11.1 `src/window/scripts/drag.js`), and no attribute value keeps
+    // dragging while disabling that — so the header would otherwise maximize a
+    // panel that is meant to sit beside a meeting window. Documented
+    // **Unsupported on Linux**, which is why `current_geometry` refuses a
+    // maximized frame as well rather than trusting this alone.
+    .maximizable(false)
     // Built hidden: content protection is applied before the first frame is
     // shown, so the panel cannot appear in a capture for the frame between
     // creation and the protection call.
@@ -187,15 +194,29 @@ fn persist_geometry<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) {
 /// Read the panel's logical position and size. Physical pixels are converted
 /// with the window's own scale factor, so a panel placed on a 200 % display
 /// reopens the same size rather than half or double it.
+///
+/// The decision of what is worth storing — in particular that a maximized frame
+/// never is — lives in [`PanelGeometry::from_window_metrics`], where it can be
+/// tested without a window.
+///
+/// **Known limitation (Windows, mixed DPI):** the round-trip is logical, and on
+/// Windows tao resolves a logical position by scanning monitors in enumeration
+/// order, so a panel left on a 200 % external display can reopen on a 100 %
+/// primary one. Storing physical pixels instead would break macOS, where
+/// `set_outer_position` re-applies the window's own scale factor; fixing it
+/// properly means versioning the stored key and converting against the target
+/// monitor. It is cosmetic and self-correcting (the next close stores the
+/// corrected position), so it is left for a follow-up rather than risking the
+/// platform that works.
 fn current_geometry<R: Runtime>(window: &WebviewWindow<R>) -> Option<PanelGeometry> {
     let scale = window.scale_factor().ok()?;
     let position = window.outer_position().ok()?.to_logical::<f64>(scale);
     let size = window.inner_size().ok()?.to_logical::<f64>(scale);
-    let geometry = PanelGeometry {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
-    };
-    geometry.is_plausible().then_some(geometry)
+    PanelGeometry::from_window_metrics(
+        window.is_maximized().unwrap_or(false),
+        position.x,
+        position.y,
+        size.width,
+        size.height,
+    )
 }

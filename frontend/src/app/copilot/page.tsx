@@ -132,6 +132,11 @@ export default function CopilotRoute() {
   }, []);
 
   const handlePause = useCallback(async () => {
+    // Each action clears the line it owns before retrying, so a failure that has
+    // since been fixed does not sit under a successful one. The status poll
+    // (every STATUS_POLL_MS) must never do this: it would wipe the message a few
+    // seconds after the user caused it, before it could be read.
+    setError(null);
     try {
       await recordingService.pauseRecording();
       setPaused(true);
@@ -141,6 +146,7 @@ export default function CopilotRoute() {
   }, []);
 
   const handleResume = useCallback(async () => {
+    setError(null);
     try {
       await recordingService.resumeRecording();
       setPaused(false);
@@ -150,6 +156,7 @@ export default function CopilotRoute() {
   }, []);
 
   const handleOpenMainWindow = useCallback(async () => {
+    setError(null);
     try {
       await copilotService.focusMainWindow();
     } catch (e) {

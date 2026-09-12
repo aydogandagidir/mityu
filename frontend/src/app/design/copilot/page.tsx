@@ -10,10 +10,12 @@
  * valid PNG — so this route feeds the same component fixed props instead, which
  * is what `tools/ui/shoot.py` can actually verify.
  *
- * Three states side by side, because the differences between them are the
+ * Four states side by side, because the differences between them are the
  * product decisions worth reviewing: what the panel says when no recording is
- * running (it never records on its own), and how honestly it states the
- * screen-sharing posture on a platform that enforces it versus one that cannot.
+ * running (it never records on its own), how honestly it states the
+ * screen-sharing posture on a platform that enforces it versus one that cannot,
+ * and what it says when the user has switched that request off — where the
+ * platform's verdict must not be shown at all, because Mityu never asked.
  */
 
 import { CopilotPanel, PanelLine } from '@/components/copilot/CopilotPanel';
@@ -68,6 +70,12 @@ const MACOS_RECORDING: CopilotStatus = {
   },
 };
 
+/** The same computer as `WINDOWS_RECORDING`, with the request switched off. */
+const PROTECTION_OFF: CopilotStatus = {
+  ...WINDOWS_RECORDING,
+  config: { ...WINDOWS_RECORDING.config, contentProtection: false },
+};
+
 const LINUX_IDLE: CopilotStatus = {
   ...WINDOWS_RECORDING,
   protection: {
@@ -80,9 +88,9 @@ const LINUX_IDLE: CopilotStatus = {
 };
 
 const LINES: PanelLine[] = [
-  { id: 1, side: 'them', text: 'We agreed the pilot starts in the Ankara site first.', timestamp: '14:02:11' },
-  { id: 2, side: 'me', text: 'Right — and the second site follows once the audit closes.', timestamp: '14:02:19' },
-  { id: 3, side: 'them', text: 'Can you send the retention policy before Friday?', timestamp: '14:02:27' },
+  { id: 1, text: 'We agreed the pilot starts in the Ankara site first.', timestamp: '14:02:11' },
+  { id: 2, text: 'Right — and the second site follows once the audit closes.', timestamp: '14:02:19' },
+  { id: 3, text: 'Can you send the retention policy before Friday?', timestamp: '14:02:27' },
 ];
 
 function Frame({ title, note, children }: { title: string; note: string; children: React.ReactNode }) {
@@ -93,7 +101,7 @@ function Frame({ title, note, children }: { title: string; note: string; childre
         <p className="text-xs text-muted-foreground">{note}</p>
       </figcaption>
       {/* The panel sizes itself to its window; the fixed box here stands in for
-          one so three states fit on a single review page. */}
+          one so every state fits on a single review page. */}
       <div className="h-[420px] w-[360px] overflow-hidden rounded-xl border border-border shadow-sm">
         {children}
       </div>
@@ -126,6 +134,12 @@ export default function CopilotDesignRoute() {
           note="macOS 15+ ignores the request for ScreenCaptureKit. The chip says so rather than promising invisibility."
         >
           <CopilotPanel status={MACOS_RECORDING} lines={LINES} paused onClose={() => {}} onResume={() => {}} onOpenMainWindow={() => {}} />
+        </Frame>
+        <Frame
+          title="Windows · hiding switched off"
+          note="The same computer as the first frame. The platform could exclude the panel — but the user said no, so the chip reports what is true now, not what the OS can do."
+        >
+          <CopilotPanel status={PROTECTION_OFF} lines={LINES} onClose={() => {}} onPause={() => {}} onOpenMainWindow={() => {}} />
         </Frame>
         <Frame
           title="Linux · no recording"

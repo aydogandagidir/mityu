@@ -19,8 +19,9 @@
  *   state when no recording is running.
  * - **Private, not covert.** The header states what the OS will really do about
  *   screen sharing, in the backend's own words (`policy.rs`), including "not
- *   hidden" on Linux and "best effort" on macOS 15+. It never claims the panel
- *   is invisible.
+ *   hidden" on Linux and "best effort" on macOS 15+ — and, when the user has
+ *   switched the request off, that the panel is simply visible. It never claims
+ *   the panel is invisible.
  *
  * Rendered by `app/copilot/page.tsx` in the panel window, and by
  * `app/design/copilot/page.tsx` with fixtures so it can be reviewed in a
@@ -35,9 +36,14 @@ import type { TranscriptUpdate } from '@/types';
 /** One line in the panel's transcript tail. */
 export interface PanelLine {
   id: number;
-  /** Who was speaking, as far as the audio pipeline knows. */
-  side: 'me' | 'them';
   text: string;
+  /**
+   * The segment's own stamp, carried so a line can be traced back to the
+   * transcript when the copilot starts citing its sources (I3). Deliberately
+   * not rendered: the transcription worker builds it from the UNIX epoch with
+   * no timezone offset (`format_current_timestamp`), so it is UTC, and printing
+   * it next to the text would read as a local clock time that it is not.
+   */
   timestamp: string;
 }
 
@@ -45,20 +51,19 @@ export interface PanelLine {
 export const TAIL_LENGTH = 6;
 
 /**
- * Which channel a transcript segment came from.
+ * Append a final segment to the tail, keeping it bounded.
  *
- * This is the one attribution the copilot can make honestly today: the audio
- * pipeline already separates the microphone from system audio
- * (`TranscriptUpdate.source`), so "me" and "them" are a fact about which device
- * captured the audio — not a guess about a voice. Nothing here infers identity
- * from how someone sounds; that would be biometric categorisation, which
- * ADR-0034 keeps out of the product. Diarization stays post-hoc and anonymous.
+ * **The tail is unattributed, and that is a finding rather than a style
+ * choice.** The panel could only label a line by guessing, and both available
+ * guesses are wrong here. Splitting on the capture device looks defensible —
+ * microphone is you, system audio is everyone else — but the sole producer of
+ * `transcript-update` stamps every segment `source: "Audio"` regardless of
+ * which device it came from (`audio/transcription/worker.rs`), so the split
+ * would be invented, not observed. Inferring a speaker from how a voice sounds
+ * is the other guess, and it is biometric categorisation, which ADR-0034 keeps
+ * out of the product. Attribution arrives when the pipeline actually carries
+ * it — anonymous, post-hoc diarization — and not one release earlier.
  */
-export function sideForSource(source: string): 'me' | 'them' {
-  return source.toLowerCase().includes('mic') ? 'me' : 'them';
-}
-
-/** Append a final segment to the tail, keeping it bounded. */
 export function appendLine(lines: PanelLine[], update: TranscriptUpdate): PanelLine[] {
   // Partials are a preview of text that is about to change; letting them into
   // the tail makes lines rewrite themselves as the user reads.
@@ -67,7 +72,6 @@ export function appendLine(lines: PanelLine[], update: TranscriptUpdate): PanelL
   if (!text) return lines;
   const next: PanelLine = {
     id: update.sequence_id,
-    side: sideForSource(update.source ?? ''),
     text,
     timestamp: update.timestamp,
   };
@@ -75,6 +79,22 @@ export function appendLine(lines: PanelLine[], update: TranscriptUpdate): PanelL
 }
 
 function ProtectionChip({ status }: { status: CopilotStatus }) {
+  // The verdict from `policy.rs` answers "what would this computer do if
+  // asked?". When the user has turned the request off, Mityu does not ask — so
+  // showing "Hidden from screen sharing" here would state the exact opposite of
+  // what happens. The switch wins over the platform.
+  if (!status.config.contentProtection) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+        title="Hiding the panel from screen shares is switched off. Turn it on in Settings → Copilot."
+      >
+        <Eye className="h-3 w-3 shrink-0" />
+        <span className="truncate">Visible in screen shares</span>
+      </span>
+    );
+  }
+
   const { level, headline } = status.protection;
   const Icon = level === 'enforced' ? ShieldCheck : level === 'bestEffort' ? ShieldAlert : EyeOff;
   const tone =
@@ -207,15 +227,8 @@ export function CopilotPanel({
                 </li>
               ) : (
                 lines.map((line) => (
-                  <li key={line.id} className="text-[12px] leading-snug">
-                    <span
-                      className={`mr-1.5 font-medium ${
-                        line.side === 'me' ? 'text-primary' : 'text-muted-foreground'
-                      }`}
-                    >
-                      {line.side === 'me' ? 'You' : 'Them'}
-                    </span>
-                    <span className="text-foreground">{line.text}</span>
+                  <li key={line.id} className="text-[12px] leading-snug text-foreground">
+                    {line.text}
                   </li>
                 ))
               )}
