@@ -14,7 +14,8 @@
 //! | `granted`                   | refresh `expires_at`, clear any revoked flag  |
 //! | `revoked` / `disabled`      | `Revoked{reason}` (re-activation path in UI)  |
 //! | past `expires_at` (cached)  | `Revoked{expired}` — checked offline each read|
-//! | 404 (seat freed via portal) | clear keychain license, fall back to trial    |
+//! | 404, once                   | keep the license; wait for the next pass      |
+//! | 404 on two passes in a row  | clear keychain license, fall back to trial    |
 
 use super::polar::{ActivateOutcome, DeactivateOutcome, LicenseApi, ValidateOutcome};
 use super::store::{self, LicensingBlob};
@@ -37,6 +38,18 @@ const DEFAULT_PLAN: &str = "pro";
 
 /// Re-validate at most once per this many days (ADR-0023 §7).
 const VALIDATE_EVERY_DAYS: i64 = 7;
+
+/// How many consecutive validation passes must report 404 before the local
+/// license is destroyed.
+///
+/// 404 is Polar's "no such activation", normally meaning the seat was freed
+/// from the customer portal — but it is also what an intermediary, an outage,
+/// or a refused `Polar-Version` returns (see `polar::is_version_rejection`).
+/// Clearing the license is the only irreversible thing a validation pass can
+/// do to a paying customer, so it takes two passes — at least
+/// [`VALIDATE_EVERY_DAYS`] apart — to trigger. Every other failure mode is
+/// already fail-open.
+const NOT_FOUND_PASSES_BEFORE_CLEARING: u32 = 2;
 
 /// A status evaluation plus the hint the command layer uses to decide whether
 /// to spawn the fire-and-forget background validation.
@@ -470,6 +483,7 @@ async fn clear_license_cache(pool: &SqlitePool, ctx: &AuthContext) {
             blob.expires_at = None;
             blob.last_validated_at = None;
             blob.revoked_reason = None;
+            blob.not_found_streak = 0;
             if let Err(e) = store::set_blob(pool, ctx, &blob).await {
                 tracing::warn!(error = %e, "licensing: could not clear the license display cache");
             }
@@ -537,6 +551,7 @@ pub async fn run_validation(
             tracing::info!("licensing: validation granted");
             blob.expires_at = expires_at;
             blob.revoked_reason = None;
+            blob.not_found_streak = 0;
             if blob.plan.is_none() {
                 blob.plan = Some(DEFAULT_PLAN.to_string());
             }
@@ -547,32 +562,51 @@ pub async fn run_validation(
         Ok(ValidateOutcome::Revoked) => {
             tracing::warn!("licensing: validation says the key is revoked");
             blob.revoked_reason = Some("This license key was revoked by the seller.".to_string());
+            blob.not_found_streak = 0;
         }
         Ok(ValidateOutcome::Disabled) => {
             tracing::warn!("licensing: validation says the key is disabled");
             blob.revoked_reason = Some("This license key was disabled.".to_string());
+            blob.not_found_streak = 0;
         }
         Ok(ValidateOutcome::NotFound) => {
-            // Our activation was removed via the Polar portal: clear the local
-            // license and fall back to the trial state machine (which may be
-            // TrialExpired). Trial anchor and high-water are preserved.
-            tracing::warn!(
-                "licensing: activation no longer exists at Polar (freed via portal); \
-                 clearing the local license and falling back to the trial"
-            );
-            if let Err(e) = crate::secrets::licensing::delete(crate::secrets::licensing::KEY_ENTRY)
-            {
-                tracing::warn!(error = %format!("{e:#}"), "licensing: could not clear the stored key");
+            // Normally: the seat was freed from the Polar portal. Possibly:
+            // an intermediary, an outage, or a refused API version. Only the
+            // first is a verdict about the license, and only this branch
+            // destroys what the customer paid for — so require the same answer
+            // on NOT_FOUND_PASSES_BEFORE_CLEARING separate passes.
+            blob.not_found_streak = blob.not_found_streak.saturating_add(1);
+            if blob.not_found_streak < NOT_FOUND_PASSES_BEFORE_CLEARING {
+                tracing::warn!(
+                    streak = blob.not_found_streak,
+                    "licensing: Polar reports this activation is gone; keeping the local \
+                     license until another pass confirms it"
+                );
+            } else {
+                // Confirmed. Clear the local license and fall back to the trial
+                // state machine (which may be TrialExpired). Trial anchor and
+                // high-water are preserved.
+                tracing::warn!(
+                    streak = blob.not_found_streak,
+                    "licensing: activation no longer exists at Polar (freed via portal); \
+                     clearing the local license and falling back to the trial"
+                );
+                if let Err(e) =
+                    crate::secrets::licensing::delete(crate::secrets::licensing::KEY_ENTRY)
+                {
+                    tracing::warn!(error = %format!("{e:#}"), "licensing: could not clear the stored key");
+                }
+                if let Err(e) = crate::secrets::licensing::delete(
+                    crate::secrets::licensing::ACTIVATION_ID_ENTRY,
+                ) {
+                    tracing::warn!(error = %format!("{e:#}"), "licensing: could not clear the stored activation id");
+                }
+                blob.display_key = None;
+                blob.plan = None;
+                blob.expires_at = None;
+                blob.revoked_reason = None;
+                blob.not_found_streak = 0;
             }
-            if let Err(e) =
-                crate::secrets::licensing::delete(crate::secrets::licensing::ACTIVATION_ID_ENTRY)
-            {
-                tracing::warn!(error = %format!("{e:#}"), "licensing: could not clear the stored activation id");
-            }
-            blob.display_key = None;
-            blob.plan = None;
-            blob.expires_at = None;
-            blob.revoked_reason = None;
         }
         Ok(ValidateOutcome::Invalid) => {
             // 422 on ids we stored verbatim — a schema drift, not a verdict on
@@ -804,7 +838,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validation_404_clears_license_and_falls_back_to_trial() {
+    async fn validation_404_clears_license_only_after_two_consecutive_passes() {
         let _guard = keychain_guard().await;
         let (pool, _dir) = open_migrated_pool().await;
         let ctx = ctx();
@@ -825,6 +859,24 @@ mod tests {
             validate_outcome: Some(ValidateOutcome::NotFound),
             ..Default::default()
         };
+
+        // First pass: one 404 is not enough to destroy a paid license.
+        run_validation(&pool, &ctx, &api, ORG, now).await;
+        assert_eq!(
+            kc::get(kc::KEY_ENTRY).unwrap().as_deref(),
+            Some("MITYU-AAAA-BBBB-1234"),
+            "a single 404 must not clear the stored key"
+        );
+        assert_eq!(
+            evaluate(&pool, &ctx, now).await.status.state,
+            LicensingStateKind::Licensed
+        );
+        assert_eq!(
+            store::get_blob(&pool, &ctx).await.unwrap().not_found_streak,
+            1
+        );
+
+        // Second pass, same answer: now act on it.
         run_validation(&pool, &ctx, &api, ORG, now).await;
 
         // Keychain license is gone; the trial machine takes over — and this
@@ -834,6 +886,48 @@ mod tests {
         let status = evaluate(&pool, &ctx, now).await.status;
         assert_eq!(status.state, LicensingStateKind::TrialExpired);
         assert_eq!(status.display_key, None);
+    }
+
+    #[tokio::test]
+    async fn a_granted_validation_resets_the_404_streak() {
+        let _guard = keychain_guard().await;
+        let (pool, _dir) = open_migrated_pool().await;
+        let ctx = ctx();
+        let now = ts("2026-07-01T00:00:00Z");
+        install_license("MITYU-AAAA-BBBB-1234", "act-1");
+
+        let gone = FakeApi {
+            validate_outcome: Some(ValidateOutcome::NotFound),
+            ..Default::default()
+        };
+        let granted = FakeApi {
+            validate_outcome: Some(ValidateOutcome::Granted { expires_at: None }),
+            ..Default::default()
+        };
+
+        // A 404, then a normal answer: the blip must not be carried forward.
+        run_validation(&pool, &ctx, &gone, ORG, now).await;
+        assert_eq!(
+            store::get_blob(&pool, &ctx).await.unwrap().not_found_streak,
+            1
+        );
+        run_validation(&pool, &ctx, &granted, ORG, now).await;
+        assert_eq!(
+            store::get_blob(&pool, &ctx).await.unwrap().not_found_streak,
+            0,
+            "a granted validation proves the endpoint answers; the streak must reset"
+        );
+
+        // So a later, unrelated 404 is again only the first of two.
+        run_validation(&pool, &ctx, &gone, ORG, now).await;
+        assert_eq!(
+            kc::get(kc::KEY_ENTRY).unwrap().as_deref(),
+            Some("MITYU-AAAA-BBBB-1234")
+        );
+        assert_eq!(
+            evaluate(&pool, &ctx, now).await.status.state,
+            LicensingStateKind::Licensed
+        );
     }
 
     #[tokio::test]
