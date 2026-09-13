@@ -14,9 +14,10 @@
 //! Every command here is local, synchronous work over a settings file and a
 //! window handle: no network, no database, no model, no transcript.
 
-use super::config::{CopilotConfig, KeybindAction};
+use super::config::{CopilotConfig, KeybindAction, MAX_LIVE_WINDOW_SECS, MIN_LIVE_WINDOW_SECS};
 use super::policy::ProtectionVerdict;
-use super::{keybind, shortcuts, store, window};
+use super::session::LiveContextStatus;
+use super::{keybind, session, shortcuts, store, window};
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
@@ -124,6 +125,9 @@ pub struct CopilotStatus {
     /// session the user consented to (ADR-0038 invariant 2).
     pub recording: bool,
     pub shortcuts: Vec<ShortcutInfo>,
+    /// The I2 live-context service: subscribed or not, and how much it holds.
+    /// Counts only — the payload never carries transcript text.
+    pub live_context: LiveContextStatus,
 }
 
 /// Read the copilot's state. Local-only and cheap enough to poll.
@@ -153,15 +157,24 @@ pub async fn copilot_set_config<R: Runtime>(
         let parsed = keybind::parse(spec).map_err(|e| format!("{} — {e}", action.label()))?;
         config.keybinds.set(action, parsed.canonical());
     }
+    // Same rule for the live window: reject, do not silently clamp — a user
+    // who typed 5 should learn the minimum, not find 30 saved.
+    if !config.live_window_is_valid() {
+        return Err(format!(
+            "Live context window — must be between {MIN_LIVE_WINDOW_SECS} and {MAX_LIVE_WINDOW_SECS} seconds."
+        ));
+    }
 
     store::save_config(&app, &config)?;
 
     if config.enabled {
         shortcuts::apply_config(&app, &config)?;
         window::refresh_content_protection(&app, config.content_protection);
+        session::apply_config(&app, &config);
     } else {
-        // Off means off: no shortcut held, no panel on screen.
+        // Off means off: no shortcut held, no panel on screen, no listener.
         shortcuts::clear(&app);
+        session::stop(&app);
         window::close(&app)?;
     }
 
@@ -213,6 +226,7 @@ async fn build_status<R: Runtime>(app: &AppHandle<R>, config: CopilotConfig) -> 
         recording: crate::audio::recording_commands::is_recording().await,
         protection,
         shortcuts,
+        live_context: session::status(),
         config,
     }
 }

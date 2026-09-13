@@ -32,6 +32,19 @@ pub const DEFAULT_PANEL_HEIGHT: f64 = 560.0;
 pub const MIN_PANEL_WIDTH: f64 = 320.0;
 pub const MIN_PANEL_HEIGHT: f64 = 240.0;
 
+/// How much recent conversation the live context keeps "hot" for an insight
+/// (BACKLOG I2). Three minutes covers a question and the exchange that led to
+/// it; the whole session stays in the durable buffer regardless.
+pub const DEFAULT_LIVE_WINDOW_SECS: u32 = 180;
+/// Below this the window cannot hold one question and its context.
+pub const MIN_LIVE_WINDOW_SECS: u32 = 30;
+/// Above this the "rolling window" is just the durable buffer under another name.
+pub const MAX_LIVE_WINDOW_SECS: u32 = 900;
+// The default must sit strictly inside its own bounds, or `live_window_is_valid`
+// would reject a fresh install. Checked at compile time.
+const _: () = assert!(MIN_LIVE_WINDOW_SECS < DEFAULT_LIVE_WINDOW_SECS);
+const _: () = assert!(DEFAULT_LIVE_WINDOW_SECS < MAX_LIVE_WINDOW_SECS);
+
 /// What a shortcut is *for*.
 ///
 /// `Ask` and `CaptureScreen` are declared here because the settings surface
@@ -156,6 +169,11 @@ pub struct CopilotConfig {
     /// combination.
     pub shortcuts_enabled: bool,
     pub keybinds: Keybinds,
+    /// Seconds of recent speech the live context keeps in its rolling window
+    /// (I2). Validated into `MIN_LIVE_WINDOW_SECS..=MAX_LIVE_WINDOW_SECS` by
+    /// `copilot_set_config`; a stored value outside that range is clamped on
+    /// read by [`CopilotConfig::live_window_secs_clamped`] rather than trusted.
+    pub live_window_secs: u32,
 }
 
 impl Default for CopilotConfig {
@@ -165,7 +183,22 @@ impl Default for CopilotConfig {
             content_protection: true,
             shortcuts_enabled: true,
             keybinds: Keybinds::default(),
+            live_window_secs: DEFAULT_LIVE_WINDOW_SECS,
         }
+    }
+}
+
+impl CopilotConfig {
+    /// Is the window setting one the service will accept as-is?
+    pub fn live_window_is_valid(&self) -> bool {
+        (MIN_LIVE_WINDOW_SECS..=MAX_LIVE_WINDOW_SECS).contains(&self.live_window_secs)
+    }
+
+    /// The window the service actually uses. A hand-edited or corrupt store can
+    /// hold `0` or `u32::MAX`; neither is a window, so the nearest bound is.
+    pub fn live_window_secs_clamped(&self) -> u32 {
+        self.live_window_secs
+            .clamp(MIN_LIVE_WINDOW_SECS, MAX_LIVE_WINDOW_SECS)
     }
 }
 
@@ -313,6 +346,34 @@ mod tests {
         assert!(!cfg.content_protection);
         assert!(cfg.shortcuts_enabled);
         assert_eq!(cfg.keybinds, Keybinds::default());
+        // A config written by I1, before the live window existed.
+        assert_eq!(cfg.live_window_secs, DEFAULT_LIVE_WINDOW_SECS);
+    }
+
+    #[test]
+    fn the_default_live_window_is_valid_and_inside_its_own_bounds() {
+        let cfg = CopilotConfig::default();
+        // (That the default sits inside its bounds is a compile-time assert
+        // next to the constants.)
+        assert!(cfg.live_window_is_valid());
+        assert_eq!(cfg.live_window_secs_clamped(), DEFAULT_LIVE_WINDOW_SECS);
+    }
+
+    #[test]
+    fn an_out_of_range_live_window_is_invalid_but_clamps_to_the_nearest_bound() {
+        let zero = CopilotConfig {
+            live_window_secs: 0,
+            ..CopilotConfig::default()
+        };
+        assert!(!zero.live_window_is_valid());
+        assert_eq!(zero.live_window_secs_clamped(), MIN_LIVE_WINDOW_SECS);
+
+        let huge = CopilotConfig {
+            live_window_secs: u32::MAX,
+            ..CopilotConfig::default()
+        };
+        assert!(!huge.live_window_is_valid());
+        assert_eq!(huge.live_window_secs_clamped(), MAX_LIVE_WINDOW_SECS);
     }
 
     #[test]
