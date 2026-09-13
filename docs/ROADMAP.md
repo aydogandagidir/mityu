@@ -32,6 +32,12 @@ Backs the About-screen "Coming soon: a library of on-device AI agents — automa
 - **Gate:** fully offline; every output a source-linked draft a human approves; no external side effects; `/security-review` + multitenancy-guardian clean.
 - **Core is integration-free (by design):** Mityu captures system audio ("any meeting app … or a face-to-face conversation" — macOS + Windows; Linux is microphone-only, ADR-0022) and is **not a meeting bot by default** (`CLAUDE.md` §1). Meet/Zoom/Teams-related capabilities exist only as **opt-in, consent-gated integrations** — calendar metadata (light) and, in Phase 2+, a call-joining bot — per **ADR-0018** (BACKLOG EPIC G, post-C8).
 
+## Phase I — Live Copilot (in-meeting assistance, consent-grade; ADR-0038, BACKLOG EPIC I)
+Closes the category gap found in `docs/COMPETITIVE_CLUELY_GAP.md`: Mityu helps *after* a meeting, the live-assistant category (Cluely and its open-source clones) helps *during* it. Not a new step on the linear path: mechanics are **flag-gated (`liveCopilot`, default OFF)** and may land before A5/C8 on the C1/C3a precedent; **default ON and any live-help claim require A5 GO + the I9 gate**.
+- I1 private always-on-top panel + global shortcuts → I2 deterministic live context (me/them from `source`) → I3 on-demand grounded insights (Suggest · Follow-ups · Recap · Define) → I4 meeting modes → I5 local knowledge base (Fact check against transcript + documents only) → I6 on-demand screen context → I7 post-call parity (deterministic recipes, cross-meeting recall, manual speaker names) → I8 opt-in proactive offers, usage ledger, local pre-call brief (needs G2) → I9 gate.
+- **Invariants:** private-not-covert (content protection is a privacy feature, honestly labelled per platform — macOS 15+ cannot guarantee it; the app never hides itself); the copilot consumes only a consented recording session's transcript stream and never touches `audio/`; every insight is AI-labelled, source-linked and non-persisted unless pinned as a **draft** block; no external action.
+- **Rejected:** stealth/undetectability, candidate-side interview or exam modes, continuous screen recording, web profiling of participants, coaching scores, autonomous send — see ADR-0038.
+
 ## First 30 / 60 / 90 days
 - **0–30:** Phase 0 + start Phase 1 seams. Real-audio transcription validation is the make-or-break task.
 - **30–60:** Phase 1 core (encrypted local store, source-linked HITL summaries, export); onboard 1 pilot.
