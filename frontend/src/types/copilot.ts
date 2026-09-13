@@ -46,6 +46,28 @@ export interface CopilotConfig {
   /** Master switch for every global shortcut, separate from `enabled`. */
   shortcutsEnabled: boolean;
   keybinds: Keybinds;
+  /**
+   * Seconds of recent speech the live context keeps in its rolling window
+   * (I2). The backend accepts 30–900 and rejects anything else with a sentence.
+   */
+  liveWindowSecs: number;
+}
+
+/**
+ * The I2 live-context service, as counts. Deliberately no text: the status
+ * read is polled by Settings and the panel, and neither needs the transcript
+ * from it — the panel already has the `transcript-update` stream.
+ */
+export interface LiveContextStatus {
+  /** Is the service listening to `transcript-update` right now? */
+  subscribed: boolean;
+  windowSecs: number;
+  /** Segments held for this recording session. */
+  turns: number;
+  /** Segments inside the rolling window. */
+  windowTurns: number;
+  /** Segments dropped from the front of the session buffer by its size cap. */
+  evicted: number;
 }
 
 /**
@@ -72,4 +94,5 @@ export interface CopilotStatus {
    */
   recording: boolean;
   shortcuts: ShortcutInfo[];
+  liveContext: LiveContextStatus;
 }

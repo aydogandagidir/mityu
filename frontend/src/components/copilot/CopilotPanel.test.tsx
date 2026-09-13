@@ -36,6 +36,7 @@ const BASE_STATUS: CopilotStatus = {
       ask: 'CommandOrControl+Shift+A',
       captureScreen: 'CommandOrControl+Shift+S',
     },
+    liveWindowSecs: 180,
   },
   protection: {
     level: 'bestEffort',
@@ -45,6 +46,13 @@ const BASE_STATUS: CopilotStatus = {
   panelOpen: true,
   recording: true,
   shortcuts: [],
+  liveContext: {
+    subscribed: false,
+    windowSecs: 0,
+    turns: 0,
+    windowTurns: 0,
+    evicted: 0,
+  },
 };
 
 function update(overrides: Partial<TranscriptUpdate>): TranscriptUpdate {
@@ -73,10 +81,13 @@ describe('transcript tail', () => {
     expect(Object.keys(line).sort()).toEqual(['id', 'text', 'timestamp']);
   });
 
-  it('ignores partial segments', () => {
-    // A partial is text about to be rewritten; letting it in makes lines change
-    // under the reader.
-    expect(appendLine([], update({ is_partial: true }))).toEqual([]);
+  it('keeps the short chunks the producer flags as partial', () => {
+    // I1 dropped these, believing `is_partial` meant "about to be replaced by a
+    // final". It does not: Whisper sets it for any chunk under 15 s
+    // (`whisper_engine.rs`), every chunk is emitted exactly once, and live VAD
+    // closes a segment after 2 s of silence — so most real speech is "partial".
+    // Dropping it hid most of the meeting from the panel.
+    expect(appendLine([], update({ is_partial: true, text: 'a short utterance' }))).toHaveLength(1);
   });
 
   it('ignores empty text', () => {

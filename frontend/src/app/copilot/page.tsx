@@ -83,15 +83,22 @@ export default function CopilotRoute() {
       }
       unlisteners.push(onTranscript);
 
-      const onStopped = await listen('recording-stop-complete', () => {
-        setLines([]);
-        void refresh();
-      });
-      if (cancelled) {
-        onStopped();
-        return;
+      // Two stop paths, two events: the ordinary stop emits `recording-stopped`
+      // (`audio/recording_commands.rs`); the tray's stop emits
+      // `recording-stop-complete` (`tray.rs`) and nothing else does. I1 listened
+      // only to the second, so after a normal stop the last lines stayed on
+      // screen until the status poll noticed — up to STATUS_POLL_MS later.
+      for (const stopEvent of ['recording-stopped', 'recording-stop-complete'] as const) {
+        const onStopped = await listen(stopEvent, () => {
+          setLines([]);
+          void refresh();
+        });
+        if (cancelled) {
+          onStopped();
+          return;
+        }
+        unlisteners.push(onStopped);
       }
-      unlisteners.push(onStopped);
     };
 
     void subscribe();

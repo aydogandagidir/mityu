@@ -48,6 +48,7 @@ const WINDOWS_RECORDING: CopilotStatus = {
       ask: 'CommandOrControl+Shift+A',
       captureScreen: 'CommandOrControl+Shift+S',
     },
+    liveWindowSecs: 180,
   },
   protection: {
     level: 'enforced',
@@ -58,6 +59,13 @@ const WINDOWS_RECORDING: CopilotStatus = {
   panelOpen: true,
   recording: true,
   shortcuts: SHORTCUTS,
+  liveContext: {
+    subscribed: true,
+    windowSecs: 180,
+    turns: 3,
+    windowTurns: 3,
+    evicted: 0,
+  },
 };
 
 const MACOS_RECORDING: CopilotStatus = {
