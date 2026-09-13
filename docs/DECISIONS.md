@@ -888,3 +888,37 @@ ADR-0027 anticipated this shape: *"Later patches may carry the same honest limit
 **Consequences:** Mityu gains the category's genuine value — help while the conversation is happening — on the one axis the category cannot follow: consent-grade, source-linked, human-approved and honest about what the OS can and cannot hide. `CLAUDE.md` §1's "not a meeting bot" is unchanged (the copilot joins nothing and captures nothing new). `ROADMAP.md` gains Phase I; `STRATEGY_2026-2030.md` §2 gains the corresponding parity rows. Costs accepted: a second window and a global-shortcut plugin widen the desktop surface; a knowledge base doubles as a second copy of user documents inside SQLCipher (same posture as the FTS index, ADR-0026); the live experience is bounded by the capture pipeline's VAD segmentation (seconds, not milliseconds — no latency figure is published without I9's measurement); any streaming/latency work in `audio/` is a separate, §4-smoked change.
 
 **Status:** Accepted as design direction (2026-09-11; owner review pending). I0 satisfied by this record; I1–I9 tracked in BACKLOG EPIC I; `liveCopilot` default OFF until I9.
+
+---
+
+## ADR-0039 — The live context follows the transcript producer, not the plan: every emission is final, and no segment is attributed to a device yet
+
+**Context:** Building BACKLOG I2 (2026-09-13) against the actual producer of `transcript-update` (`frontend/src-tauri/src/audio/transcription/worker.rs`) showed that two premises written into ADR-0038 finding 4 and into the I1/I2 acceptance criteria are false:
+
+1. **`TranscriptUpdate.source` does not carry `microphone`/`system`.** The worker hardcodes `source: "Audio".to_string()` for every segment (`worker.rs`, the single `TranscriptUpdate { … }` construction). There is no me/them signal in the stream. I1 had already run into this on the panel side and shipped the tail unattributed; I2 is where the service layer met the same fact.
+2. **`is_partial` is not a lifecycle.** Whisper sets it as `duration_seconds < 15.0` (`whisper_engine/whisper_engine.rs:738`); Parakeet never sets it. Each chunk is emitted exactly once with a fresh `sequence_id` from a shared counter, and nothing later replaces it. Live VAD closes a segment after 2 s of silence (`VAD_REDEMPTION_TIME_MS = 2000`), so most real utterances are shorter than 15 s and therefore flagged "partial". The main transcript view (`TranscriptContext.tsx`) already treats every emission as one segment and de-duplicates by `sequence_id`; the recording saver stores all of them. The I1 panel had implemented the plan's reading and was **dropping `is_partial` segments — hiding most of the meeting**.
+
+A third fact shaped the buffer: three transcription workers run in parallel, so `sequence_id` (assigned at emission) does not follow audio time. A fourth was caught by the multitenancy-guardian review of the I2 diff: `recording-stop-complete` is emitted **only by the tray's stop** (`tray.rs`); the ordinary stop path emits `recording-stopped` (`audio/recording_commands.rs`). The I1 panel listened to the tray event alone, and the first draft of I2 did too — which would have kept a finished meeting's transcript in memory until the next recording.
+
+**Decision:**
+
+- `copilot::session` treats **every** `transcript-update` as a final segment. `is_partial` is carried as `Turn.short_chunk` and decides nothing. A segment's identity is `sequence_id`; a re-emission replaces in place and never fires a second cue.
+- Segments are ordered by **audio time**, and the rolling window is measured back from the latest segment *end*, not from the wall clock — a pause in the meeting does not empty it.
+- Channel attribution is an explicit `Channel::Unknown` until the pipeline carries it. `Channel::{Microphone, System}` and the rule "no cue from the user's own microphone" are implemented and tested **now**, against the value the producer will send, so that the day `source` becomes real nothing in the copilot moves. Populating `source` is an `audio/` change and stays out of EPIC I (CLAUDE.md §4); it is filed as BACKLOG **H13**.
+- The panel's transcript tail shows every segment, unattributed.
+- The session buffer is rebuilt at `recording-started` — re-resolving `AuthContext` there, so a Phase-2 tenant switch between two meetings cannot leave a buffer stamped with the previous workspace — and cleared on **both** stop events. The panel clears on both as well.
+- The `copilot-cue` event carries ids and numbers only (`workspace_id`, kind, confidence, evidence `sequence_id`s); the consumer resolves them against the transcript it already holds. I3's consumer must drop a cue whose `workspace_id` is not its own.
+- ADR-0038 finding 4 is **not** edited — accepted records are not rewritten; this record corrects it. BACKLOG I1/I2, `COMPETITIVE_CLUELY_GAP.md` §6 (the me/them row: ADOPT → DEFER) and `ROADMAP.md` Phase I are updated to say what the code does.
+
+**Alternatives rejected:**
+
+| Alternative | Why not |
+|---|---|
+| Implement the AC literally (drop partials, split me/them on `source`) | Drops most speech; invents an attribution the data does not contain. Both were caught only because the producer was read before the consumer was written. |
+| Infer me/them from a heuristic inside the copilot (energy, device names in `timestamp`, voice) | Guessing a speaker from the signal is what ADR-0034 forbids; device-name heuristics have no data to work on. |
+| Change `worker.rs` in I2 to send the real device | Correct fix, wrong place: the audio pipeline is the §4 high-risk zone and no EPIC I task may touch it (ADR-0038 invariant 2). It gets its own smoked change. |
+| Keep the buffer in `sequence_id` order | "The last 180 seconds" would then depend on which worker finished first. |
+
+**Consequences:** I3's prompt assembly must not rely on me/them, and its "Suggest" action cannot distinguish the user's own question from the counterpart's until H13 lands; the I8 proactive prefilter inherits the same limit. Any speaker-side feature in EPIC I depends on H13, which is an `audio/` task with the §4 manual smoke as its gate. The "no cue from microphone" gate is documented as inert where it lives (`session.rs` module doc).
+
+**Status:** Accepted (2026-09-13). Implemented in I2 (`feat/i2-live-context`).

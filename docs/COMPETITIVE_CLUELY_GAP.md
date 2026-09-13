@@ -142,7 +142,7 @@ Karar sözlüğü: **ADOPT** (aynı değeri Mityu tarzında kur) · **ADAPT** (k
 |---|---|---|---|---|
 | Canlı overlay paneli (odak çalmayan, her zaman üstte, kompakt) | ❌ | **ADOPT** | I1 (`copilot/window.rs`, `/copilot` route) | Kategori çekirdeği. Ekran-paylaşım koruması *gizlilik* özelliği; dürüst platform etiketi. Uygulama dock/taskbar'da **görünür kalır**. |
 | Global kısayollar, düzenlenebilir keybind, "hepsini kapat" | ❌ | **ADOPT** | I1 | `tauri-plugin-global-shortcut`. |
-| "Me/Them" canlı atıf | veri var, UI yok | **ADOPT** | I1/I2 | `source` alanından; sesten kimlik çıkarımı **yok**. |
+| "Me/Them" canlı atıf | **veri yok** — `TranscriptUpdate.source` üretici tarafında her segment için sabit `"Audio"` (I2'de koda karşı doğrulandı; ADR-0039) | **DEFER** | Ses hattı `source`'u gerçekten taşıyınca (ayrı, §4 smoke'lu `audio/` işi — BACKLOG H13) | `copilot::session::Channel{Microphone,System,Unknown}` ve "mikrofondan cue yok" kuralı şimdiden yazılı ve testli; üretici düzelince kopilotta hiçbir şey değişmez. Sesten kimlik çıkarımı **yok** (ADR-0034). |
 | "What should I say next" (öneri) | ❌ | **ADAPT** | I3 | Yalnızca kayıt-rızası verilmiş oturumun transkript penceresinden; kaynak-bağlı; yapay-zekâ etiketli **taslak**; yerel model varsayılan. |
 | "Follow up questions" | ❌ | **ADOPT** | I3 | 1–3 soru, her biri tetikleyici segmente bağlı. |
 | Canlı "Recap" | yalnız kayıt sonrası | **ADOPT** | I3 | Pencere üstünden; kalıcı değil; "Pin to notes" ile taslak blok. |
