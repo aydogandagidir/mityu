@@ -65,9 +65,12 @@ export const TAIL_LENGTH = 6;
  * it — anonymous, post-hoc diarization — and not one release earlier.
  */
 export function appendLine(lines: PanelLine[], update: TranscriptUpdate): PanelLine[] {
-  // Partials are a preview of text that is about to change; letting them into
-  // the tail makes lines rewrite themselves as the user reads.
-  if (update.is_partial) return lines;
+  // `is_partial` is deliberately ignored. I1 treated it as "a final will
+  // replace this" and dropped such segments; the producer means "under 15 s of
+  // audio" (`whisper_engine.rs`), emits every chunk exactly once, and live VAD
+  // closes segments after 400 ms of silence — so the flag is set on most real
+  // speech, and honouring it hid most of the meeting. Re-emissions are handled
+  // below by `sequence_id`, which is the actual identity of a segment.
   const text = update.text?.trim();
   if (!text) return lines;
   const next: PanelLine = {

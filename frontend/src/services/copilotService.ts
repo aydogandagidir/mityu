@@ -29,6 +29,7 @@ const BROWSER_STUB: CopilotStatus = {
       ask: 'CommandOrControl+Shift+A',
       captureScreen: 'CommandOrControl+Shift+S',
     },
+    liveWindowSecs: 180,
   },
   protection: {
     level: 'unsupported',
@@ -38,6 +39,13 @@ const BROWSER_STUB: CopilotStatus = {
   panelOpen: false,
   recording: false,
   shortcuts: [],
+  liveContext: {
+    subscribed: false,
+    windowSecs: 0,
+    turns: 0,
+    windowTurns: 0,
+    evicted: 0,
+  },
 };
 
 export class CopilotService {

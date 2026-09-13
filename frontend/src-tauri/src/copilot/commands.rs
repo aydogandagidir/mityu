@@ -14,9 +14,10 @@
 //! Every command here is local, synchronous work over a settings file and a
 //! window handle: no network, no database, no model, no transcript.
 
-use super::config::{CopilotConfig, KeybindAction};
+use super::config::{CopilotConfig, KeybindAction, MAX_LIVE_WINDOW_SECS, MIN_LIVE_WINDOW_SECS};
 use super::policy::ProtectionVerdict;
-use super::{keybind, shortcuts, store, window};
+use super::session::LiveContextStatus;
+use super::{keybind, session, shortcuts, store, window};
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
@@ -105,6 +106,38 @@ fn shortcut_row(
     }
 }
 
+/// Decide what a submitted live-window value becomes: accepted, repaired, or
+/// refused.
+///
+/// Pure, and separated from [`copilot_set_config`] for the same reason
+/// [`shortcut_row`] is — this is where the command locked the user out.
+///
+/// Rejecting an out-of-range value outright looked like the keybind rule (tell
+/// the user rather than silently change what they typed), but it has a
+/// consequence keybinds do not: **no UI exposes this field**, so every Settings
+/// switch round-trips whatever is stored. One out-of-range number in
+/// `copilot.json` — hand-edited, pre-seeded by an admin, or written by a future
+/// build — therefore made *every* save fail, **including switching the copilot
+/// off**: the user was locked out of the one control that makes this feature
+/// safe, by a field they cannot see or edit.
+///
+/// So the refusal is now scoped to a value the caller actually changed. A
+/// number they did not touch is repaired to the nearest bound and the save
+/// proceeds.
+fn resolve_live_window(submitted: u32, stored: u32) -> Result<u32, String> {
+    let changed = submitted != stored;
+    let config = CopilotConfig {
+        live_window_secs: submitted,
+        ..CopilotConfig::default()
+    };
+    if changed && !config.live_window_is_valid() {
+        return Err(format!(
+            "Live context window — must be between {MIN_LIVE_WINDOW_SECS} and {MAX_LIVE_WINDOW_SECS} seconds."
+        ));
+    }
+    Ok(config.live_window_secs_clamped())
+}
+
 /// Everything the panel and the Settings tab need in one read.
 ///
 /// Serialize only, because it contains [`ProtectionVerdict`] and
@@ -124,6 +157,9 @@ pub struct CopilotStatus {
     /// session the user consented to (ADR-0038 invariant 2).
     pub recording: bool,
     pub shortcuts: Vec<ShortcutInfo>,
+    /// The I2 live-context service: subscribed or not, and how much it holds.
+    /// Counts only — the payload never carries transcript text.
+    pub live_context: LiveContextStatus,
 }
 
 /// Read the copilot's state. Local-only and cheap enough to poll.
@@ -153,15 +189,19 @@ pub async fn copilot_set_config<R: Runtime>(
         let parsed = keybind::parse(spec).map_err(|e| format!("{} — {e}", action.label()))?;
         config.keybinds.set(action, parsed.canonical());
     }
+    let stored_window = store::load_config(&app).live_window_secs;
+    config.live_window_secs = resolve_live_window(config.live_window_secs, stored_window)?;
 
     store::save_config(&app, &config)?;
 
     if config.enabled {
         shortcuts::apply_config(&app, &config)?;
         window::refresh_content_protection(&app, config.content_protection);
+        session::apply_config(&app, &config);
     } else {
-        // Off means off: no shortcut held, no panel on screen.
+        // Off means off: no shortcut held, no panel on screen, no listener.
         shortcuts::clear(&app);
+        session::stop(&app);
         window::close(&app)?;
     }
 
@@ -195,6 +235,10 @@ pub async fn copilot_focus_main_window<R: Runtime>(app: AppHandle<R>) {
 
 async fn build_status<R: Runtime>(app: &AppHandle<R>, config: CopilotConfig) -> CopilotStatus {
     let protection = super::policy::current_verdict();
+    let recording = crate::audio::recording_commands::is_recording().await;
+    // Second bound on how long a finished meeting stays in memory, independent
+    // of the stop events. See `session::discard_if_idle`.
+    session::discard_if_idle(recording);
 
     let shortcuts = KeybindAction::ALL
         .into_iter()
@@ -210,10 +254,59 @@ async fn build_status<R: Runtime>(app: &AppHandle<R>, config: CopilotConfig) -> 
 
     CopilotStatus {
         panel_open: window::is_open(app),
-        recording: crate::audio::recording_commands::is_recording().await,
+        recording,
         protection,
         shortcuts,
+        live_context: session::status(),
         config,
+    }
+}
+
+#[cfg(test)]
+mod live_window_tests {
+    use super::*;
+    use crate::copilot::config::DEFAULT_LIVE_WINDOW_SECS;
+
+    #[test]
+    fn an_untouched_out_of_range_value_never_blocks_a_save() {
+        // The lockout this fixes: `copilot.json` holds 0 (or 10, or u32::MAX),
+        // no UI can edit it, and the user flips the enable switch off. Every
+        // save used to fail with a message about a field they cannot see.
+        for stored in [0, 10, u32::MAX] {
+            assert_eq!(
+                resolve_live_window(stored, stored),
+                Ok(MIN_LIVE_WINDOW_SECS.max(stored.min(MAX_LIVE_WINDOW_SECS))),
+                "stored {stored} must be repaired, not refused"
+            );
+        }
+    }
+
+    #[test]
+    fn a_value_the_caller_changed_is_still_refused_with_the_bounds() {
+        let refused = resolve_live_window(5, DEFAULT_LIVE_WINDOW_SECS)
+            .expect_err("a deliberate 5 is out of range");
+        assert!(
+            refused.contains(&MIN_LIVE_WINDOW_SECS.to_string()),
+            "{refused}"
+        );
+        assert!(
+            refused.contains(&MAX_LIVE_WINDOW_SECS.to_string()),
+            "{refused}"
+        );
+        assert!(resolve_live_window(5_000, DEFAULT_LIVE_WINDOW_SECS).is_err());
+    }
+
+    #[test]
+    fn a_valid_change_is_accepted_verbatim() {
+        assert_eq!(resolve_live_window(90, DEFAULT_LIVE_WINDOW_SECS), Ok(90));
+        assert_eq!(
+            resolve_live_window(MIN_LIVE_WINDOW_SECS, DEFAULT_LIVE_WINDOW_SECS),
+            Ok(MIN_LIVE_WINDOW_SECS)
+        );
+        assert_eq!(
+            resolve_live_window(MAX_LIVE_WINDOW_SECS, DEFAULT_LIVE_WINDOW_SECS),
+            Ok(MAX_LIVE_WINDOW_SECS)
+        );
     }
 }
 

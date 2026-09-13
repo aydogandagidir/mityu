@@ -46,6 +46,36 @@ export interface CopilotConfig {
   /** Master switch for every global shortcut, separate from `enabled`. */
   shortcutsEnabled: boolean;
   keybinds: Keybinds;
+  /**
+   * Seconds of recent speech an insight will be built from (I2).
+   *
+   * **Not a retention setting.** It selects a view over the session buffer and
+   * evicts nothing: while a meeting is being recorded the copilot holds all of
+   * it in memory whatever this is set to (see `docs/SECURITY_PRIVACY.md`).
+   *
+   * The backend accepts 30–900. A value outside that range is refused only when
+   * the caller changed it, and repaired otherwise — no UI exposes this field,
+   * and refusing a stored value would block every other copilot setting,
+   * including switching the copilot off.
+   */
+  liveWindowSecs: number;
+}
+
+/**
+ * The I2 live-context service, as counts. Deliberately no text: the status
+ * read is polled by Settings and the panel, and neither needs the transcript
+ * from it — the panel already has the `transcript-update` stream.
+ */
+export interface LiveContextStatus {
+  /** Is the service listening to `transcript-update` right now? */
+  subscribed: boolean;
+  windowSecs: number;
+  /** Segments held for this recording session. */
+  turns: number;
+  /** Segments inside the rolling window. */
+  windowTurns: number;
+  /** Segments dropped from the front of the session buffer by its size cap. */
+  evicted: number;
 }
 
 /**
@@ -72,4 +102,5 @@ export interface CopilotStatus {
    */
   recording: boolean;
   shortcuts: ShortcutInfo[];
+  liveContext: LiveContextStatus;
 }
