@@ -79,6 +79,11 @@ pub mod learning;
 /// lazy/fail-open, and expiry gates ONLY new capture (recording/import) — never
 /// existing data.
 pub mod licensing;
+/// Meeting modes (BACKLOG I4a, ADR-0038) — what kind of conversation this is,
+/// which copilot actions suit it, how strictly it must cite, and what it may
+/// read. Data and pure functions; registers nothing and changes no existing
+/// summary behaviour.
+pub mod modes;
 pub mod notifications;
 pub mod ollama;
 pub mod onboarding;
