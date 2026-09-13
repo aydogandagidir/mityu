@@ -109,7 +109,12 @@ describe('TalkTimePanel: what the numbers are allowed to claim', () => {
   it('keeps labels anonymous and offers no way to name a speaker', () => {
     render(<TalkTimePanel state={{ kind: 'done', diarizedAt: 'x', turns: TURNS }} />);
     const text = document.body.textContent ?? '';
-    expect(text).toContain('Labels are anonymous');
+    // Not merely "labels are anonymous" — the copy has to say there is no
+    // rename, because the first reader of the softer wording ("naming a voice
+    // is yours to do") asked how to do it, which is the wording promising a
+    // feature that does not exist.
+    expect(text).toMatch(/no way to rename/i);
+    expect(text).toMatch(/biometric/i);
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByRole('button', { name: /name|rename|assign/i })).toBeNull();
   });
