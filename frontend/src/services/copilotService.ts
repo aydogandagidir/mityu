@@ -30,6 +30,7 @@ const BROWSER_STUB: CopilotStatus = {
       captureScreen: 'CommandOrControl+Shift+S',
     },
     liveWindowSecs: 180,
+    allowCloudInsights: false,
   },
   protection: {
     level: 'unsupported',

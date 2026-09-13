@@ -174,6 +174,19 @@ pub struct CopilotConfig {
     /// `copilot_set_config`; a stored value outside that range is clamped on
     /// read by [`CopilotConfig::live_window_secs_clamped`] rather than trusted.
     pub live_window_secs: u32,
+    /// May a live insight be sent to a **cloud** provider?
+    ///
+    /// Off by default, and separately from `enabled`: the summary path's
+    /// provider choice is a per-meeting decision a user makes deliberately,
+    /// while a live insight fires from a hotkey mid-sentence. Sending the last
+    /// three minutes of a conversation to a third party is not something that
+    /// should follow from a keypress the user set up for something else.
+    ///
+    /// With it off, `copilot::insight` refuses any provider it cannot show is
+    /// local (`copilot::insight::is_local_provider`) and the built-in local
+    /// model answers instead — which is the local-first default the epic
+    /// promised, not a degraded mode.
+    pub allow_cloud_insights: bool,
 }
 
 impl Default for CopilotConfig {
@@ -184,6 +197,7 @@ impl Default for CopilotConfig {
             shortcuts_enabled: true,
             keybinds: Keybinds::default(),
             live_window_secs: DEFAULT_LIVE_WINDOW_SECS,
+            allow_cloud_insights: false,
         }
     }
 }

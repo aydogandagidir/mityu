@@ -37,6 +37,7 @@ const BASE_STATUS: CopilotStatus = {
       captureScreen: 'CommandOrControl+Shift+S',
     },
     liveWindowSecs: 180,
+    allowCloudInsights: false,
   },
   protection: {
     level: 'bestEffort',
