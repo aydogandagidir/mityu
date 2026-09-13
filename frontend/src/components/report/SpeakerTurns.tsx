@@ -269,8 +269,9 @@ export function TalkTimePanel({
         often it gets the speakers right has not been measured on recordings like yours, so check it
         before relying on it. Percentages are each speaker&apos;s share of the <em>speech</em>, not of the
         meeting — people talk over each other, so shares of the meeting would add up to more than
-        100%. Speaking time describes the recording; it is not a measure of contribution. Labels are
-        anonymous: matching a voice to a person is yours to do.
+        100%. Speaking time describes the recording; it is not a measure of contribution. Labels stay
+        anonymous and there is no way to rename them here: storing which voice belongs to
+        whom would be biometric data. Write names in your own notes if you need them.
       </p>
     </Frame>
   );
