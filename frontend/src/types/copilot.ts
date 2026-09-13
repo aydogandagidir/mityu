@@ -47,8 +47,16 @@ export interface CopilotConfig {
   shortcutsEnabled: boolean;
   keybinds: Keybinds;
   /**
-   * Seconds of recent speech the live context keeps in its rolling window
-   * (I2). The backend accepts 30–900 and rejects anything else with a sentence.
+   * Seconds of recent speech an insight will be built from (I2).
+   *
+   * **Not a retention setting.** It selects a view over the session buffer and
+   * evicts nothing: while a meeting is being recorded the copilot holds all of
+   * it in memory whatever this is set to (see `docs/SECURITY_PRIVACY.md`).
+   *
+   * The backend accepts 30–900. A value outside that range is refused only when
+   * the caller changed it, and repaired otherwise — no UI exposes this field,
+   * and refusing a stored value would block every other copilot setting,
+   * including switching the copilot off.
    */
   liveWindowSecs: number;
 }

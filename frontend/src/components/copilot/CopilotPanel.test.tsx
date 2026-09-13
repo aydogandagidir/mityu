@@ -85,7 +85,8 @@ describe('transcript tail', () => {
     // I1 dropped these, believing `is_partial` meant "about to be replaced by a
     // final". It does not: Whisper sets it for any chunk under 15 s
     // (`whisper_engine.rs`), every chunk is emitted exactly once, and live VAD
-    // closes a segment after 2 s of silence — so most real speech is "partial".
+    // closes a segment after 400 ms of silence — so most real speech is
+    // "partial".
     // Dropping it hid most of the meeting from the panel.
     expect(appendLine([], update({ is_partial: true, text: 'a short utterance' }))).toHaveLength(1);
   });

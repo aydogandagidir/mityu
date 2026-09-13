@@ -15,14 +15,14 @@
 //! and the code follows the producer, not the plan:
 //!
 //! - **`is_partial` is not a lifecycle.** Whisper sets it as
-//!   `duration_seconds < 15.0` (`whisper_engine.rs:738`) — it means "short
-//!   chunk", full stop. Every chunk is emitted exactly once with a fresh
-//!   `sequence_id`; no later "final" ever replaces an earlier "partial". Live
-//!   VAD closes a segment after 2 s of silence, so most real utterances are a
-//!   few seconds long and therefore flagged partial. A service that dropped
-//!   partials would drop most of the meeting. Every emission is a final
-//!   segment here; the flag is carried as [`Turn::short_chunk`] and decides
-//!   nothing.
+//!   `duration_seconds < 15.0` (`whisper_engine.rs`) — it means "short chunk",
+//!   full stop. Every chunk is emitted exactly once with a fresh
+//!   `sequence_id`; no later "final" ever replaces an earlier "partial". The
+//!   live VAD closes a segment after 400 ms of silence (`audio/pipeline.rs`),
+//!   so nearly every real utterance is well under 15 s and therefore flagged
+//!   partial. A service that dropped partials would drop almost the whole
+//!   meeting. Every emission is a final segment here; the flag is carried as
+//!   [`Turn::short_chunk`] and decides nothing.
 //! - **`source` does not name a device.** The producer hardcodes it to
 //!   `"Audio"` for microphone and system audio alike. A turn's [`Channel`] is
 //!   therefore [`Channel::Unknown`] today. The rule "no cue from the user's own
@@ -31,11 +31,19 @@
 //!
 //! ## Ordering
 //!
-//! Three transcription workers run in parallel, so `sequence_id` (assigned at
-//! emission) does not follow audio time: chunk 5 can finish before chunk 4.
 //! The buffer is ordered by **audio time**, which is what "the last 180
 //! seconds" means; `sequence_id` is only the identity used to replace a
 //! re-emitted segment rather than duplicate it.
+//!
+//! Today that ordering is **defence in depth, not a response to observed
+//! behaviour**: the producer runs a single worker on purpose —
+//! `worker.rs`'s `const NUM_WORKERS: usize = 1; // Serial processing ensures
+//! transcripts emit in chronological order` — so `sequence_id` order and audio
+//! order currently coincide, and every insert is an append. (The
+//! `"workers": 3` literal in the `recording-started` payload is stale and
+//! describes nothing; it is `audio/`'s to fix, not this epic's.) Sorting by
+//! audio time costs one `partition_point` per segment and means raising
+//! `NUM_WORKERS` again cannot silently corrupt "the last three minutes".
 //!
 //! ## What never happens here
 //!
@@ -61,16 +69,32 @@ use tauri::{AppHandle, Emitter, EventId, Listener, Runtime};
 /// Event the service emits when a cue is detected.
 pub const CUE_EVENT: &str = "copilot-cue";
 
-/// Upper bound on the durable buffer, in segments. At one segment every ~2.4 s
-/// this is roughly thirteen hours of speech — far past any meeting, but a
-/// bound nonetheless, because "durable for the session" must not mean
-/// "unbounded for a session someone forgot to stop". Oldest segments go first.
+/// Upper bound on the durable buffer, in segments. At one segment every few
+/// seconds this is many hours of speech — far past any meeting, but a bound
+/// nonetheless, because "durable for the session" must not mean "unbounded for
+/// a session someone forgot to stop". Oldest segments go first.
+///
+/// **This, not the window, is what bounds memory.** The configured window
+/// (`live_window_secs`) selects which turns an insight will be built from in
+/// I3; it does not evict anything. A three-hour meeting is resident in full
+/// while it is being recorded, whatever the window is set to — see
+/// [`discard_if_idle`] and `docs/SECURITY_PRIVACY.md` for what bounds it.
 pub const DURABLE_CAP: usize = 20_000;
 
 /// A segment that ends less than this many seconds before the next one starts
-/// is read as the same sentence continuing across a VAD split. Live VAD closes
-/// a segment after 2 s of silence, so a genuine pause of that length is common
-/// mid-question; the slack covers scheduling jitter.
+/// is read as the same sentence continuing across a VAD split.
+///
+/// **Not derived from the VAD setting** — deliberately much larger than it. The
+/// live capture path closes a segment after **400 ms** of silence
+/// (`audio/pipeline.rs`'s `redemption_time`; the 2 000 ms
+/// `VAD_REDEMPTION_TIME_MS` belongs to the offline import and retranscription
+/// paths only). At 400 ms a single spoken question is split readily, and the
+/// pause a speaker leaves mid-sentence — thinking, or waiting for the other
+/// side — is far longer than the VAD's. Three seconds is a generous bound
+/// chosen to cover that, not to match the segmenter.
+///
+/// Only the *immediately* preceding segment is ever joined, so a question
+/// broken into three or more pieces is still read from its last two.
 pub const CONTINUATION_GAP_SECS: f64 = 3.0;
 
 /// Which capture device a segment came from — **as far as the producer says**.
@@ -174,6 +198,16 @@ pub struct LiveContext {
     /// The highest `sequence_id` held. Ids are assigned in emission order, so
     /// a new id above this cannot be a re-emission and needs no scan.
     max_sequence_id: Option<u64>,
+    /// Segments already reported inside some cue's `evidence`.
+    ///
+    /// One question can arrive as three VAD segments at 400 ms, and the
+    /// continuation join only looks one segment back. Asking "did the
+    /// predecessor fire *on its own*" was not enough: in "so can | you extend
+    /// the deadline | by two weeks please" the middle segment is silent alone,
+    /// so it was joined twice and the same question was reported as two cues
+    /// citing overlapping evidence. Membership here subsumes that check — a
+    /// segment that fired alone is in the set too.
+    reported: std::collections::HashSet<u64>,
     /// Segments evicted from the front by [`DURABLE_CAP`]. Reported, never hidden.
     evicted: u64,
 }
@@ -186,6 +220,7 @@ impl LiveContext {
             turns: Vec::new(),
             latest_end: 0.0,
             max_sequence_id: None,
+            reported: std::collections::HashSet::new(),
             evicted: 0,
         }
     }
@@ -213,6 +248,10 @@ impl LiveContext {
 
     /// The segments that end within the last `window_secs` of speech.
     ///
+    /// A *view*, not a retention policy: nothing is evicted by the window. It
+    /// exists so I3 can build a prompt from recent speech without re-reading
+    /// the whole meeting.
+    ///
     /// Measured from the latest segment *end* seen, not from the wall clock:
     /// the window is "the last three minutes of conversation", and a pause in
     /// the meeting does not empty it. Because turns are ordered by start and a
@@ -233,6 +272,7 @@ impl LiveContext {
         self.turns.clear();
         self.latest_end = 0.0;
         self.max_sequence_id = None;
+        self.reported.clear();
         self.evicted = 0;
     }
 
@@ -289,11 +329,19 @@ impl LiveContext {
             self.evicted += excess as u64;
         }
 
-        // The drain shifted everything left by `excess`; a turn that landed
-        // inside the drained prefix (a very late chunk on a full buffer) is
-        // already gone and cannot be a cue.
-        let cue = at.checked_sub(excess).and_then(|i| self.cue_for(i));
-        Ingested { added: true, cue }
+        // The drain shifted everything left by `excess`. A turn that landed
+        // inside the drained prefix — a very late chunk arriving at a full
+        // buffer — is already gone: it is not in the buffer, so it was not
+        // added and it cannot be a cue.
+        let surviving = at.checked_sub(excess);
+        let cue = surviving.and_then(|i| self.cue_for(i));
+        if let Some(cue) = &cue {
+            self.reported.extend(cue.evidence.iter().copied());
+        }
+        Ingested {
+            added: surviving.is_some(),
+            cue,
+        }
     }
 
     /// Decide whether the turn at `idx` — possibly together with the one
@@ -309,13 +357,14 @@ impl LiveContext {
 
         // Join with the previous segment when it reads as the same sentence
         // continuing across a VAD split: it did not end a sentence, the gap is
-        // short, it came from the same side, and it did not already fire on
-        // its own (which would make this a second cue for one question).
+        // short, it came from the same side, and it has not already been
+        // reported inside a cue — which would make this a second cue for one
+        // question, citing a segment the user was already offered.
         let continuation = idx.checked_sub(1).map(|p| &self.turns[p]).filter(|prev| {
             prev.channel != Channel::Microphone
                 && !ends_sentence(&prev.text)
                 && turn.audio_start - prev.audio_end <= CONTINUATION_GAP_SECS
-                && cue::detect(&prev.text).is_none()
+                && !self.reported.contains(&prev.sequence_id)
         });
 
         let (text, evidence) = match continuation {
@@ -489,6 +538,35 @@ fn start_session() {
 fn reset_context() {
     if let Some(ctx) = live().as_mut() {
         ctx.reset();
+    }
+}
+
+/// Drop a session buffer that has outlived its recording.
+///
+/// The two stop events are the primary bound on how long a meeting's text stays
+/// in memory, but they are emitted on best-effort paths, so this is a second,
+/// independent one: [`commands::build_status`] already asks the recorder
+/// whether a session is running, and a buffer with no recording behind it is
+/// dropped on that answer. The panel polls status every few seconds, so in
+/// practice the window is short.
+///
+/// **What it does not cover, stated plainly:** if `stop_recording` fails early
+/// it returns before setting `IS_RECORDING` to false (`audio/recording_commands.rs`
+/// stores it well after its error return) *and* before emitting
+/// `recording-stopped`. The app then still believes a recording is running, and
+/// nothing here can tell that apart from a live meeting. In that case the
+/// buffer is released when the copilot is switched off, when the next recording
+/// starts, or at exit. Fixing the recorder's own state on that path is an
+/// `audio/` change and belongs to that subsystem (CLAUDE.md §4).
+pub fn discard_if_idle(recording: bool) {
+    if recording {
+        return;
+    }
+    if let Some(ctx) = live().as_mut() {
+        if !ctx.turns().is_empty() {
+            log::debug!("copilot: dropping a live context with no recording behind it");
+            ctx.reset();
+        }
     }
 }
 
@@ -755,6 +833,51 @@ mod tests {
     }
 
     #[test]
+    fn one_question_split_into_three_segments_is_reported_once() {
+        // The live VAD closes a segment after 400 ms, so this is the ordinary
+        // shape of a spoken sentence, not an edge case. The guard used to ask
+        // only whether the predecessor fired *standalone*: the middle segment
+        // is silent alone, so it was joined twice and the same question was
+        // offered as two cues citing overlapping evidence.
+        let mut c = ctx(180);
+        let a = c.ingest(&update(1, 10.0, 1.5, "so can"));
+        assert_eq!(a.cue, None, "the opening fragment is silent alone");
+
+        let b = c.ingest(&update(2, 12.0, 1.5, "you extend the deadline"));
+        let first = b.cue.expect("the joined question fires");
+        assert_eq!(first.evidence, vec![1, 2]);
+
+        // A fresh request follows. It fires on its own — the point is *what it
+        // cites*: segment 2 was already offered to the user as part of the
+        // question above, and must not be handed back inside a second cue.
+        let third = c.ingest(&update(3, 14.0, 1.5, "can you also send me the notes"));
+        let second = third.cue.expect("the new request fires");
+        assert_eq!(
+            second.evidence,
+            vec![3],
+            "an already-reported segment must not be re-cited as evidence"
+        );
+    }
+
+    #[test]
+    fn a_late_chunk_evicted_on_arrival_reports_that_it_was_not_added() {
+        let mut c = ctx(180);
+        for i in 0..DURABLE_CAP as u64 {
+            c.ingest(&update(i, i as f64 * 2.4, 2.0, "x."));
+        }
+        assert_eq!(c.turns().len(), DURABLE_CAP);
+        // A chunk older than everything held, arriving at a full buffer: it is
+        // inserted at the front and drained in the same call.
+        let r = c.ingest(&update(DURABLE_CAP as u64 + 1, -5.0, 2.0, "too late."));
+        assert!(
+            !r.added,
+            "a turn that did not survive the call was not added"
+        );
+        assert_eq!(r.cue, None);
+        assert_eq!(c.turns().len(), DURABLE_CAP);
+    }
+
+    #[test]
     fn a_previous_segment_that_already_fired_is_not_joined_again() {
         let mut c = ctx(180);
         let first = c.ingest(&update(1, 10.0, 2.0, "Hazır mısınız"));
@@ -769,8 +892,9 @@ mod tests {
     fn a_long_gap_or_a_finished_sentence_is_not_a_continuation() {
         let mut c = ctx(180);
         c.ingest(&update(1, 10.0, 2.0, "Raporu akşama kadar"));
-        // Gap of 10 s: a new thought.
-        let r = c.ingest(&update(2, 22.0, 2.0, "gönderebilir"));
+        // Gap of 10 s: a new thought, so the second half stands alone — its
+        // evidence names only itself.
+        let r = c.ingest(&update(2, 22.0, 2.0, "gönderebilir misiniz"));
         assert_eq!(r.cue.map(|c| c.evidence), Some(vec![2]));
 
         let mut c = ctx(180);
@@ -833,6 +957,31 @@ mod tests {
             assert_eq!(ctx.window_secs(), 90, "the user's window setting is kept");
         }
         *live() = None;
+    }
+
+    #[test]
+    fn a_buffer_with_no_recording_behind_it_is_dropped_on_the_next_status_read() {
+        let _guard = serialised();
+        let mut ctx = LiveContext::new(&AuthContext::local(), 180);
+        ctx.ingest(&update(1, 0.0, 3.0, "a meeting that already ended"));
+        *live() = Some(ctx);
+
+        // Still recording: the buffer is the live meeting and must survive.
+        discard_if_idle(true);
+        assert_eq!(live().as_ref().map(|c| c.turns().len()), Some(1));
+
+        // No recording behind it: released without waiting for a stop event.
+        discard_if_idle(false);
+        assert_eq!(live().as_ref().map(|c| c.turns().len()), Some(0));
+        *live() = None;
+    }
+
+    #[test]
+    fn discarding_while_stopped_does_not_create_a_context() {
+        let _guard = serialised();
+        *live() = None;
+        discard_if_idle(false);
+        assert!(live().is_none());
     }
 
     #[test]

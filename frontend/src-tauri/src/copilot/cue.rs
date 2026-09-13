@@ -32,6 +32,27 @@
 //! alone would miss too much, so both grammars are read explicitly. A third
 //! language is a lexicon, not a redesign.
 //!
+//! ## Known gaps, recorded rather than papered over
+//!
+//! A lexicon cannot parse, and two classes of error survive on purpose because
+//! every cheap fix for them costs a true positive:
+//!
+//! - **English subjunctive conditionals read as inversions**: "Had we known the
+//!   budget was cut we would have planned differently", "Should the vendor miss
+//!   the deadline we escalate", "Were it not for the delay we would be done"
+//!   each score 0.40. Suppressing `had`/`were`/`should` openings would also
+//!   silence "Had you seen the report", "Were you able to finish" and "Should
+//!   we start" — real questions Whisper routinely emits without a question
+//!   mark.
+//! - **A bare-noun or proper-noun subject silences a plain question**: "Is
+//!   Ahmet joining the call", "Has marketing approved this". [`EN_SUBJECTS`] is
+//!   a closed list; opening it to any token would make every "is the" statement
+//!   a question.
+//!
+//! Both are left missing rather than guessed, which is the same trade the
+//! "biased toward silence" property makes everywhere else. I8's judge sees the
+//! utterance itself and is the right place to resolve them.
+//!
 //! ## What this deliberately is not
 //!
 //! Not intent classification, not sentiment, not "coaching", not a speaker
@@ -86,7 +107,7 @@ pub fn detect(text: &str) -> Option<Detection> {
     let tr_wh = has_turkish_interrogative(&tokens);
     let tr_particle = tokens.iter().any(|t| is_turkish_question_particle(t));
     let (en_wh, en_inversion) = english_sentence_opening(&tokens);
-    let request = has_request_cue(&tokens, &normalised);
+    let request = has_request_cue(&tokens);
 
     let mut score = 0.0_f32;
     if question_mark {
@@ -165,14 +186,18 @@ const TR_INTERROGATIVES: &[&str] = &[
     "neden",
     "niye",
     "niçin",
-    "nasıl",
+    // "nasıl" is handled in `has_turkish_interrogative` (it needs a look-ahead
+    // for "nasıl olsa"), deliberately not listed here.
     "nerede",
     "nereye",
     "nereden",
     "neresi",
     "nereli",
     "kim",
-    "kimi",
+    // "kimi" is deliberately absent: as a determiner it means "some" ("kimi
+    // günler geç kalıyoruz" — "some days we run late"), and that reading is
+    // commoner in speech than the accusative "whom". The unambiguous cases
+    // ("kime", "kimin", "kimle", "kiminle", "kim") carry the question.
     "kime",
     "kimin",
     "kimle",
@@ -186,20 +211,64 @@ const TR_INTERROGATIVES: &[&str] = &[
     "kaçıncı",
 ];
 
-/// `ne` followed by one of these is an idiom or an exclamation, not a question:
-/// "ne yazık ki", "ne güzel", "ne de olsa", "ne var ki".
-const TR_NE_NOT_A_QUESTION: &[&str] = &["yazık", "güzel", "de", "var", "hoş", "kadar", "olsa"];
+/// `ne` followed by one of these is an idiom, an exclamation or a concessive,
+/// not a question: "ne yazık ki", "ne güzel", "ne de olsa", "ne var ki",
+/// "ne olursa olsun", "ne yaparsak yapalım".
+///
+/// `"kadar"` is deliberately **not** here — see [`has_turkish_interrogative`].
+const TR_NE_NOT_A_QUESTION: &[&str] = &[
+    "yazık", "güzel", "de", "var", "hoş", "olsa", "olursa", "yaparsak",
+];
 
+/// "ne kadar" + one of these two tokens later is an exclamation, not a
+/// quantity question: "ne kadar güzel bir sunum" — "what a beautiful
+/// presentation".
+const TR_NE_KADAR_EXCLAMATION: &[&str] = &["güzel", "hoş", "çok", "yazık", "komik", "iyi"];
+
+/// Is this an interrogative use of a Turkish wh-word?
+///
+/// Turkish puts the wh-word wherever the sentence wants it, so position carries
+/// no information and every token is checked. The three exceptions are bigrams
+/// where the same word opens something that is not a question:
+///
+/// - **"ne kadar"** is the commonest quantity/duration question there is ("bu
+///   ne kadar sürer"), so it must fire — but "her ne kadar …" is the concessive
+///   "although", and "ne kadar güzel …" is an exclamation. Both are excluded by
+///   looking one token back and two tokens forward.
+/// - **"ne olursa olsun" / "ne yaparsak yapalım"** are "whatever happens" /
+///   "whatever we do": concessives, listed above.
+/// - **"nasıl olsa"** is "in any case", not "how".
 fn has_turkish_interrogative(tokens: &[&str]) -> bool {
     for (i, token) in tokens.iter().enumerate() {
+        if *token == "nasıl" {
+            // "nasıl olsa hallederiz" — "we'll manage anyway".
+            if tokens.get(i + 1) == Some(&"olsa") {
+                continue;
+            }
+            return true;
+        }
         if TR_INTERROGATIVES.contains(token) {
             return true;
         }
         if *token == "ne" {
             match tokens.get(i + 1) {
-                // "ne zaman", "ne kadar sürer", "ne için": questions.
+                Some(&"kadar") => {
+                    // "her ne kadar …": although.
+                    if i > 0 && tokens[i - 1] == "her" {
+                        continue;
+                    }
+                    // "ne kadar güzel …": an exclamation, not a quantity.
+                    if tokens
+                        .get(i + 2)
+                        .is_some_and(|w| TR_NE_KADAR_EXCLAMATION.contains(w))
+                    {
+                        continue;
+                    }
+                    return true;
+                }
+                // "ne zaman", "ne için": questions.
                 Some(next) if matches!(*next, "zaman" | "için" | "zamandır") => return true,
-                // Idioms and exclamations.
+                // Idioms, exclamations and concessives.
                 Some(next) if TR_NE_NOT_A_QUESTION.contains(next) => continue,
                 // "ne" as the last word ("bu ne") or before an ordinary word
                 // ("ne düşünüyorsun"): a question.
@@ -256,10 +325,24 @@ const EN_AUXILIARIES: &[&str] = &[
     "are", "was", "were", "have", "has", "had", "am",
 ];
 
+/// Subjects an inverted auxiliary can take. Closed on purpose: opening it to
+/// any token would make "is the report late" indistinguishable from a
+/// statement. The determiners are what let "is the/these/your …" be read, and
+/// they are also why the conditional openings in the module doc's known-gap
+/// list score — a trade taken knowingly.
 const EN_SUBJECTS: &[&str] = &[
-    "you", "we", "i", "it", "they", "he", "she", "this", "that", "there", "anyone", "anybody",
-    "everyone", "someone", "the",
+    "you", "we", "i", "it", "they", "he", "she", "this", "that", "these", "those", "there",
+    "anyone", "anybody", "everyone", "someone", "the", "your", "our", "my", "their",
 ];
+
+/// "can/could you believe …" is an exclamation wearing a question's clothes,
+/// and it trips **both** English signals: the inversion and the request phrase.
+/// One rule, consulted by both, so they cannot disagree.
+fn is_rhetorical_believe(tokens: &[&str], at: usize) -> bool {
+    matches!(tokens.get(at), Some(&"can") | Some(&"could"))
+        && tokens.get(at + 1) == Some(&"you")
+        && tokens.get(at + 2) == Some(&"believe")
+}
 
 /// English marks a question at the front of the sentence, so only the opening
 /// is read: a wh-word, or an auxiliary immediately followed by a subject (the
@@ -279,46 +362,61 @@ fn english_sentence_opening(tokens: &[&str]) -> (bool, bool) {
     let inversion = EN_AUXILIARIES.contains(first)
         && tokens
             .get(start + 1)
-            .is_some_and(|next| EN_SUBJECTS.contains(next));
+            .is_some_and(|next| EN_SUBJECTS.contains(next))
+        && !is_rhetorical_believe(tokens, start);
     (wh, inversion)
 }
 
 // --- Requests (both languages) ------------------------------------------------
 
-/// Phrases that ask for something. Matched on the normalised text so
-/// multi-word forms are one entry.
+/// Phrases that ask for something, as token windows.
 ///
-/// Verbs on their own ("share", "send") are **not** here: "I will share the
-/// notes" is a commitment, the opposite of a request, and the verb cannot tell
-/// the two apart. The entries either address the listener ("can you", "send
-/// me") or are explicit politeness markers ("please", "lütfen").
-const REQUEST_PHRASES: &[&str] = &[
+/// Verbs on their own ("share", "send", "make sure") are **not** here: "I will
+/// share the notes" and "I will make sure the numbers are right" are
+/// commitments — the opposite of a request — and the verb alone cannot tell the
+/// two apart. Every entry either addresses the listener ("can you", "send me")
+/// or is an explicit politeness marker ("please", "lütfen").
+///
+/// Turkish requests are **not** in this list at all: they are built from a
+/// potential/aorist stem plus the question particle, which needs a positional
+/// rule rather than a phrase — see [`TR_POTENTIAL_REQUEST_STEMS`].
+const REQUEST_PHRASES: &[&[&str]] = &[
     // English
-    "can you",
-    "could you",
-    "would you",
-    "will you",
-    "please",
-    "let me know",
-    "send me",
-    "send us",
-    "walk me through",
-    "tell me",
-    "show me",
-    "remind me",
-    "make sure",
-    // Turkish
-    "lütfen",
-    "rica ederim",
-    "rica edeyim",
-    "rica etsem",
+    &["can", "you"],
+    &["could", "you"],
+    &["would", "you"],
+    &["will", "you"],
+    &["please"],
+    &["let", "me", "know"],
+    &["send", "me"],
+    &["send", "us"],
+    &["walk", "me", "through"],
+    &["tell", "me"],
+    &["show", "me"],
+    &["remind", "me"],
+    // Turkish politeness markers, which stand alone
+    &["lütfen"],
+    &["rica", "ederim"],
+    &["rica", "edeyim"],
+    &["rica", "etsem"],
+];
+
+/// Turkish verb stems that become a request **only** when the question particle
+/// follows them.
+///
+/// `-abilir` is the third-person aorist potential, and on its own it states a
+/// capability: "Bunu Ahmet yapabilir" is "Ahmet *can* do this" — a work
+/// assignment, one of the commonest sentences in a status meeting, and the
+/// opposite of asking for something. "Yapabilir **misiniz**" is the request.
+/// The particle one token later is the whole difference, so the rule reads it
+/// instead of matching the stem alone.
+const TR_POTENTIAL_REQUEST_STEMS: &[&str] = &[
     "gönderebilir",
-    "gönderir misin",
-    "gönderir misiniz",
+    "gönderir",
     "paylaşabilir",
-    "paylaşır mısın",
-    "paylaşır mısınız",
+    "paylaşır",
     "iletebilir",
+    "iletir",
     "bakabilir",
     "söyleyebilir",
     "anlatabilir",
@@ -327,41 +425,87 @@ const REQUEST_PHRASES: &[&str] = &[
     "hatırlatır",
 ];
 
-fn has_request_cue(tokens: &[&str], normalised: &str) -> bool {
-    // Single-word entries must match a whole token, not a substring of one:
-    // "please" must not fire on "pleased", "lütfen" has no such neighbour but
-    // gets the same treatment for consistency.
-    REQUEST_PHRASES.iter().any(|phrase| {
-        if phrase.contains(' ') {
-            contains_phrase(normalised, phrase)
-        } else {
-            tokens.contains(phrase)
+/// Words that negate whatever follows them in the same utterance.
+///
+/// `tokens` keeps apostrophes inside a token, so "don't" arrives whole and is
+/// matched by the `n't` suffix rather than by a separate entry.
+const EN_NEGATORS: &[&str] = &["not", "never", "no", "none", "nothing", "nobody"];
+
+/// Verbs that turn what follows into reported speech: "he **said** can you
+/// believe it" is someone quoting, not someone asking.
+const EN_REPORTING_VERBS: &[&str] = &["said", "says", "asked", "asks", "told", "wrote", "quoted"];
+
+/// Where a request phrase matched, or `None`.
+///
+/// The index matters: every guard in [`has_request_cue`] is about what sits
+/// around the match, and a bare boolean throws that away.
+fn find_request_phrase(tokens: &[&str]) -> Option<usize> {
+    // Turkish: a potential stem followed by the question particle.
+    for (i, token) in tokens.iter().enumerate() {
+        if TR_POTENTIAL_REQUEST_STEMS.contains(token)
+            && tokens
+                .get(i + 1)
+                .is_some_and(|next| is_turkish_question_particle(next))
+        {
+            return Some(i);
         }
-    })
+    }
+    // Both languages: a phrase as a window of whole tokens. Whole tokens rather
+    // than a substring search, so "please" cannot fire on "pleased".
+    for start in 0..tokens.len() {
+        for phrase in REQUEST_PHRASES {
+            if tokens[start..].starts_with(phrase) {
+                return Some(start);
+            }
+        }
+    }
+    None
 }
 
-/// Whole-word phrase containment on the normalised sentence.
-fn contains_phrase(haystack: &str, phrase: &str) -> bool {
-    let mut from = 0;
-    while let Some(pos) = haystack[from..].find(phrase) {
-        let start = from + pos;
-        let end = start + phrase.len();
-        let before_ok = start == 0
-            || !haystack[..start]
-                .chars()
-                .next_back()
-                .is_some_and(char::is_alphanumeric);
-        let after_ok = end == haystack.len()
-            || !haystack[end..]
-                .chars()
-                .next()
-                .is_some_and(char::is_alphanumeric);
-        if before_ok && after_ok {
-            return true;
-        }
-        from = start + phrase.len();
+/// Did someone ask for something — and did they mean it?
+///
+/// Three guards, each for a shape that reaches the lexicon but reverses or
+/// removes its meaning. All three were found by running the detector over
+/// ordinary meeting sentences, and each has a regression test.
+fn has_request_cue(tokens: &[&str]) -> bool {
+    let Some(at) = find_request_phrase(tokens) else {
+        return false;
+    };
+
+    // 1. Negation, anywhere before the match: "I did not ask you to send me
+    //    anything", "no need to tell me", "Don't tell me you forgot the deck".
+    //    The whole utterance is scanned rather than one token back, because a
+    //    negator sits three or four tokens away in all three of those.
+    if tokens[..at]
+        .iter()
+        .any(|t| EN_NEGATORS.contains(t) || t.ends_with("n't"))
+    {
+        return false;
     }
-    false
+
+    // 2. Reported speech: "he said can you believe it".
+    if at > 0 && EN_REPORTING_VERBS.contains(&tokens[at - 1]) {
+        return false;
+    }
+
+    // 3. Discourse markers that borrow the words without asking for anything:
+    //    "please note that the numbers are preliminary", "yes please".
+    if tokens[at] == "please" {
+        let next = tokens.get(at + 1).copied();
+        if matches!(next, Some("note") | Some("be") | Some("find") | Some("see")) {
+            return false;
+        }
+        // "Yes please" / "please." — an acceptance, not a request. A real
+        // request always says what is wanted, so something must follow.
+        if next.is_none() {
+            return false;
+        }
+    }
+    if is_rhetorical_believe(tokens, at) {
+        return false;
+    }
+
+    true
 }
 
 #[cfg(test)]
@@ -548,16 +692,112 @@ mod tests {
     }
 
     #[test]
-    fn a_bare_request_verb_just_clears_the_threshold() {
+    fn a_lone_politeness_marker_just_clears_the_threshold() {
         // Pinned on purpose: this is the weakest thing that fires. If the
         // threshold or the request weight moves, this test says so.
         assert_eq!(
-            detect("Gönderebilir."),
+            detect("Lütfen gönderin."),
             Some(Detection {
                 kind: CueKind::Request,
                 confidence: CUE_THRESHOLD
             })
         );
+    }
+
+    #[test]
+    fn a_turkish_capability_statement_is_not_a_request() {
+        // `-abilir` alone is "X *can* do it" — a work assignment, the commonest
+        // shape in a Turkish status meeting, and the opposite of asking.
+        for statement in [
+            "Bunu Ahmet yapabilir",
+            "Bu işe Ayşe bakabilir.",
+            "Raporu ekip gönderebilir",
+            "Sunumu o paylaşabilir",
+            "Bu konuyu Ahmet açıklayabilir.",
+            "Detayları müdür anlatabilir.",
+            "Bu bana onu hatırlatır.",
+        ] {
+            assert_eq!(detect(statement), None, "{statement}");
+        }
+    }
+
+    #[test]
+    fn the_same_stem_with_the_particle_is_a_request() {
+        // The fix must not cost the true positive it was protecting.
+        let d = detect("Raporu bana gönderebilir misiniz").expect("cue");
+        assert_eq!(
+            d.confidence, 0.80,
+            "stem+particle scores request AND particle"
+        );
+        // The particle makes it an information question by the kind rule.
+        assert_eq!(d.kind, CueKind::Question);
+        assert!(detect("Sunumu paylaşır mısın").is_some());
+        assert!(detect("Bu işe bakabilir misiniz").is_some());
+    }
+
+    #[test]
+    fn ne_kadar_is_a_question_but_her_ne_kadar_and_exclamations_are_not() {
+        for question in [
+            "Bu ne kadar sürer",
+            "Ne kadar bütçemiz kaldı",
+            "Proje ne kadar gecikti",
+        ] {
+            assert_eq!(kind_of(question), Some(CueKind::Question), "{question}");
+        }
+        // Concessive "although", and an exclamation.
+        assert_eq!(detect("Her ne kadar geç olsa da başlıyoruz"), None);
+        assert_eq!(detect("Ne kadar güzel bir sunum"), None);
+    }
+
+    #[test]
+    fn turkish_concessives_are_not_questions() {
+        assert_eq!(detect("Ne olursa olsun cuma günü teslim ediyoruz"), None);
+        assert_eq!(detect("Ne yaparsak yapalım bütçe yetmiyor"), None);
+        assert_eq!(detect("Nasıl olsa hallederiz"), None);
+        // "kimi" as the determiner "some", not the accusative "whom".
+        assert_eq!(detect("Kimi günler geç kalıyoruz"), None);
+    }
+
+    #[test]
+    fn a_negated_or_quoted_request_is_not_a_request() {
+        for statement in [
+            "I did not ask you to send me anything",
+            "no need to tell me",
+            "Don't tell me you forgot the deck",
+            "He said can you believe it",
+            "I will make sure the numbers are right",
+            "We never asked you to send us the file",
+        ] {
+            assert_eq!(detect(statement), None, "{statement}");
+        }
+    }
+
+    #[test]
+    fn please_as_a_discourse_marker_is_not_a_request() {
+        assert_eq!(detect("Please note that the numbers are preliminary"), None);
+        assert_eq!(detect("Yes please"), None);
+        assert_eq!(detect("Please be aware of the deadline"), None);
+        // …but a real one still fires.
+        assert_eq!(kind_of("Please send the deck"), Some(CueKind::Request));
+    }
+
+    #[test]
+    fn a_rhetorical_can_you_believe_it_is_not_a_request() {
+        // It used to score 0.80 — the highest band — on the inversion plus the
+        // request phrase.
+        assert_eq!(detect("Can you believe it they cancelled again"), None);
+    }
+
+    #[test]
+    fn a_determiner_subject_no_longer_silences_a_plain_question() {
+        for question in [
+            "Are these the final numbers",
+            "Are those the right figures",
+            "Is your team ready",
+            "Is our budget approved",
+        ] {
+            assert_eq!(kind_of(question), Some(CueKind::Question), "{question}");
+        }
     }
 
     #[test]

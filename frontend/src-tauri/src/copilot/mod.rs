@@ -24,8 +24,12 @@
 //!    audio, and no file in `audio/` is touched by this epic. [`session`] is a
 //!    *listener* on the event the pipeline already emits, and only while a
 //!    recording session — one whose consent ticket was already consumed by
-//!    `recording_consent` — is running; its buffer is cleared at
-//!    `recording-started` and `recording-stop-complete`.
+//!    `recording_consent` — is running. Its buffer is rebuilt at
+//!    `recording-started` (re-resolving the tenant from `AuthContext`) and
+//!    cleared on **both** stop paths: `recording-stopped`, which the ordinary
+//!    Stop emits, and `recording-stop-complete`, which only the tray emits.
+//!    [`session::discard_if_idle`] is a second, independent bound for the case
+//!    where neither event arrives.
 //! 3. **Draft-only, and nothing a model made is persisted.** The only two
 //!    things written to disk are the user's settings and the panel's last
 //!    position ([`store`]). The live context is memory for one session, and

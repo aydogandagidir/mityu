@@ -68,7 +68,7 @@ export function appendLine(lines: PanelLine[], update: TranscriptUpdate): PanelL
   // `is_partial` is deliberately ignored. I1 treated it as "a final will
   // replace this" and dropped such segments; the producer means "under 15 s of
   // audio" (`whisper_engine.rs`), emits every chunk exactly once, and live VAD
-  // closes segments after 2 s of silence — so the flag is set on most real
+  // closes segments after 400 ms of silence — so the flag is set on most real
   // speech, and honouring it hid most of the meeting. Re-emissions are handled
   // below by `sequence_id`, which is the actual identity of a segment.
   const text = update.text?.trim();
