@@ -151,7 +151,7 @@ fn pin(filename: &str) -> Result<&'static ArtifactPin> {
 /// Verify every file in `pins` inside `dir`.
 ///
 /// Split out from [`status`] so it can be tested with small synthetic pins: the
-/// real artifacts are 34 MB and downloading them in a unit test would make the
+/// real artifacts are 35 MB and downloading them in a unit test would make the
 /// test suite depend on the network.
 pub async fn verify_all(dir: &Path, pins: &[ArtifactPin]) -> ModelStatus {
     let mut any_present = false;
@@ -199,7 +199,7 @@ pub async fn status(dir: &Path) -> ModelStatus {
 /// Download whatever is missing, verify it, and return the resolved paths.
 ///
 /// `progress` is called with `(downloaded_bytes, total_bytes)` per source, so a
-/// caller can show something during a 34 MB fetch. Nothing is moved into place
+/// caller can show something during a 35 MB fetch. Nothing is moved into place
 /// until it has been verified.
 pub async fn ensure<F>(dir: &Path, mut progress: F) -> Result<ModelPaths>
 where
@@ -585,7 +585,7 @@ mod tests {
         assert!(pin(EMBEDDING_ONNX).is_ok());
     }
 
-    /// The real acquisition, end to end. `#[ignore]` because it downloads 34 MB:
+    /// The real acquisition, end to end. `#[ignore]` because it downloads 35 MB:
     /// a test suite that needs the network is a test suite that fails for
     /// reasons unrelated to the code. Run it deliberately when the pins change:
     ///
@@ -597,7 +597,7 @@ mod tests {
     /// actually serves — a manifest can be internally consistent and still
     /// wrong.
     #[tokio::test]
-    #[ignore = "downloads 34 MB from GitHub"]
+    #[ignore = "downloads 35 MB from GitHub"]
     async fn real_models_download_verify_and_extract() {
         let dir = tempfile::tempdir().expect("tempdir");
         let paths = ensure(dir.path(), |label, done, total| {

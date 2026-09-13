@@ -208,3 +208,127 @@ mod tests {
         assert_eq!(meeting_audio(dir.path().to_str()), Some(audio));
     }
 }
+
+/// The whole orchestration path, run for real.
+///
+/// Everything else about diarization is tested in pieces: the arithmetic, the
+/// wire contract, the repository, the helper's CLI. None of that exercises the
+/// path the app actually takes -- probe the audio, decode and resample it,
+/// invoke the sidecar, parse it, and land the turns in the database under a
+/// tenant. That seam is where the parts meet, and it had never been run.
+///
+/// `#[ignore]` because it needs the two model files and a built helper, which
+/// CI does not have. Run it with:
+///
+///   MITYU_DIARIZE_HELPER=target/release/diarize-helper.exe \
+///   MITYU_TEST_MODELS_DIR=C:\t\diarmodels \
+///   cargo test -p mityu --lib diarize_end_to_end -- --ignored --nocapture
+#[cfg(test)]
+mod end_to_end {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn meeting_with_audio(folder: &str) -> (SqlitePool, AuthContext, String) {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory SQLite");
+        // The real shape, from migration 20260808000000.
+        sqlx::query(
+            "CREATE TABLE meetings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, \
+             folder_path TEXT, diarized_at TEXT, deleted_at TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .expect("meetings");
+        sqlx::query(
+            "CREATE TABLE speaker_turns (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL, \
+             workspace_id TEXT NOT NULL DEFAULT 'local', speaker_label TEXT NOT NULL, \
+             start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, confidence REAL, \
+             created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        )
+        .execute(&pool)
+        .await
+        .expect("speaker_turns");
+        let ctx = AuthContext::local();
+        sqlx::query("INSERT INTO meetings (id, workspace_id, folder_path) VALUES (?, ?, ?)")
+            .bind("m-e2e")
+            .bind(ctx.tenant_id.as_str())
+            .bind(folder)
+            .execute(&pool)
+            .await
+            .expect("insert meeting");
+        // The real Phase-1 resolution, not a hand-built struct: the workspace id
+        // the repositories scope to must be the one the app actually uses.
+        let ctx = AuthContext::local();
+        (pool, ctx, "m-e2e".to_string())
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the diarization models and a built diarize-helper"]
+    async fn diarize_end_to_end() {
+        let models = std::env::var("MITYU_TEST_MODELS_DIR")
+            .expect("set MITYU_TEST_MODELS_DIR to a directory holding the two .onnx files");
+        let models_dir = std::path::PathBuf::from(&models);
+
+        // The audio lives beside the models for this test; the app reads it from
+        // the meeting's own folder, which is what `folder_path` points at here.
+        let folder = models_dir.to_str().expect("utf-8 path").to_string();
+        let (pool, ctx, meeting_id) = meeting_with_audio(&folder).await;
+
+        // Before: audio present, models present, never run.
+        let before = availability(&pool, &ctx, &meeting_id, Some(&folder), &models_dir)
+            .await
+            .expect("availability");
+        assert_eq!(
+            before,
+            Availability::Ready,
+            "expected Ready, got {before:?}"
+        );
+
+        let stored = diarize_meeting(&pool, &ctx, &meeting_id, Some(&folder), &models_dir)
+            .await
+            .expect("a diarization pass");
+        assert!(stored > 0, "the pass stored no turns at all");
+
+        // After: Done, with the stamp that separates "ran" from "never ran".
+        let after = availability(&pool, &ctx, &meeting_id, Some(&folder), &models_dir)
+            .await
+            .expect("availability");
+        match after {
+            Availability::Done { turns, diarized_at } => {
+                assert_eq!(turns, stored, "availability disagrees with what was stored");
+                assert!(!diarized_at.is_empty(), "diarized_at was not stamped");
+                println!("stored {turns} turns, stamped {diarized_at}");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+
+        // The turns themselves must be usable, not merely present.
+        let rows = SpeakerTurnsRepository::list_for_meeting(&pool, &ctx, &meeting_id)
+            .await
+            .expect("read back");
+        assert_eq!(rows.len(), stored);
+        assert!(
+            rows.iter().all(|t| t.end_ms > t.start_ms),
+            "a stored turn ends before it starts"
+        );
+        assert!(
+            rows.iter().all(|t| t.speaker_label.starts_with("Speaker ")),
+            "a label is not the anonymous form ADR-0034 requires"
+        );
+        for w in rows.windows(2) {
+            assert!(
+                w[0].start_ms <= w[1].start_ms,
+                "turns are not in time order"
+            );
+        }
+        println!(
+            "labels: {:?}",
+            rows.iter()
+                .map(|t| t.speaker_label.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+        );
+    }
+}
