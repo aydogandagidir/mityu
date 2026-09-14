@@ -76,6 +76,8 @@ const WINDOWS_RECORDING: CopilotStatus = {
   liveActions: ['suggest', 'followUpQuestions', 'recap', 'define'],
   activeModeId: 'client_call',
   activeModeName: 'Client call',
+  pinnedClaimIds: [],
+  pendingPins: 0,
 };
 
 const MACOS_RECORDING: CopilotStatus = {

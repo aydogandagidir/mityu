@@ -730,6 +730,11 @@ pub fn run() {
             copilot::commands::copilot_focus_main_window,
             copilot::commands::copilot_request_insight,
             copilot::commands::copilot_cancel_insight,
+            // Pin to notes (BACKLOG I3c, ADR-0046): kept in memory until the
+            // meeting is saved, then written as a `pinned` block that survives
+            // every later regenerate.
+            copilot::commands::copilot_pin_insight,
+            copilot::commands::copilot_unpin_insight,
             // Meeting modes (BACKLOG I4a/I4b): the installed set, and which one
             // the copilot answers with.
             modes::commands::modes_list,

@@ -31,9 +31,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { copilotService } from '@/services/copilotService';
 import { recordingService } from '@/services/recordingService';
 import { CopilotPanel, appendLine, PanelLine } from '@/components/copilot/CopilotPanel';
-import type { InsightState } from '@/components/copilot/CopilotInsights';
-import { isInsightFailure, type LiveAction } from '@/types/copilot';
-import type { CopilotStatus } from '@/types/copilot';
+import { claimPinId, type InsightState } from '@/components/copilot/CopilotInsights';
+import { isInsightFailure, type LiveAction, isPinFailure } from '@/types/copilot';
+import type { CopilotStatus, GroundedClaim } from '@/types/copilot';
 import type { TranscriptUpdate } from '@/types';
 import { isTauri } from '@/lib/isTauri';
 
@@ -54,6 +54,12 @@ export default function CopilotRoute() {
    * counter is the only thing that decides whether a result is still wanted.
    */
   const insightRequest = useRef(0);
+  /**
+   * A pin the backend refused (I3c). Kept next to the card rather than in the
+   * page's general `error`, which is about the panel itself: "this answer has
+   * no citation" is a statement about one claim, not about the copilot.
+   */
+  const [pinError, setPinError] = useState<string | null>(null);
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
@@ -206,6 +212,50 @@ export default function CopilotRoute() {
     }
   }, []);
 
+  /**
+   * Keep one claim (BACKLOG I3c).
+   *
+   * The returned state is applied to `status` directly instead of waiting for
+   * the next poll, so the button flips the moment it is pressed. The backend
+   * remains the authority: the next `refresh` overwrites this with whatever it
+   * says, which is what makes a refused or lost pin visible rather than
+   * remembered as successful.
+   */
+  const handlePinClaim = useCallback(
+    async (claim: GroundedClaim, action: LiveAction) => {
+      setPinError(null);
+      try {
+        const next = await copilotService.pinInsight(
+          {
+            id: claimPinId(claim),
+            text: claim.text,
+            sourceChunkIds: [claim.sourceChunkId],
+            timestamp: claim.timestamp,
+          },
+          action,
+        );
+        if (!mounted.current) return;
+        setStatus((prev) => (prev ? { ...prev, ...next } : prev));
+      } catch (e) {
+        if (!mounted.current) return;
+        setPinError(isPinFailure(e) ? e.message : String(e));
+      }
+    },
+    [],
+  );
+
+  const handleUnpinClaim = useCallback(async (id: string) => {
+    setPinError(null);
+    try {
+      const next = await copilotService.unpinInsight(id);
+      if (!mounted.current) return;
+      setStatus((prev) => (prev ? { ...prev, ...next } : prev));
+    } catch (e) {
+      if (!mounted.current) return;
+      setPinError(String(e));
+    }
+  }, []);
+
   const handleOpenMainWindow = useCallback(async () => {
     setError(null);
     try {
@@ -230,6 +280,9 @@ export default function CopilotRoute() {
         insight={insight}
         onRequestInsight={handleRequestInsight}
         onCancelInsight={handleCancelInsight}
+        onPinClaim={handlePinClaim}
+        onUnpinClaim={handleUnpinClaim}
+        pinError={pinError}
       />
     </div>
   );

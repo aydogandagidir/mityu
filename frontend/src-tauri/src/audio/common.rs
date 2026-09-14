@@ -65,6 +65,10 @@ pub(crate) fn create_transcript_segments(
                 audio_start_time: Some(start_seconds),
                 audio_end_time: Some(end_seconds),
                 duration: Some(duration),
+                // Offline/import transcription: these segments were never
+                // emitted live, so there is no `sequence_id` to carry and a pin
+                // could not have cited them (ADR-0046 decision 1).
+                sequence_id: None,
             }
         })
         .collect()

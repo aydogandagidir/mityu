@@ -1540,7 +1540,9 @@ mod tests {
     /// heading2 → `##`). Pinned byte-for-byte.
     #[test]
     fn test_render_draft_markdown_pins_the_legacy_result_view() {
-        use crate::summary::draft::{BlockStatus, DraftBlock, DraftSection, SummaryStatus};
+        use crate::summary::draft::{
+            BlockProvenance, BlockStatus, DraftBlock, DraftSection, SummaryStatus,
+        };
         let block = |block_type: BlockType, content: &str| DraftBlock {
             id: "b".to_string(),
             block_type,
@@ -1548,6 +1550,7 @@ mod tests {
             source_chunk_id: "c1".to_string(),
             status: BlockStatus::Draft,
             original_content: None,
+            provenance: BlockProvenance::Generated,
         };
         let draft = MeetingNotesDraft {
             meeting_id: "m1".to_string(),

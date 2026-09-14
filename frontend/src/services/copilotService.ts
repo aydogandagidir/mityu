@@ -17,6 +17,8 @@ import type {
   CopilotStatus,
   LiveAction,
   LiveInsightOutcome,
+  PinnedClaimInput,
+  PinState,
 } from '@/types/copilot';
 
 /**
@@ -55,6 +57,8 @@ const BROWSER_STUB: CopilotStatus = {
   liveActions: [],
   activeModeId: 'general',
   activeModeName: 'General',
+  pinnedClaimIds: [],
+  pendingPins: 0,
 };
 
 export class CopilotService {
@@ -123,6 +127,29 @@ export class CopilotService {
   async cancelInsight(): Promise<void> {
     if (!isTauri()) return;
     await invoke('copilot_cancel_insight');
+  }
+
+  /**
+   * Keep one answer, to be written into the meeting when it is saved
+   * (BACKLOG I3c).
+   *
+   * **Rejects with a `PinFailure`, not an `Error`** — same reason as
+   * `requestInsight`: "this answer has no citation" and "you have reached the
+   * limit" are different things to show, and matching on prose would break the
+   * first time a sentence is reworded. Use `isPinFailure`.
+   *
+   * Nothing is persisted by this call. The pin waits in memory until the
+   * meeting exists, which is what the panel's wording has to convey.
+   */
+  async pinInsight(claim: PinnedClaimInput, action: LiveAction): Promise<PinState> {
+    if (!isTauri()) return { pendingPins: 0, pinnedClaimIds: [] };
+    return invoke<PinState>('copilot_pin_insight', { claim, action });
+  }
+
+  /** Drop a pin. Idempotent. */
+  async unpinInsight(id: string): Promise<PinState> {
+    if (!isTauri()) return { pendingPins: 0, pinnedClaimIds: [] };
+    return invoke<PinState>('copilot_unpin_insight', { id });
   }
 }
 

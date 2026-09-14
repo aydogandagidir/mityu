@@ -235,6 +235,24 @@ pub struct TranscriptSegment {
     pub id: String,
     pub text: String,
     pub timestamp: String,
+    /// The live `sequence_id` this segment was emitted with, when the renderer
+    /// knows it (BACKLOG I3c, ADR-0046 decision 1).
+    ///
+    /// The bridge that makes "Pin to notes" possible. `copilot::insight` cites
+    /// evidence as `t{sequence_id}`, and `transcripts` row ids are minted at
+    /// save time, so a pin has to be matched to a saved segment by *something*.
+    /// `TranscriptContext` has always accumulated this field, deduped by it and
+    /// sorted by it, and `saveMeeting` has always passed it through — this
+    /// struct simply had no field for it, so serde dropped it. Keeping it turns
+    /// the match into an exact id lookup instead of float-comparing
+    /// `audio_start_time`, which would mis-attribute a citation whenever two
+    /// segments start close together.
+    ///
+    /// `None` on the recovery and audio-import paths, which mint their own
+    /// segments. A pin citing a segment with no `sequence_id` does not resolve,
+    /// and is reported rather than guessed at.
+    #[serde(default)]
+    pub sequence_id: Option<u64>,
     // NEW: Recording-relative timestamps for playback synchronization
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_start_time: Option<f64>,
@@ -964,15 +982,28 @@ pub async fn api_save_transcript<R: Runtime>(
     )
     .await
     {
-        Ok(meeting_id) => {
+        Ok(saved) => {
+            let meeting_id = saved.meeting_id;
             if let Some(reservation) = recording_folder_reservation.take() {
                 reservation.commit(&meeting_id);
             }
             log_info!("Successfully saved transcript and created meeting");
+
+            // BACKLOG I3c: the first moment a pin can be written — the meeting
+            // and its transcript rows are committed, so a citation resolves.
+            // Deliberately AFTER the commit and deliberately unable to fail the
+            // save: every loss is a counted, content-free report (ADR-0046
+            // decision 7). The renderer shows it; the recording is safe either
+            // way.
+            let pins =
+                crate::copilot::flush::flush_pins(pool, &ctx, &meeting_id, &saved.sequence_ids)
+                    .await;
+
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Transcript saved successfully",
-                "meeting_id": meeting_id
+                "meeting_id": meeting_id,
+                "pins": pins
             }))
         }
         Err(e) => {

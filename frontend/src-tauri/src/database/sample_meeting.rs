@@ -26,7 +26,7 @@
 
 use crate::context::AuthContext;
 use crate::database::repositories::summary_draft::block_status_to_db;
-use crate::summary::draft::{BlockStatus, BlockType, DraftBlock, DraftSection};
+use crate::summary::draft::{BlockProvenance, BlockStatus, BlockType, DraftBlock, DraftSection};
 use anyhow::Context;
 use chrono::Utc;
 use sqlx::SqlitePool;
@@ -152,6 +152,7 @@ fn sample_sections() -> Vec<DraftSection> {
         source_chunk_id: source.to_string(),
         status,
         original_content: None,
+        provenance: BlockProvenance::Generated,
     };
     let bullet = |id: &str, content: &str, source: &str, status: BlockStatus| DraftBlock {
         id: id.to_string(),
@@ -160,6 +161,7 @@ fn sample_sections() -> Vec<DraftSection> {
         source_chunk_id: source.to_string(),
         status,
         original_content: None,
+        provenance: BlockProvenance::Generated,
     };
 
     vec![
@@ -186,6 +188,7 @@ fn sample_sections() -> Vec<DraftSection> {
                     source_chunk_id: "sample-seg-03".to_string(),
                     status: BlockStatus::Edited,
                     original_content: Some("Budget to finance.".to_string()),
+                    provenance: BlockProvenance::Generated,
                 },
                 text(
                     "sample-b4",

@@ -42,6 +42,8 @@ const STATUS: CopilotStatus = {
   liveActions: [],
   activeModeId: 'general',
   activeModeName: 'General',
+  pinnedClaimIds: [],
+  pendingPins: 0,
 };
 
 afterEach(() => {

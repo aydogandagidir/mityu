@@ -11,6 +11,8 @@
 //! await invoke('copilot_focus_main_window');
 //! await invoke('copilot_request_insight', { action: 'recap' });
 //! await invoke('copilot_cancel_insight');
+//! await invoke('copilot_pin_insight', { claim, action: 'recap' });
+//! await invoke('copilot_unpin_insight', { id });
 //! ```
 //!
 //! Most commands here are local, synchronous work over a settings file and a
@@ -23,6 +25,7 @@
 
 use super::config::{CopilotConfig, KeybindAction, MAX_LIVE_WINDOW_SECS, MIN_LIVE_WINDOW_SECS};
 use super::insight::{self, InsightError, LiveInsightOutcome};
+use super::pin::{self, Pin, PinRefusal};
 use super::policy::ProtectionVerdict;
 use super::session::LiveContextStatus;
 use super::{keybind, session, shortcuts, store, window};
@@ -186,6 +189,12 @@ pub struct CopilotStatus {
     /// from which buttons happen to be there.
     pub active_mode_id: String,
     pub active_mode_name: String,
+    /// The claim ids pinned in this session (BACKLOG I3c), so the panel renders
+    /// a pinned claim as pinned after a re-poll or a panel reopen instead of
+    /// trusting its own memory of what it clicked.
+    pub pinned_claim_ids: Vec<String>,
+    /// How many pins are waiting for the meeting to be saved. Counts only.
+    pub pending_pins: usize,
 }
 
 /// Read the copilot's state. Local-only and cheap enough to poll.
@@ -279,6 +288,7 @@ async fn build_status<R: Runtime>(app: &AppHandle<R>, config: CopilotConfig) -> 
         })
         .collect();
 
+    let ctx = crate::context::current();
     CopilotStatus {
         panel_open: window::is_open(app),
         recording,
@@ -288,6 +298,8 @@ async fn build_status<R: Runtime>(app: &AppHandle<R>, config: CopilotConfig) -> 
         live_actions: mode.live.allowed_actions,
         active_mode_id: mode.id,
         active_mode_name: mode.name,
+        pinned_claim_ids: pin::pinned_ids(&ctx),
+        pending_pins: pin::count(&ctx),
         config,
     }
 }
@@ -713,4 +725,133 @@ pub async fn copilot_cancel_insight() {
         token.cancel();
         log::debug!("copilot: in-flight insight cancelled");
     }
+}
+
+/// One claim the user pressed Pin on, as the panel had it.
+///
+/// The panel sends back what it displayed rather than an index into a list the
+/// backend would have to remember: the insight is not persisted anywhere, so
+/// there is no server-side list to index into, and re-deriving one would mean
+/// keeping model output in memory for as long as the card is on screen.
+///
+/// `source_chunk_ids` are the `t{sequence_id}` citations from the claim. They
+/// are parsed strictly; anything that is not a citation this pipeline could
+/// have produced is discarded, and a claim left with none is refused.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedClaim {
+    /// Stable id the panel assigns, so pinning twice is idempotent.
+    pub id: String,
+    pub text: String,
+    pub source_chunk_ids: Vec<String>,
+    pub timestamp: String,
+}
+
+/// Why a pin did not happen, in the panel's words.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinFailure {
+    pub kind: &'static str,
+    pub message: String,
+}
+
+/// What the panel gets back: how many pins are held now, and their ids.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinState {
+    pub pending_pins: usize,
+    pub pinned_claim_ids: Vec<String>,
+}
+
+fn pin_state(ctx: &crate::context::AuthContext) -> PinState {
+    PinState {
+        pending_pins: pin::count(ctx),
+        pinned_claim_ids: pin::pinned_ids(ctx),
+    }
+}
+
+impl From<PinRefusal> for PinFailure {
+    fn from(r: PinRefusal) -> Self {
+        match r {
+            PinRefusal::Full => PinFailure {
+                kind: "full",
+                message: format!(
+                    "This meeting already has {} pinned notes, which is the limit.",
+                    pin::MAX_PINS_PER_MEETING
+                ),
+            },
+            PinRefusal::NoEvidence => PinFailure {
+                kind: "noEvidence",
+                message: "This answer has no transcript citation, so it cannot be kept. \
+                          Every pinned note has to point at something that was said."
+                    .to_string(),
+            },
+            PinRefusal::ForeignWorkspace => PinFailure {
+                kind: "foreignWorkspace",
+                message: "These pins belong to a different workspace.".to_string(),
+            },
+        }
+    }
+}
+
+/// Keep one live answer, to be written into the meeting when it is saved
+/// (BACKLOG **I3c**, ADR-0046).
+///
+/// Nothing is persisted here. The pin waits in memory until
+/// `api_save_transcript` creates the meeting, because until then there is no
+/// row to attach it to and no transcript id for its citation to resolve against
+/// — the two facts that made ADR-0041 defer this feature. The panel says so
+/// rather than implying the note is already safe.
+#[tauri::command]
+pub async fn copilot_pin_insight<R: Runtime>(
+    app: AppHandle<R>,
+    claim: PinnedClaim,
+    action: LiveAction,
+) -> Result<PinState, PinFailure> {
+    let ctx = crate::context::current();
+    let evidence: Vec<u64> = claim
+        .source_chunk_ids
+        .iter()
+        .filter_map(|id| insight::sequence_from_passage_id(id))
+        .collect();
+
+    // The mode name is read from the ACTIVE mode here, not taken from the
+    // renderer: it is rendered into the stored block, and a label saying which
+    // mode answered has to come from the thing that actually answered.
+    let mode_name = active_mode(&app).name;
+
+    let held = pin::add(
+        &ctx,
+        Pin {
+            id: claim.id,
+            text: claim.text,
+            evidence,
+            timestamp: claim.timestamp,
+            action,
+            mode_name,
+        },
+    );
+
+    match held {
+        Ok(count) => {
+            // Count only: the claim text is conversation content.
+            log::info!("copilot: pinned an insight (pending={count})");
+            Ok(pin_state(&ctx))
+        }
+        Err(refusal) => {
+            let failure = PinFailure::from(refusal);
+            log::info!("copilot: pin refused (kind={})", failure.kind);
+            Err(failure)
+        }
+    }
+}
+
+/// Drop a pin the user changed their mind about. Idempotent.
+#[tauri::command]
+pub async fn copilot_unpin_insight(id: String) -> PinState {
+    let ctx = crate::context::current();
+    if pin::remove(&ctx, &id) {
+        log::info!("copilot: a pin was removed");
+    }
+    pin_state(&ctx)
 }
