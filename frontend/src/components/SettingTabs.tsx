@@ -4,6 +4,7 @@ import { TranscriptModelProps, TranscriptSettings } from "./TranscriptSettings"
 import { RecordingSettings, RecordingPreferences } from "./RecordingSettings"
 import { About } from "./About";
 import CopilotSettings from "./copilot/CopilotSettings";
+import ModesSettings from "./copilot/ModesSettings";
 
 interface SettingTabsProps {
     modelConfig: ModelConfig;
@@ -38,6 +39,7 @@ export function SettingTabs({
     <TabsTrigger value="modelSettings">Ai Summary</TabsTrigger>
     <TabsTrigger value="recordingSettings">Preferences</TabsTrigger>
     <TabsTrigger value="copilotSettings">Copilot</TabsTrigger>
+    <TabsTrigger value="modesSettings">Modes</TabsTrigger>
     <TabsTrigger value="about">About</TabsTrigger>
   </TabsList>
   <TabsContent value="modelSettings">
@@ -60,6 +62,9 @@ onSave={onSave}
   </TabsContent>
   <TabsContent value="copilotSettings">
     <CopilotSettings />
+  </TabsContent>
+  <TabsContent value="modesSettings">
+    <ModesSettings />
   </TabsContent>
   <TabsContent value="about">
     <About />
