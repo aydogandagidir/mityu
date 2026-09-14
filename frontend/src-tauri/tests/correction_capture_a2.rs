@@ -32,8 +32,8 @@ use app_lib::database::repositories::{
     transcript::TranscriptsRepository,
 };
 use app_lib::summary::draft::{
-    ActionItemDraft, BlockStatus, BlockType, DraftBlock, DraftSection, MeetingNotesDraft,
-    SummaryStatus,
+    ActionItemDraft, BlockProvenance, BlockStatus, BlockType, DraftBlock, DraftSection,
+    MeetingNotesDraft, SummaryStatus,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -68,6 +68,7 @@ fn segment(id: &str, start: f64) -> TranscriptSegment {
         audio_start_time: Some(start),
         audio_end_time: Some(start + 1.0),
         duration: Some(1.0),
+        sequence_id: None,
     }
 }
 
@@ -96,6 +97,7 @@ fn block(id: &str, chunk: &str, content: &str) -> DraftBlock {
         source_chunk_id: chunk.to_string(),
         status: BlockStatus::Draft,
         original_content: None,
+        provenance: BlockProvenance::Generated,
     }
 }
 

@@ -57,6 +57,8 @@ const BASE_STATUS: CopilotStatus = {
   liveActions: ['suggest', 'followUpQuestions', 'recap', 'define'],
   activeModeId: 'general',
   activeModeName: 'General',
+  pinnedClaimIds: [],
+  pendingPins: 0,
 };
 
 function update(overrides: Partial<TranscriptUpdate>): TranscriptUpdate {

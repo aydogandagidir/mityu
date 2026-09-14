@@ -137,6 +137,16 @@ export interface CopilotPanelProps {
   insight?: InsightState;
   onRequestInsight?: (action: import('@/types/copilot').LiveAction) => void;
   onCancelInsight?: () => void;
+  /**
+   * Pin to notes (I3c). Forwarded straight through; the pinned set and the
+   * count come from `status`, so this component holds no pin state of its own.
+   */
+  onPinClaim?: (
+    claim: import('@/types/copilot').GroundedClaim,
+    action: import('@/types/copilot').LiveAction,
+  ) => void;
+  onUnpinClaim?: (id: string) => void;
+  pinError?: string | null;
 }
 
 export function CopilotPanel({
@@ -151,6 +161,9 @@ export function CopilotPanel({
   insight = { phase: 'idle' },
   onRequestInsight,
   onCancelInsight,
+  onPinClaim,
+  onUnpinClaim,
+  pinError = null,
 }: CopilotPanelProps) {
   const recording = status?.recording ?? false;
   const toggleShortcut = useMemo(
@@ -276,6 +289,11 @@ export function CopilotPanel({
           disabled={!recording}
           onRequest={onRequestInsight}
           onCancel={onCancelInsight ?? (() => {})}
+          pinnedIds={status?.pinnedClaimIds ?? []}
+          pendingPins={status?.pendingPins ?? 0}
+          onPin={onPinClaim}
+          onUnpin={onUnpinClaim}
+          pinError={pinError}
         />
       )}
 

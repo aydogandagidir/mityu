@@ -64,7 +64,7 @@ pub trait LlmProvider: Send + Sync {
 ```
 MeetingNotesDraft { meeting_id, status: Draft, sections: [Section] }
 Section           { title, blocks: [Block] }
-Block             { id, type: text|bullet|heading1|heading2, content, source_chunk_id }   // source_chunk_id REQUIRED
+Block             { id, type: text|bullet|heading1|heading2, content, source_chunk_id, provenance?: generated|pinned }   // source_chunk_id REQUIRED; provenance defaults to generated
 ActionItemDraft   { id, text, assignee?, due?, status, source_chunk_id }                   // source_chunk_id REQUIRED
 ```
 Generation repositories force every incoming summary block and action item to
@@ -73,6 +73,21 @@ may be persisted as `approved` without an explicit human Approve action and a
 resolvable `source_chunk_id`. Resolvable means an active transcript row for the
 same active meeting in the caller's workspace; soft-deleted sources/meetings do
 not resolve.
+
+`provenance` (ADR-0046) says who put the block there: `generated` (a model, the
+default and the value every pre-ADR-0046 row deserializes to) or `pinned` (a
+human kept a live copilot answer during the meeting, BACKLOG I3c). It changes
+three behaviours and nothing else. Regeneration PRESERVES `pinned` blocks —
+`upsert_draft` carries them into a trailing "Pinned during the meeting" section
+instead of replacing them — where a `generated` block is replaced wholesale. A
+preserved `pinned` block keeps its own `status` and `original_content`, because
+forcing it back to `draft` would revoke a human verdict on every regenerate;
+only incoming generated blocks are forced. And write-time evidence validation
+applies to the incoming generated blocks only: a `pinned` block whose cited
+segment was removed by retranscription survives in the draft but cannot be
+approved, since approval re-checks evidence. The field is additive and
+forward-compatible; a peer that does not know it treats the block as
+`generated`, losing the label and never the content.
 
 ## 5. Sync protocol (dormant until Phase 2) — tenant-scoped, mergeable
 ```jsonc

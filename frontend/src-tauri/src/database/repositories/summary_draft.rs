@@ -51,7 +51,9 @@ use crate::database::repositories::correction_event::{
     NewCorrectionEvent,
 };
 use crate::learning::rule::AppliedRule;
-use crate::summary::draft::{BlockStatus, DraftSection, MeetingNotesDraft, SummaryStatus};
+use crate::summary::draft::{
+    BlockProvenance, BlockStatus, DraftBlock, DraftSection, MeetingNotesDraft, SummaryStatus,
+};
 use chrono::Utc;
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
@@ -59,6 +61,13 @@ use std::collections::HashSet;
 use thiserror::Error;
 use tracing::{info, warn};
 use uuid::Uuid;
+
+/// Title of the section `upsert_draft` carries pinned blocks into (ADR-0046).
+///
+/// One trailing section rather than weaving pins back among the model's own
+/// headings: those titles change on every regenerate, so a pinned block would
+/// wander between sections for a reason the user never caused.
+pub const PINNED_SECTION_TITLE: &str = "Pinned during the meeting";
 
 /// Maximum number of ids bound into a single `IN (...)` clause by
 /// [`resolve_source_chunk_ids`]. Kept comfortably under SQLite's default
@@ -358,6 +367,10 @@ impl SummariesRepository {
         {
             block.status = BlockStatus::Draft;
             block.original_content = None;
+            // A producer cannot mint provenance either: only the pin path
+            // (`append_block`) may create a `Pinned` block, or a generator could
+            // make its own output survive every future regenerate (ADR-0046).
+            block.provenance = BlockProvenance::Generated;
         }
         if forced_blocks > 0 {
             warn!(
@@ -367,6 +380,15 @@ impl SummariesRepository {
             );
         }
 
+        // Evidence validation covers the INCOMING generated blocks only. Pinned
+        // blocks carried across below are deliberately NOT re-validated: a
+        // retranscription that removed a cited segment would otherwise make
+        // summary generation impossible for this meeting, and dropping them
+        // instead would destroy user-kept content on a path the user cannot
+        // avoid — the exact failure ADR-0041 refused to ship. `downgrade_to_draft`
+        // sets the same precedent (it downgrades, never drops), and approval
+        // re-checks evidence, so a pinned block with a dead source survives in
+        // the draft and simply cannot be approved (ADR-0046 decision 5).
         let required: HashSet<String> = generated_sections
             .iter()
             .flat_map(|section| section.blocks.iter())
@@ -374,25 +396,74 @@ impl SummariesRepository {
             .collect();
         ensure_sources_resolve(pool, ctx, meeting_id, &required).await?;
 
-        // Serialize the FORCED sections (theirs' `generated_sections`, every block
-        // reset to `draft`), never the raw `draft.sections`, or the HITL invariant
-        // above would be undone in the JSON. `applied_rules_json` is ours' §5
-        // snapshot, written as a parameter of the same INSERT/UPDATE below.
-        let sections_json = serde_json::to_string(&generated_sections)?;
         let applied_rules_json = serde_json::to_string(applied_rules)?;
         let now = Utc::now();
 
         let mut transaction = pool.begin().await?;
 
-        let existing: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM summaries WHERE meeting_id = ? AND workspace_id = ?")
-                .bind(meeting_id)
-                .bind(ctx.tenant_id.as_str())
-                .fetch_optional(&mut *transaction)
-                .await?;
+        // Read the row INSIDE the transaction that overwrites it, so a pin
+        // written between a read and the write cannot be lost: the pinned
+        // blocks carried forward are the ones present when this write lands.
+        let existing: Option<(String, String)> = sqlx::query_as(
+            "SELECT id, sections FROM summaries WHERE meeting_id = ? AND workspace_id = ?",
+        )
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(&mut *transaction)
+        .await?;
+
+        // ADR-0046 decision 3: regeneration REPLACES generated blocks and
+        // PRESERVES pinned ones. Without this, the ordinary post-meeting summary
+        // — and every "Regenerate" after it — erased every block the user kept
+        // during their meeting (ADR-0041 blocker 3).
+        let preserved: Vec<DraftBlock> = match existing.as_ref() {
+            Some((_, sections_json)) => serde_json::from_str::<Vec<DraftSection>>(sections_json)
+                .map(|sections| {
+                    sections
+                        .into_iter()
+                        .flat_map(|section| section.blocks)
+                        // Status and `original_content` are kept as they are:
+                        // forcing a carried-across block back to `draft` would
+                        // revoke a human's approval on every regenerate. The
+                        // summary-level status still drops to `draft` below, so
+                        // the whole set is re-reviewed (ADR-0046 decision 4).
+                        .filter(|block| block.provenance == BlockProvenance::Pinned)
+                        .collect()
+                })
+                // A `sections` blob that will not parse is corrupt, and this is
+                // the generation path: refusing to write would leave the user
+                // with no summary at all and no way to get one. Preserve
+                // nothing, say so with a count, and continue.
+                .unwrap_or_else(|e| {
+                    warn!(
+                        meeting_id = %meeting_id,
+                        error = %e,
+                        "upsert_draft could not read existing sections; pinned blocks not preserved"
+                    );
+                    Vec::new()
+                }),
+            None => Vec::new(),
+        };
+        if !preserved.is_empty() {
+            info!(
+                meeting_id = %meeting_id,
+                preserved_pinned = preserved.len(),
+                "upsert_draft preserved pinned blocks across regeneration"
+            );
+            generated_sections.push(DraftSection {
+                title: PINNED_SECTION_TITLE.to_string(),
+                blocks: preserved,
+            });
+        }
+
+        // Serialize the FORCED sections (theirs' `generated_sections`, every block
+        // reset to `draft`), never the raw `draft.sections`, or the HITL invariant
+        // above would be undone in the JSON. `applied_rules_json` is ours' §5
+        // snapshot, written as a parameter of the same INSERT/UPDATE below.
+        let sections_json = serde_json::to_string(&generated_sections)?;
 
         let id = match existing {
-            Some((id,)) => {
+            Some((id, _)) => {
                 sqlx::query(
                     "UPDATE summaries SET status = 'draft', model = ?, template_id = ?, \
                      sections = ?, applied_rules = ?, generated_at = ?, approved_at = NULL, \
@@ -1106,6 +1177,165 @@ impl SummariesRepository {
         Err(SummaryDraftError::ConcurrentChange)
     }
 
+    /// Appends ONE human-pinned block to the meeting's summary draft
+    /// (BACKLOG **I3c**, ADR-0046) — the write half of "Pin to notes".
+    ///
+    /// Three things make this its own method rather than a call to
+    /// [`Self::upsert_draft`]:
+    ///
+    /// - **It creates the row when none exists.** That is the common case, not
+    ///   an edge: pins land when the meeting is saved, and summary generation
+    ///   happens afterwards. The created row is a `draft` with `model` NULL —
+    ///   no model wrote it.
+    /// - **It appends rather than replacing**, over the same compare-and-swap
+    ///   writer every other block mutation uses, so it cannot clobber a
+    ///   concurrent human edit and a second `sections = ?` writer does not come
+    ///   into existence (ADR-0041's instruction).
+    /// - **The block is `Pinned`**, which is what makes it survive the next
+    ///   regenerate (ADR-0046 decision 3). This is the ONLY path that may mint
+    ///   that provenance; `upsert_draft` forces every incoming block to
+    ///   `Generated` precisely so a generator cannot make its own output
+    ///   permanent.
+    ///
+    /// The block's status is forced to [`BlockStatus::Draft`] like any other
+    /// write (the C1 HITL rule: a pin is the user keeping something to review,
+    /// not approving it), and its `source_chunk_id` MUST resolve now — a pin
+    /// with unresolvable evidence is refused, because the whole point of the
+    /// citation is that it can be opened.
+    ///
+    /// `Ok(false)` when the meeting does not exist in this workspace, matching
+    /// the repository's cross-workspace convention. Content is never logged.
+    pub async fn append_block(
+        pool: &SqlitePool,
+        ctx: &AuthContext,
+        meeting_id: &str,
+        block: &DraftBlock,
+    ) -> Result<bool, SummaryDraftError> {
+        let meeting_exists: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM meetings \
+             WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL",
+        )
+        .bind(meeting_id)
+        .bind(ctx.tenant_id.as_str())
+        .fetch_optional(pool)
+        .await?;
+        if meeting_exists.is_none() {
+            info!(
+                meeting_id = %meeting_id,
+                "append_block: meeting not found in this workspace"
+            );
+            return Ok(false);
+        }
+
+        let required: HashSet<String> = std::iter::once(block.source_chunk_id.clone()).collect();
+        ensure_sources_resolve(pool, ctx, meeting_id, &required).await?;
+
+        let mut pinned = block.clone();
+        pinned.status = BlockStatus::Draft;
+        pinned.original_content = None;
+        pinned.provenance = BlockProvenance::Pinned;
+
+        // Bounded retry on the same CAS writer the human-review paths use: a
+        // lost race means someone else changed the summary between our read and
+        // our write, so re-read and re-apply rather than overwrite them.
+        for _ in 0..8 {
+            let row = sqlx::query(
+                "SELECT id, sections, rev FROM summaries \
+                 WHERE meeting_id = ? AND workspace_id = ? AND deleted_at IS NULL",
+            )
+            .bind(meeting_id)
+            .bind(ctx.tenant_id.as_str())
+            .fetch_optional(pool)
+            .await?;
+
+            let Some(row) = row else {
+                // No summary yet. Create one holding just this pin; a later
+                // generation will add its sections and preserve this block.
+                let sections = vec![DraftSection {
+                    title: PINNED_SECTION_TITLE.to_string(),
+                    blocks: vec![pinned.clone()],
+                }];
+                let sections_json = serde_json::to_string(&sections)?;
+                let now = Utc::now();
+                let id = Uuid::new_v4().to_string();
+                // `INSERT OR IGNORE` on the UNIQUE `meeting_id`: if a generation
+                // inserted the row in the meantime, this no-ops and the next
+                // iteration takes the append path instead of failing.
+                let inserted = sqlx::query(
+                    "INSERT OR IGNORE INTO summaries \
+                     (id, meeting_id, workspace_id, status, model, template_id, sections, \
+                      applied_rules, generated_at, created_at, updated_at, updated_by, rev) \
+                     VALUES (?, ?, ?, 'draft', NULL, NULL, ?, NULL, NULL, ?, ?, ?, 1)",
+                )
+                .bind(&id)
+                .bind(meeting_id)
+                .bind(ctx.tenant_id.as_str())
+                .bind(&sections_json)
+                .bind(now)
+                .bind(now)
+                .bind(ctx.user_id.as_str())
+                .execute(pool)
+                .await?;
+                if inserted.rows_affected() == 1 {
+                    info!(
+                        meeting_id = %meeting_id,
+                        summary_id = %id,
+                        "append_block created a summary row for a pinned block"
+                    );
+                    return Ok(true);
+                }
+                continue;
+            };
+
+            let summary_id: String = row.get("id");
+            let current_rev: i64 = row.get("rev");
+            let mut sections: Vec<DraftSection> =
+                serde_json::from_str(&row.get::<String, _>("sections"))?;
+
+            match sections
+                .iter_mut()
+                .find(|section| section.title == PINNED_SECTION_TITLE)
+            {
+                Some(section) => section.blocks.push(pinned.clone()),
+                None => sections.push(DraftSection {
+                    title: PINNED_SECTION_TITLE.to_string(),
+                    blocks: vec![pinned.clone()],
+                }),
+            }
+            let sections_json = serde_json::to_string(&sections)?;
+
+            // `event: None` — a pin is not a verdict on generated content, so it
+            // is not a correction to learn from (ADR-0030 §2). The CAS writer
+            // also drops the summary to `draft`, which is correct: the set a
+            // human approved no longer describes the set in the row.
+            if Self::write_sections_as_draft_if_current(
+                pool,
+                ctx,
+                &summary_id,
+                current_rev,
+                &sections_json,
+                None,
+                None,
+            )
+            .await?
+            {
+                info!(
+                    meeting_id = %meeting_id,
+                    summary_id = %summary_id,
+                    "append_block stored a pinned block"
+                );
+                return Ok(true);
+            }
+        }
+
+        warn!(
+            meeting_id = %meeting_id,
+            reason_code = "concurrent_change_retry_exhausted",
+            "append_block refused after repeated concurrent changes"
+        );
+        Err(SummaryDraftError::ConcurrentChange)
+    }
+
     /// Soft-deletes the meeting's summary (sets `deleted_at`, bumps `rev`).
     /// `Ok(false)` when no live row exists in this workspace.
     pub async fn soft_delete(
@@ -1313,6 +1543,409 @@ mod tests {
             }
             other => panic!("expected Protocol, got {other:?}"),
         }
+    }
+
+    /// Build the three tables these tests touch, seeded with one meeting and
+    /// two transcript segments in workspace `local`.
+    async fn pinned_test_pool() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory SQLite");
+
+        sqlx::query(
+            "CREATE TABLE meetings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, deleted_at TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .expect("meetings table");
+        sqlx::query(
+            "CREATE TABLE transcripts (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL, workspace_id TEXT NOT NULL, deleted_at TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .expect("transcripts table");
+        sqlx::query(
+            "CREATE TABLE summaries (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL UNIQUE, \
+             workspace_id TEXT NOT NULL, status TEXT NOT NULL, model TEXT, template_id TEXT, \
+             sections TEXT NOT NULL, applied_rules TEXT, generated_at TEXT, created_at TEXT, \
+             approved_at TEXT, approved_by TEXT, updated_at TEXT, updated_by TEXT, \
+             rev INTEGER NOT NULL, deleted_at TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .expect("summaries table");
+
+        sqlx::query("INSERT INTO meetings (id, workspace_id) VALUES ('meeting-pin', 'local')")
+            .execute(&pool)
+            .await
+            .expect("seed meeting");
+        for id in ["source-a", "source-b"] {
+            sqlx::query(
+                "INSERT INTO transcripts (id, meeting_id, workspace_id) VALUES (?, 'meeting-pin', 'local')",
+            )
+            .bind(id)
+            .execute(&pool)
+            .await
+            .expect("seed transcript");
+        }
+        pool
+    }
+
+    fn block(id: &str, content: &str, source: &str) -> DraftBlock {
+        DraftBlock {
+            id: id.to_string(),
+            block_type: crate::summary::draft::BlockType::Bullet,
+            content: content.to_string(),
+            source_chunk_id: source.to_string(),
+            status: BlockStatus::Draft,
+            original_content: None,
+            provenance: BlockProvenance::Generated,
+        }
+    }
+
+    fn generated_draft(content: &str) -> MeetingNotesDraft {
+        MeetingNotesDraft {
+            meeting_id: "meeting-pin".to_string(),
+            status: SummaryStatus::Draft,
+            sections: vec![DraftSection {
+                title: "Decisions".to_string(),
+                blocks: vec![block("gen-1", content, "source-a")],
+            }],
+        }
+    }
+
+    async fn sections_of(pool: &SqlitePool) -> Vec<DraftSection> {
+        let json: String =
+            sqlx::query_scalar("SELECT sections FROM summaries WHERE meeting_id = 'meeting-pin'")
+                .fetch_one(pool)
+                .await
+                .expect("summary row");
+        serde_json::from_str(&json).expect("sections parse")
+    }
+
+    /// **The test ADR-0041 deferred this feature to get.** A full
+    /// generate-after-pin cycle: the pinned block must still be there.
+    ///
+    /// Before ADR-0046, `upsert_draft` bound `sections = ?` from the caller's
+    /// draft alone, so the ordinary post-meeting summary — a path the user
+    /// cannot avoid — erased every pinned block with certainty. Revert decision
+    /// 3 and this fails.
+    #[tokio::test]
+    async fn a_pinned_block_survives_generation_and_every_regenerate() {
+        let pool = pinned_test_pool().await;
+        let ctx = AuthContext::local();
+
+        assert!(
+            SummariesRepository::append_block(
+                &pool,
+                &ctx,
+                "meeting-pin",
+                &block("pin-1", "Budget was approved.", "source-b"),
+            )
+            .await
+            .expect("pin stored"),
+            "the pin must be stored before any summary exists"
+        );
+
+        // The ordinary post-meeting summary.
+        SummariesRepository::upsert_draft(
+            &pool,
+            &ctx,
+            &generated_draft("The team discussed the budget."),
+            Some("test-model"),
+            None,
+            &[],
+        )
+        .await
+        .expect("first generation");
+
+        let sections = sections_of(&pool).await;
+        let pinned: Vec<&DraftBlock> = sections
+            .iter()
+            .flat_map(|s| s.blocks.iter())
+            .filter(|b| b.provenance == BlockProvenance::Pinned)
+            .collect();
+        assert_eq!(pinned.len(), 1, "the pinned block survived generation");
+        assert_eq!(pinned[0].content, "Budget was approved.");
+        assert_eq!(pinned[0].source_chunk_id, "source-b");
+        assert!(
+            sections.iter().any(|s| s.title == PINNED_SECTION_TITLE),
+            "pins land in their own section"
+        );
+        assert!(
+            sections
+                .iter()
+                .flat_map(|s| s.blocks.iter())
+                .any(|b| b.content == "The team discussed the budget."),
+            "the generated block is there too"
+        );
+
+        // And every Regenerate after it. This is the loop that made the loss
+        // certain rather than occasional.
+        for round in 0..3 {
+            SummariesRepository::upsert_draft(
+                &pool,
+                &ctx,
+                &generated_draft(&format!("Regenerated take {round}.")),
+                Some("test-model"),
+                None,
+                &[],
+            )
+            .await
+            .expect("regeneration");
+
+            let sections = sections_of(&pool).await;
+            let pinned: Vec<&DraftBlock> = sections
+                .iter()
+                .flat_map(|s| s.blocks.iter())
+                .filter(|b| b.provenance == BlockProvenance::Pinned)
+                .collect();
+            assert_eq!(pinned.len(), 1, "round {round}: pin still present");
+            assert_eq!(pinned[0].content, "Budget was approved.");
+            // The generated half IS replaced — preserving pins must not turn
+            // into never replacing anything.
+            let generated: Vec<&DraftBlock> = sections
+                .iter()
+                .flat_map(|s| s.blocks.iter())
+                .filter(|b| b.provenance == BlockProvenance::Generated)
+                .collect();
+            assert_eq!(generated.len(), 1, "round {round}: one generated block");
+            assert_eq!(generated[0].content, format!("Regenerated take {round}."));
+        }
+    }
+
+    /// A human's approval of a pinned block is not revoked by the next
+    /// regenerate. Forcing carried-across blocks back to `draft` would undo a
+    /// verdict the user gave, on a path they cannot avoid (ADR-0046 decision 4).
+    #[tokio::test]
+    async fn regeneration_does_not_revoke_a_human_verdict_on_a_pinned_block() {
+        let pool = pinned_test_pool().await;
+        let ctx = AuthContext::local();
+
+        SummariesRepository::append_block(
+            &pool,
+            &ctx,
+            "meeting-pin",
+            &block("pin-1", "Budget was approved.", "source-b"),
+        )
+        .await
+        .expect("pin stored");
+
+        // Stand in for the human review command having approved it.
+        let mut sections = sections_of(&pool).await;
+        for b in sections.iter_mut().flat_map(|s| s.blocks.iter_mut()) {
+            b.status = BlockStatus::Approved;
+        }
+        sqlx::query("UPDATE summaries SET sections = ? WHERE meeting_id = 'meeting-pin'")
+            .bind(serde_json::to_string(&sections).expect("json"))
+            .execute(&pool)
+            .await
+            .expect("approve the pin");
+
+        SummariesRepository::upsert_draft(
+            &pool,
+            &ctx,
+            &generated_draft("A fresh summary."),
+            Some("test-model"),
+            None,
+            &[],
+        )
+        .await
+        .expect("regeneration");
+
+        let sections = sections_of(&pool).await;
+        let pinned = sections
+            .iter()
+            .flat_map(|s| s.blocks.iter())
+            .find(|b| b.provenance == BlockProvenance::Pinned)
+            .expect("pin survived");
+        assert_eq!(
+            pinned.status,
+            BlockStatus::Approved,
+            "the human's approval must survive the regenerate"
+        );
+
+        // The summary itself still drops to draft: the approved set no longer
+        // describes the set in the row.
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM summaries WHERE meeting_id = 'meeting-pin'")
+                .fetch_one(&pool)
+                .await
+                .expect("status");
+        assert_eq!(status, "draft");
+    }
+
+    /// A pinned block whose cited segment was removed by retranscription
+    /// survives rather than blocking generation or being deleted — and cannot
+    /// be approved, because approval re-checks evidence (ADR-0046 decision 5).
+    #[tokio::test]
+    async fn a_pin_with_a_dead_source_neither_blocks_generation_nor_disappears() {
+        let pool = pinned_test_pool().await;
+        let ctx = AuthContext::local();
+
+        SummariesRepository::append_block(
+            &pool,
+            &ctx,
+            "meeting-pin",
+            &block("pin-1", "Budget was approved.", "source-b"),
+        )
+        .await
+        .expect("pin stored");
+
+        // Retranscription removed the cited segment.
+        sqlx::query("DELETE FROM transcripts WHERE id = 'source-b'")
+            .execute(&pool)
+            .await
+            .expect("drop the source");
+
+        SummariesRepository::upsert_draft(
+            &pool,
+            &ctx,
+            &generated_draft("A summary generated afterwards."),
+            Some("test-model"),
+            None,
+            &[],
+        )
+        .await
+        .expect("generation must still succeed");
+
+        let sections = sections_of(&pool).await;
+        assert!(
+            sections
+                .iter()
+                .flat_map(|s| s.blocks.iter())
+                .any(|b| b.provenance == BlockProvenance::Pinned),
+            "the pin is kept, not dropped"
+        );
+    }
+
+    /// Only the pin path may mint `Pinned`. A generator that supplied it would
+    /// otherwise make its own output survive every future regenerate.
+    #[tokio::test]
+    async fn a_generator_cannot_mint_pinned_provenance() {
+        let pool = pinned_test_pool().await;
+        let ctx = AuthContext::local();
+
+        let mut draft = generated_draft("Pretending to be a pin.");
+        draft.sections[0].blocks[0].provenance = BlockProvenance::Pinned;
+
+        SummariesRepository::upsert_draft(&pool, &ctx, &draft, Some("m"), None, &[])
+            .await
+            .expect("generation");
+
+        let sections = sections_of(&pool).await;
+        assert!(
+            sections
+                .iter()
+                .flat_map(|s| s.blocks.iter())
+                .all(|b| b.provenance == BlockProvenance::Generated),
+            "a producer-supplied provenance is forced back to generated"
+        );
+    }
+
+    /// A pin must cite something that exists. Unresolvable evidence is refused
+    /// at write time, not stored and discovered later.
+    #[tokio::test]
+    async fn append_block_refuses_a_citation_that_does_not_resolve() {
+        let pool = pinned_test_pool().await;
+        let ctx = AuthContext::local();
+
+        let err = SummariesRepository::append_block(
+            &pool,
+            &ctx,
+            "meeting-pin",
+            &block("pin-1", "Unfounded.", "source-missing"),
+        )
+        .await
+        .expect_err("must refuse");
+        assert!(matches!(
+            err,
+            SummaryDraftError::UnresolvableSources { count: 1 }
+        ));
+    }
+
+    /// A pin is a note kept for review, never an approval, and the pin path is
+    /// not a way around the HITL rule.
+    #[tokio::test]
+    async fn append_block_forces_draft_status() {
+        let pool = pinned_test_pool().await;
+        let ctx = AuthContext::local();
+
+        let mut b = block("pin-1", "Budget was approved.", "source-b");
+        b.status = BlockStatus::Approved;
+        b.original_content = Some("something else".to_string());
+
+        SummariesRepository::append_block(&pool, &ctx, "meeting-pin", &b)
+            .await
+            .expect("pin stored");
+
+        let sections = sections_of(&pool).await;
+        let pinned = sections
+            .iter()
+            .flat_map(|s| s.blocks.iter())
+            .find(|x| x.provenance == BlockProvenance::Pinned)
+            .expect("pin present");
+        assert_eq!(pinned.status, BlockStatus::Draft);
+        assert!(pinned.original_content.is_none());
+    }
+
+    /// Several pins accumulate in one section rather than one section each.
+    #[tokio::test]
+    async fn pins_accumulate_in_one_section() {
+        let pool = pinned_test_pool().await;
+        let ctx = AuthContext::local();
+
+        for (id, text) in [("p1", "First."), ("p2", "Second."), ("p3", "Third.")] {
+            SummariesRepository::append_block(
+                &pool,
+                &ctx,
+                "meeting-pin",
+                &block(id, text, "source-a"),
+            )
+            .await
+            .expect("pin stored");
+        }
+
+        let sections = sections_of(&pool).await;
+        let pinned_sections: Vec<&DraftSection> = sections
+            .iter()
+            .filter(|s| s.title == PINNED_SECTION_TITLE)
+            .collect();
+        assert_eq!(pinned_sections.len(), 1, "one pinned section");
+        assert_eq!(pinned_sections[0].blocks.len(), 3);
+    }
+
+    /// Cross-workspace: a pin cannot be written into another tenant's meeting,
+    /// and the refusal is the repository's `Ok(false)` convention rather than
+    /// an error that would confirm the meeting exists.
+    #[tokio::test]
+    async fn append_block_refuses_another_workspace() {
+        let pool = pinned_test_pool().await;
+        let foreign = AuthContext {
+            tenant_id: crate::context::TenantId::new("other-tenant"),
+            user_id: crate::context::UserId::new("other-user"),
+            roles: vec![crate::context::Role::Owner],
+            request_id: crate::context::RequestId::generate(),
+        };
+
+        let stored = SummariesRepository::append_block(
+            &pool,
+            &foreign,
+            "meeting-pin",
+            &block("pin-1", "Budget was approved.", "source-b"),
+        )
+        .await
+        .expect("no error");
+        assert!(!stored, "a foreign workspace must not be able to pin");
+
+        let rows: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM summaries WHERE meeting_id = 'meeting-pin'")
+                .fetch_one(&pool)
+                .await
+                .expect("count");
+        assert_eq!(rows, 0, "and must not have created a row");
     }
 
     /// A whole-summary approval must never overwrite a block edit that landed

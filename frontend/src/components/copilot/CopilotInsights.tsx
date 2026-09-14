@@ -29,9 +29,10 @@
  * for. `noContext`, `refused` and each failure `kind` get their own sentence.
  */
 
-import { AlertTriangle, Loader2, Quote, ShieldOff, Sparkles, SquarePen, X } from 'lucide-react';
+import { AlertTriangle, Loader2, Pin, PinOff, Quote, ShieldOff, Sparkles, SquarePen, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type {
+  GroundedClaim,
   InsightFailure,
   LiveAction,
   LiveInsightOutcome,
@@ -169,13 +170,39 @@ function Refusal({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Claims({ outcome }: { outcome: Extract<LiveInsightOutcome, { status: 'answered' }> }) {
+/**
+ * The id a pin is keyed by (BACKLOG I3c).
+ *
+ * Derived from the claim's own content and citation rather than from an array
+ * index: the same claim must get the same id across a re-render and a re-poll,
+ * or the backend's pinned set and the panel's buttons would disagree about
+ * which card is pinned. It is also what makes pinning idempotent — a
+ * double-click stores one block, not two.
+ */
+export function claimPinId(claim: GroundedClaim): string {
+  return `${claim.sourceChunkId}::${claim.text}`;
+}
+
+function Claims({
+  outcome,
+  pinnedIds,
+  onPin,
+  onUnpin,
+}: {
+  outcome: Extract<LiveInsightOutcome, { status: 'answered' }>;
+  pinnedIds: string[];
+  onPin: (claim: GroundedClaim, action: LiveAction) => void;
+  onUnpin: (id: string) => void;
+}) {
   return (
     <>
       <ol className="space-y-1.5 px-3 py-1">
-        {outcome.claims.map((claim) => (
+        {outcome.claims.map((claim) => {
+          const pinId = claimPinId(claim);
+          const pinned = pinnedIds.includes(pinId);
+          return (
           <li
-            key={`${claim.sourceChunkId}-${claim.text}`}
+            key={pinId}
             className="rounded-md border border-border px-2 py-1.5 text-[12px] leading-snug text-foreground"
           >
             {claim.text}
@@ -183,9 +210,27 @@ function Claims({ outcome }: { outcome: Extract<LiveInsightOutcome, { status: 'a
               <Quote className="h-2.5 w-2.5 shrink-0" aria-hidden />
               {/* The stamp comes from the cited segment, never from the model. */}
               said at {claim.timestamp}
+              <button
+                type="button"
+                onClick={() => (pinned ? onUnpin(pinId) : onPin(claim, outcome.action))}
+                aria-pressed={pinned}
+                aria-label={pinned ? `Unpin: ${claim.text}` : `Pin to notes: ${claim.text}`}
+                className="ml-auto inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] transition-colors hover:bg-muted"
+              >
+                {pinned ? (
+                  <>
+                    <PinOff className="h-2.5 w-2.5 shrink-0" aria-hidden /> Pinned
+                  </>
+                ) : (
+                  <>
+                    <Pin className="h-2.5 w-2.5 shrink-0" aria-hidden /> Pin to notes
+                  </>
+                )}
+              </button>
             </span>
           </li>
-        ))}
+          );
+        })}
       </ol>
       {/* Filtering is stated, not hidden: a shortened answer looks complete. */}
       {outcome.dropped.length > 0 && (
@@ -221,6 +266,19 @@ export interface CopilotInsightsProps {
   disabled?: boolean;
   onRequest: (action: LiveAction) => void;
   onCancel: () => void;
+  /**
+   * The claim ids the BACKEND says are pinned (I3c), and how many pins wait.
+   *
+   * Both come from status rather than from local state, so reopening the panel
+   * shows what is actually kept instead of what this component remembers
+   * clicking.
+   */
+  pinnedIds?: string[];
+  pendingPins?: number;
+  onPin?: (claim: GroundedClaim, action: LiveAction) => void;
+  onUnpin?: (id: string) => void;
+  /** A pin the backend refused, rendered as its own sentence. */
+  pinError?: string | null;
 }
 
 export function CopilotInsights({
@@ -230,6 +288,11 @@ export function CopilotInsights({
   disabled = false,
   onRequest,
   onCancel,
+  pinnedIds = [],
+  pendingPins = 0,
+  onPin,
+  onUnpin,
+  pinError = null,
 }: CopilotInsightsProps) {
   const busy = state.phase === 'loading';
   const ordered = ACTION_ORDER.filter((a) => actions.includes(a));
@@ -262,6 +325,25 @@ export function CopilotInsights({
       {/* Rendered in EVERY phase — see the note on `AiMarking`. */}
       <AiMarking />
 
+      {/* A pin is NOT saved yet, and the panel says so rather than letting the
+          word "Pinned" imply it is. The meeting does not exist in the database
+          until the user saves it, which is the whole reason I3c was deferred
+          out of I3b (ADR-0041); telling the user their note is safe before
+          that would be the same false promise in the UI. */}
+      {pendingPins > 0 && (
+        <p className="flex items-center gap-1 px-3 pb-1 text-[10px] text-muted-foreground">
+          <Pin className="h-2.5 w-2.5 shrink-0" aria-hidden />
+          {pendingPins} {pendingPins === 1 ? 'note' : 'notes'} pinned. They are written into the
+          meeting&apos;s summary when you save it, each as a draft you review.
+        </p>
+      )}
+      {pinError && (
+        <p className="flex items-start gap-1 px-3 pb-1 text-[10px] text-muted-foreground">
+          <AlertTriangle className="mt-0.5 h-2.5 w-2.5 shrink-0" aria-hidden />
+          {pinError}
+        </p>
+      )}
+
       <div aria-live="polite" className="max-h-48 overflow-y-auto">
         {state.phase === 'idle' && (
           <Refusal>
@@ -288,7 +370,12 @@ export function CopilotInsights({
         )}
 
         {state.phase === 'done' && state.outcome.status === 'answered' && (
-          <Claims outcome={state.outcome} />
+          <Claims
+            outcome={state.outcome}
+            pinnedIds={pinnedIds}
+            onPin={onPin ?? (() => {})}
+            onUnpin={onUnpin ?? (() => {})}
+          />
         )}
 
         {state.phase === 'done' && state.outcome.status === 'noContext' && (

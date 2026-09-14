@@ -12,9 +12,20 @@ use crate::api::{
 use crate::context::AuthContext;
 use chrono::Utc;
 use sqlx::{Connection, Error as SqlxError, SqlitePool};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tracing::{error, info};
 use uuid::Uuid;
+
+/// What [`TranscriptsRepository::save_transcript`] produced: the meeting it
+/// created, and how to reach the rows it wrote.
+#[derive(Debug, Clone)]
+pub struct SavedTranscript {
+    /// The new `meetings.id`.
+    pub meeting_id: String,
+    /// `sequence_id → transcripts.id`, for every saved segment that carried a
+    /// live sequence id. Empty when none did (recovery, import).
+    pub sequence_ids: HashMap<u64, String>,
+}
 
 pub struct TranscriptsRepository;
 
@@ -26,13 +37,21 @@ impl TranscriptsRepository {
     /// Segment ids are re-minted here (`transcript-{uuid}`); use
     /// [`Self::create_meeting_with_segments`] when caller-supplied segment ids
     /// must be preserved (e.g. audio import).
+    ///
+    /// Returns the new meeting id together with the `sequence_id → transcripts.id`
+    /// map for every segment that carried one (BACKLOG I3c, ADR-0046 decision
+    /// 1). The map is built here because here is the only place both halves
+    /// exist at once: the live `sequence_id` the renderer sent and the row id
+    /// this method mints. It is consumed immediately by the copilot pin flush
+    /// and deliberately not persisted — a column to re-derive it later would be
+    /// a schema change bought for nothing.
     pub async fn save_transcript(
         pool: &SqlitePool,
         ctx: &AuthContext,
         meeting_title: &str,
         transcripts: &[TranscriptSegment],
         folder_path: Option<String>,
-    ) -> Result<String, SqlxError> {
+    ) -> Result<SavedTranscript, SqlxError> {
         let meeting_id = format!("meeting-{}", Uuid::new_v4());
 
         let mut conn = pool.acquire().await?;
@@ -65,8 +84,18 @@ impl TranscriptsRepository {
         info!("Successfully created meeting with id: {}", meeting_id);
 
         // 2. Save each transcript segment with audio timing fields
+        let mut sequence_ids: HashMap<u64, String> = HashMap::new();
         for segment in transcripts {
             let transcript_id = format!("transcript-{}", Uuid::new_v4());
+            if let Some(sequence_id) = segment.sequence_id {
+                // First writer wins. The renderer dedupes by `sequence_id`
+                // before saving, so a repeat here means a payload that already
+                // disagreed with itself; binding a citation to the first row is
+                // stable, where last-wins would depend on iteration order.
+                sequence_ids
+                    .entry(sequence_id)
+                    .or_insert_with(|| transcript_id.clone());
+            }
             let result = insert_transcript_segment(
                 &mut transaction,
                 ctx,
@@ -96,7 +125,10 @@ impl TranscriptsRepository {
         // Commit the transaction
         transaction.commit().await?;
 
-        Ok(meeting_id)
+        Ok(SavedTranscript {
+            meeting_id,
+            sequence_ids,
+        })
     }
 
     /// Creates a new meeting and inserts the given segments **preserving their

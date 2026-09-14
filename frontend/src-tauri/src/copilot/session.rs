@@ -532,6 +532,12 @@ fn start_session() {
     let mut ctx = live();
     if let Some(window_secs) = ctx.as_ref().map(LiveContext::window_secs) {
         *ctx = Some(LiveContext::new(&context::current(), window_secs));
+        // A new recording begins, so anything pinned during the previous one
+        // and never saved has nothing to attach to (ADR-0046 residual). Cleared
+        // HERE and not on `recording-stopped`: the save that persists pins runs
+        // after the stop, so clearing on stop would empty the buffer a moment
+        // before the flush reads it.
+        super::pin::clear();
     }
 }
 
@@ -580,6 +586,8 @@ pub fn stop<R: Runtime>(app: &AppHandle<R>) {
         log::debug!("copilot: live context unsubscribed");
     }
     *live() = None;
+    // The copilot is off; nothing will ever flush these.
+    super::pin::clear();
 }
 
 /// Run `f` against the live context, if there is one.

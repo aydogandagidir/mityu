@@ -26,7 +26,8 @@ use app_lib::learning::rule::{
     applicable_rules, AppliedRule, RuleKind, RuleOrigin, RuleScope, RuleStatus,
 };
 use app_lib::summary::draft::{
-    BlockStatus, BlockType, DraftBlock, DraftSection, MeetingNotesDraft, SummaryStatus,
+    BlockProvenance, BlockStatus, BlockType, DraftBlock, DraftSection, MeetingNotesDraft,
+    SummaryStatus,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -321,6 +322,7 @@ async fn the_b2_snapshot_survives_the_real_rule_being_rewritten_and_deleted() {
         audio_start_time: Some(0.0),
         audio_end_time: Some(1.0),
         duration: Some(1.0),
+        sequence_id: None,
     }];
     let meeting =
         TranscriptsRepository::create_meeting_with_segments(&pool, &ctx, "Saha", &segments, None)
@@ -360,6 +362,7 @@ async fn the_b2_snapshot_survives_the_real_rule_being_rewritten_and_deleted() {
                     source_chunk_id: "c-1".to_string(),
                     status: BlockStatus::Draft,
                     original_content: None,
+                    provenance: BlockProvenance::Generated,
                 }],
             }],
         },

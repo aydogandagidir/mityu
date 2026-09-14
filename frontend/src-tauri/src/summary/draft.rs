@@ -78,6 +78,31 @@ pub enum SummaryStatus {
     Approved,
 }
 
+/// Who put a block in the summary (`docs/CONTRACTS.md` §4, ADR-0046).
+///
+/// Defaults to [`BlockProvenance::Generated`], which is also what every
+/// `sections` blob written before ADR-0046 deserializes to — the field is
+/// additive and needs no migration or backfill.
+///
+/// It is not decoration. It decides whether regeneration may replace the
+/// block: [`crate::database::repositories::summary_draft::SummariesRepository::upsert_draft`]
+/// replaces `Generated` blocks wholesale and CARRIES `Pinned` ones across. That
+/// is the whole reason "Pin to notes" can exist (ADR-0041 blocker 3: the
+/// ordinary post-meeting summary erased pinned blocks, certainly rather than
+/// occasionally). It is also what lets the editor label a pinned block, so a
+/// human reading their notes later can tell what a model wrote from what they
+/// themselves kept mid-conversation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockProvenance {
+    /// A model wrote it. Replaced on every regenerate.
+    #[default]
+    Generated,
+    /// A human kept a live copilot answer during the meeting (BACKLOG I3c).
+    /// Survives regeneration.
+    Pinned,
+}
+
 /// One summary block, always anchored to transcript evidence
 /// (`docs/CONTRACTS.md` §4 `Block`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,6 +128,11 @@ pub struct DraftBlock {
     /// actually produced. Absent from the JSON while `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_content: Option<String>,
+    /// Who put this block here (ADR-0046). Omitted on the wire deserializes to
+    /// [`BlockProvenance::Generated`], so every row stored before the field
+    /// existed reads correctly.
+    #[serde(default)]
+    pub provenance: BlockProvenance,
 }
 
 /// A titled group of blocks (`docs/CONTRACTS.md` §4 `Section`).
@@ -169,6 +199,7 @@ mod tests {
             source_chunk_id: chunk.to_string(),
             status: BlockStatus::Draft,
             original_content: None,
+            provenance: BlockProvenance::Generated,
         };
         let draft = MeetingNotesDraft {
             meeting_id: "m1".to_string(),
@@ -294,6 +325,7 @@ mod tests {
             source_chunk_id: "c1".to_string(),
             status: BlockStatus::Draft,
             original_content: None,
+            provenance: BlockProvenance::Generated,
         };
         let text = serde_json::to_string(&block).expect("serialize");
         assert!(

@@ -364,6 +364,24 @@ export function useRecordingStop(
           console.log('Successfully saved the complete meeting');
           console.log('   Transcripts:', freshTranscripts.length);
 
+          // Notes pinned during the meeting (BACKLOG I3c). Told, not swallowed:
+          // the user pressed Pin believing the note would be kept, so a pin
+          // that could not be written is theirs to know about. Counts only —
+          // the claim text is conversation content and never goes in a toast.
+          const pins = responseData.pins;
+          if (pins && pins.unresolved + pins.failed > 0) {
+            const lost = pins.unresolved + pins.failed;
+            toast.warning(
+              `${lost} pinned ${lost === 1 ? 'note was' : 'notes were'} not saved`,
+              {
+                description:
+                  pins.written > 0
+                    ? `${pins.written} made it into the summary draft. The rest could not be tied to a saved transcript segment.`
+                    : 'They could not be tied to a saved transcript segment, so they were not written rather than cited the wrong moment.',
+              },
+            );
+          }
+
           // Mark meeting as saved in IndexedDB (for recovery system)
           await markMeetingAsSaved();
 

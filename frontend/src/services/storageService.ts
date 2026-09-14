@@ -6,6 +6,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import type { PinFlushReport } from '@/types/copilot';
 import { Transcript } from '@/types';
 
 export interface SaveMeetingRequest {
@@ -17,6 +18,14 @@ export interface SaveMeetingRequest {
 
 export interface SaveMeetingResponse {
   meeting_id: string;
+  /**
+   * What the save did with the notes pinned during the meeting (BACKLOG I3c).
+   *
+   * Optional because the idempotent-retry path returns before the flush: a
+   * replayed save already wrote its pins, so there is nothing to report the
+   * second time.
+   */
+  pins?: PinFlushReport;
 }
 
 export interface PendingRecordingPostProcessing {

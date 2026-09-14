@@ -27,7 +27,8 @@ use app_lib::learning::rule::{
     applicable_rules, AppliedRule, LearnedRule, RuleKind, RuleOrigin, RuleScope, RuleStatus,
 };
 use app_lib::summary::draft::{
-    BlockStatus, BlockType, DraftBlock, DraftSection, MeetingNotesDraft, SummaryStatus,
+    BlockProvenance, BlockStatus, BlockType, DraftBlock, DraftSection, MeetingNotesDraft,
+    SummaryStatus,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -53,6 +54,7 @@ async fn seed_meeting(pool: &SqlitePool, ctx: &AuthContext) -> String {
         audio_start_time: Some(0.0),
         audio_end_time: Some(1.0),
         duration: Some(1.0),
+        sequence_id: None,
     }];
     TranscriptsRepository::create_meeting_with_segments(pool, ctx, "Saha", &segments, None)
         .await
@@ -72,6 +74,7 @@ fn notes(meeting_id: &str, content: &str) -> MeetingNotesDraft {
                 source_chunk_id: "c-1".to_string(),
                 status: BlockStatus::Draft,
                 original_content: None,
+                provenance: BlockProvenance::Generated,
             }],
         }],
     }

@@ -67,8 +67,10 @@
 pub mod commands;
 pub mod config;
 pub mod cue;
+pub mod flush;
 pub mod insight;
 pub mod keybind;
+pub mod pin;
 pub mod policy;
 pub mod session;
 pub mod shortcuts;

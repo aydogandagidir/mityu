@@ -222,6 +222,19 @@ pub fn passage_id(sequence_id: u64) -> String {
     format!("t{sequence_id}")
 }
 
+/// The inverse of [`passage_id`]: recover the `sequence_id` a citation names.
+///
+/// Needed by the pin path (BACKLOG I3c), where a claim comes back from the
+/// renderer carrying the id it was shown with and has to be matched to a saved
+/// transcript row. Strict on purpose: anything that is not exactly `t` followed
+/// by digits is `None`, so a renderer-supplied string can never be coerced into
+/// citing a segment it does not name.
+pub fn sequence_from_passage_id(id: &str) -> Option<u64> {
+    id.strip_prefix('t')
+        .filter(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|rest| rest.parse().ok())
+}
+
 /// `mm:ss` from seconds-since-recording-start, matching what the transcript
 /// view shows. Negative or non-finite input clamps to zero rather than
 /// panicking on the cast.
@@ -593,6 +606,16 @@ mod tests {
     #[test]
     fn a_passage_id_comes_from_the_sequence_id_and_nothing_else() {
         assert_eq!(passage_id(7), "t7");
+        // The inverse, and the strictness that keeps a renderer string from
+        // being coerced into a citation (I3c).
+        assert_eq!(sequence_from_passage_id("t7"), Some(7));
+        assert_eq!(
+            sequence_from_passage_id(&passage_id(4_294_967_296)),
+            Some(4_294_967_296)
+        );
+        for bad in ["t", "", "7", "tt7", "t7a", "t-1", "t 7", "T7", "t7.0", "t٧"] {
+            assert_eq!(sequence_from_passage_id(bad), None, "{bad} must not parse");
+        }
         let plain = window_passages(
             context_with(&["call me on 0532 111 22 33"]).window(),
             &RedactionConfig::default(),

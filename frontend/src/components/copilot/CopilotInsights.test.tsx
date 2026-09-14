@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import {
   AiMarking,
+  claimPinId,
   CopilotInsights,
   DISCLOSURE_KEY,
   type InsightState,
@@ -331,5 +332,161 @@ describe('the action buttons', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Pin to notes (BACKLOG **I3c**, ADR-0046).
+ *
+ * The claims here are about honesty and about identity, which are the two
+ * things this control can get wrong in ways no crash would reveal:
+ *
+ * - **A pin is not saved yet, and the panel must not imply it is.** The meeting
+ *   does not exist in the database until the user saves it — the reason I3c was
+ *   deferred out of I3b (ADR-0041). A card that says "Pinned" and nothing else
+ *   makes the same false promise the deferred implementation would have.
+ * - **The pin id is derived from the claim, not from its position.** Keyed by
+ *   index, a re-ordered or re-polled list would pin the wrong claim, and the
+ *   backend's pinned set would disagree with the buttons.
+ */
+describe('pin to notes', () => {
+  const pinnedState: InsightState = { phase: 'done', outcome: answered };
+
+  it('offers a pin control on an answered claim', () => {
+    render(
+      <CopilotInsights
+        state={pinnedState}
+        actions={ALL_ACTIONS}
+        onRequest={() => {}}
+        onCancel={() => {}}
+        onPin={() => {}}
+        onUnpin={() => {}}
+      />,
+    );
+    const button = screen.getByRole('button', {
+      name: 'Pin to notes: The deadline moved to the 14th.',
+    });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('passes the claim and the outcome action to the handler', () => {
+    const onPin = vi.fn();
+    render(
+      <CopilotInsights
+        state={pinnedState}
+        actions={ALL_ACTIONS}
+        onRequest={() => {}}
+        onCancel={() => {}}
+        onPin={onPin}
+        onUnpin={() => {}}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Pin to notes: The deadline moved to the 14th.' }),
+    );
+    expect(onPin).toHaveBeenCalledTimes(1);
+    const [claim, action] = onPin.mock.calls[0];
+    expect(claim.sourceChunkId).toBe('t7');
+    expect(claim.text).toBe('The deadline moved to the 14th.');
+    // The action comes from the outcome, not from whatever button was last
+    // pressed: the block's label says which kind of answer was kept.
+    expect(action).toBe('recap');
+  });
+
+  it('renders a claim the backend says is pinned as pinned, and unpins by id', () => {
+    const onUnpin = vi.fn();
+    render(
+      <CopilotInsights
+        state={pinnedState}
+        actions={ALL_ACTIONS}
+        onRequest={() => {}}
+        onCancel={() => {}}
+        pinnedIds={[claimPinId(answered.status === 'answered' ? answered.claims[0] : ({} as never))]}
+        onPin={() => {}}
+        onUnpin={onUnpin}
+      />,
+    );
+    const button = screen.getByRole('button', {
+      name: 'Unpin: The deadline moved to the 14th.',
+    });
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(button);
+    expect(onUnpin).toHaveBeenCalledWith('t7::The deadline moved to the 14th.');
+  });
+
+  /**
+   * The honesty test. Saying "Pinned" while the note exists only in memory is
+   * the UI version of the bug ADR-0041 refused to ship.
+   */
+  it('says a pin is written when the meeting is saved, rather than implying it already is', () => {
+    render(
+      <CopilotInsights
+        state={pinnedState}
+        actions={ALL_ACTIONS}
+        onRequest={() => {}}
+        onCancel={() => {}}
+        pendingPins={2}
+        onPin={() => {}}
+        onUnpin={() => {}}
+      />,
+    );
+    const note = screen.getByText(/written into the meeting/i);
+    expect(note.textContent).toMatch(/2 notes pinned/i);
+    expect(note.textContent).toMatch(/when you save it/i);
+    expect(note.textContent).toMatch(/draft you review/i);
+  });
+
+  it('says nothing about pins when there are none', () => {
+    render(
+      <CopilotInsights
+        state={pinnedState}
+        actions={ALL_ACTIONS}
+        onRequest={() => {}}
+        onCancel={() => {}}
+        pendingPins={0}
+        onPin={() => {}}
+        onUnpin={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/written into the meeting/i)).toBeNull();
+  });
+
+  it('renders a refused pin as its own sentence', () => {
+    render(
+      <CopilotInsights
+        state={pinnedState}
+        actions={ALL_ACTIONS}
+        onRequest={() => {}}
+        onCancel={() => {}}
+        onPin={() => {}}
+        onUnpin={() => {}}
+        pinError="This answer has no transcript citation, so it cannot be kept."
+      />,
+    );
+    expect(screen.getByText(/no transcript citation/i)).toBeTruthy();
+  });
+
+  /**
+   * Identity, not position. Two claims differing only in citation must get
+   * different ids, and the same claim must get the same id every time.
+   */
+  it('derives a pin id from the claim, not from its index', () => {
+    const a = { text: 'Same words.', sourceChunkId: 't1', timestamp: '00:01', audioStartTime: 1 };
+    const b = { text: 'Same words.', sourceChunkId: 't2', timestamp: '00:09', audioStartTime: 9 };
+    expect(claimPinId(a)).toBe(claimPinId({ ...a }));
+    expect(claimPinId(a)).not.toBe(claimPinId(b));
+  });
+
+  /** A card with no pin handler shows no pin control — the design fixture. */
+  it('shows no pin control when pinning is not wired', () => {
+    render(
+      <CopilotInsights
+        state={pinnedState}
+        actions={ALL_ACTIONS}
+        onRequest={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/written into the meeting/i)).toBeNull();
   });
 });

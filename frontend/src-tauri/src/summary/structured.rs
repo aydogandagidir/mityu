@@ -51,8 +51,8 @@
 
 use crate::learning::rule::{LearnedRule, RuleScope};
 use crate::summary::draft::{
-    ActionItemDraft, BlockStatus, BlockType, DraftBlock, DraftSection, MeetingNotesDraft,
-    SummaryStatus,
+    ActionItemDraft, BlockProvenance, BlockStatus, BlockType, DraftBlock, DraftSection,
+    MeetingNotesDraft, SummaryStatus,
 };
 use crate::summary::llm_client::{generate_summary_with_response_format, LLMProvider};
 use crate::summary::processor::{clean_llm_fenced_output, rough_token_count};
@@ -685,6 +685,7 @@ fn new_draft_block(block_type: BlockType, content: String, source_chunk_id: Stri
         source_chunk_id,
         status: BlockStatus::Draft, // generation NEVER mints approval (HITL)
         original_content: None,
+        provenance: BlockProvenance::Generated,
     }
 }
 

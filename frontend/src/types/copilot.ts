@@ -128,6 +128,15 @@ export interface CopilotStatus {
   activeModeId: string;
   /** Its display name — the chip shows this rather than the id. */
   activeModeName: string;
+  /**
+   * The claim ids pinned in this session (I3c).
+   *
+   * The panel renders pinned state from this rather than from its own memory
+   * of what it clicked, so reopening the panel or a re-poll shows the truth.
+   */
+  pinnedClaimIds: string[];
+  /** How many pins are waiting for the meeting to be saved. */
+  pendingPins: number;
 }
 
 /* --- Live insights (BACKLOG I3a/I3b, ADR-0038/0040) ----------------------- */
@@ -194,6 +203,59 @@ export type LiveInsightOutcome =
       turnsConsidered: number;
       turnsOmitted: number;
     };
+
+/* --- Pin to notes (BACKLOG I3c, ADR-0046) --------------------------------- */
+
+/**
+ * One claim the user pressed Pin on, as the panel had it.
+ *
+ * The panel sends back what it displayed rather than an index into a
+ * backend list, because there is no backend list: an insight is never
+ * persisted, so nothing on the Rust side remembers the card.
+ *
+ * `id` is assigned by the panel and must be stable for the life of the card,
+ * so pinning twice is idempotent rather than producing two blocks.
+ */
+export interface PinnedClaimInput {
+  id: string;
+  text: string;
+  sourceChunkIds: string[];
+  timestamp: string;
+}
+
+/** Why a pin was refused. Mirrors `copilot::pin::PinRefusal` via `PinFailure`. */
+export type PinFailureKind = 'full' | 'noEvidence' | 'foreignWorkspace';
+
+export interface PinFailure {
+  kind: PinFailureKind;
+  message: string;
+}
+
+/** Narrowing guard, for the same reason `isInsightFailure` exists. */
+export function isPinFailure(value: unknown): value is PinFailure {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<PinFailure>;
+  return typeof candidate.kind === 'string' && typeof candidate.message === 'string';
+}
+
+/** What is pinned right now. Mirrors `copilot::commands::PinState`. */
+export interface PinState {
+  pendingPins: number;
+  pinnedClaimIds: string[];
+}
+
+/**
+ * What the save did with the pins it found. Mirrors `copilot::flush::FlushReport`.
+ *
+ * Counts only, and reported rather than hidden: a pin that could not be
+ * written is something the user needs to hear about, because they believed
+ * they had kept it.
+ */
+export interface PinFlushReport {
+  written: number;
+  unresolved: number;
+  failed: number;
+}
 
 /**
  * Why an insight could not be produced. Mirrors `copilot::commands::InsightFailure`.
