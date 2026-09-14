@@ -57,6 +57,7 @@
 pub mod commands;
 pub mod config;
 pub mod cue;
+pub mod insight;
 pub mod keybind;
 pub mod policy;
 pub mod session;

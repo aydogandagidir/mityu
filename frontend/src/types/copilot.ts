@@ -59,6 +59,22 @@ export interface CopilotConfig {
    * including switching the copilot off.
    */
   liveWindowSecs: number;
+  /**
+   * May a live insight leave the device (I3a)?
+   *
+   * **Off by default, and deliberately separate from `enabled`.** A live
+   * insight fires from a global hotkey mid-sentence, so sending the last
+   * minutes of a conversation to a third-party provider must not follow from a
+   * keypress the user set up for something else. With this off the backend
+   * refuses any provider it cannot show runs locally and the built-in model
+   * answers instead (`docs/DECISIONS.md` ADR-0040).
+   *
+   * No UI exposes it yet — I3b adds that — but it must survive a round-trip:
+   * the backend defaults a missing field to `false`, so dropping it here would
+   * silently switch the setting off whenever any other copilot setting is
+   * saved.
+   */
+  allowCloudInsights: boolean;
 }
 
 /**

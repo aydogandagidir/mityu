@@ -269,6 +269,23 @@ impl AssembledProvider {
         system_prompt: &str,
         user_prompt: &str,
     ) -> Result<String, String> {
+        self.call_cancellable(app_data_dir, system_prompt, user_prompt, None)
+            .await
+    }
+
+    /// [`Self::call`] with a cancellation token threaded through.
+    ///
+    /// The live copilot (`copilot::insight`) answers into a pause in a running
+    /// conversation, so an abandoned request must actually stop rather than
+    /// finish into nothing. Every provider already honours the token; `call`
+    /// simply never had one to pass.
+    pub(crate) async fn call_cancellable(
+        &self,
+        app_data_dir: Option<&PathBuf>,
+        system_prompt: &str,
+        user_prompt: &str,
+        cancellation_token: Option<&CancellationToken>,
+    ) -> Result<String, String> {
         let client = reqwest::Client::new();
         let params = ProviderParams {
             client: &client,
@@ -281,7 +298,7 @@ impl AssembledProvider {
             temperature: self.temperature,
             top_p: self.top_p,
             app_data_dir,
-            cancellation_token: None,
+            cancellation_token,
         };
         params.call(system_prompt, user_prompt, None).await
     }

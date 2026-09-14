@@ -91,7 +91,7 @@ pub struct EvidenceSearchResult {
 /// `timestamp` and `audio_start_time` travel with the passage so a claim's
 /// timing is taken from the retrieved evidence and can never be invented by a
 /// model — the model only ever returns text and a `source_chunk_id`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MeetingEvidencePassage {
     #[serde(rename = "sourceChunkId")]
     pub source_chunk_id: String,

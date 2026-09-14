@@ -114,9 +114,9 @@ fn user_prompt(question: &str, passages: &[MeetingEvidencePassage]) -> String {
 /// claims, but only the second is saying "the passages do not answer this".
 /// Collapsing them would make a format failure look like a statement about the
 /// meeting.
-struct ParsedClaims {
-    claims: Vec<RawClaim>,
-    raw_count: usize,
+pub(crate) struct ParsedClaims {
+    pub(crate) claims: Vec<RawClaim>,
+    pub(crate) raw_count: usize,
 }
 
 /// Parse the model's reply into raw claims.
@@ -124,7 +124,7 @@ struct ParsedClaims {
 /// Tolerant about wrapping prose (small models like to add a sentence) but not
 /// about content: anything that is not a well-formed claim object is skipped
 /// rather than guessed at.
-fn parse_claims(raw: &str) -> Result<ParsedClaims, AskError> {
+pub(crate) fn parse_claims(raw: &str) -> Result<ParsedClaims, AskError> {
     let object = extract_first_balanced_object(raw).ok_or(AskError::Unparsable)?;
     let value: serde_json::Value =
         serde_json::from_str(object).map_err(|_| AskError::Unparsable)?;

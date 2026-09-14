@@ -49,6 +49,7 @@ const WINDOWS_RECORDING: CopilotStatus = {
       captureScreen: 'CommandOrControl+Shift+S',
     },
     liveWindowSecs: 180,
+    allowCloudInsights: false,
   },
   protection: {
     level: 'enforced',
