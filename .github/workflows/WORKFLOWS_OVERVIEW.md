@@ -13,6 +13,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 - `rust` job: `cargo fmt --all --check`, `cargo clippy --all-targets`, `cargo test --all`
 - `frontend` job: exact Node 20.19.4 + pnpm 10.33.0, `pnpm install --frozen-lockfile`, `pnpm run lint`, `pnpm tsc --noEmit`, `pnpm test`
 - `server-isolation` job: fails the build if `server/` exists without a `*cross_tenant*` isolation test (no-op guard until `server/` ships, see CLAUDE.md §5)
+- `workflow-pins` job: `tools/ci/check-action-pins.py --self-test` then the real check — every `uses:` in `.github/` must be pinned to a commit sha and run on Node 24 (composite/docker allowed); composites are opened and their nested `uses:` held to the same rules; `# vX.Y.Z` labels must match a real tag. One documented exception lives in `tools/ci/action-pins-allowlist.json`. Added after the v1.2.0 release run still warned about Node 20 (ADR-0044).
 - No build artifacts, no signing, no releases
 
 **Triggers:**
