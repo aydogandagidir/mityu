@@ -1,0 +1,105 @@
+# Vendored from humbletim/install-vulkan-sdk v1.2 (30ba978f977e81b72d091fc8888feb1fb26f9aff),
+# MIT — see ./LICENSE. Copied verbatim except for the ONE change below.
+#
+# WHY THIS IS VENDORED RATHER THAN USED FROM THE MARKETPLACE
+# ----------------------------------------------------------
+# The upstream composite nests `uses: actions/cache@v4`. Two things are wrong with
+# that for a release pipeline that pins every action to an immutable sha:
+#   1. `@v4` is a floating tag we do not control — a supply-chain gap inside an
+#      action we DID pin, invisible from our own workflow file.
+#   2. actions/cache v4 targets Node 20, which GitHub runners are forcing onto
+#      Node 24 today and will refuse tomorrow. Every Release run printed that
+#      warning (see the v1.2.0 run) even though the nested step never executed,
+#      because the warning is emitted when the composite is expanded.
+# v1.2 is upstream's latest tag, so there is nothing to bump to. Vendoring is the
+# only way to pin the nested cache and get off Node 20. `tools/ci/check-action-pins.py`
+# fails CI if a nested floating tag like this ever comes back.
+name: 'Install Vulkan SDK'
+description: 'Automatically downloads and installs prebuilt Vulkan SDK releases.'
+branding:
+  icon: 'play'
+  color: 'red'
+inputs:
+  version:
+    description: 'official Vulkan SDK release version to use'
+    default: 'latest'
+    required: true
+  cache:
+    description: 'whether to cache the downloaded vulkan_sdk.* installer file (using github actions/cache)'
+    default: false
+    required: false
+  quiet:
+    description: 'silence GitHub Annotation notice displayed if resolving `latest` into Vulkan SDK release number'
+    default: false
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Preset environment variables
+      shell: bash
+      run: |
+        # preset env
+        basedir=$PWD
+        runner_os=${RUNNER_OS:-`uname -s`}
+        case $runner_os in
+          macOS|Darwin) os=mac ;;
+          Linux) os=linux ;;
+          Windows|MINGW*) os=windows ; basedir=$(pwd -W) ;;
+          *) echo "unknown runner_os: $runner_os" ; exit 7 ; ;;
+        esac
+        version=${VULKAN_SDK_VERSION:-${{ inputs.version }}}
+        sdk_dir=${VULKAN_SDK:-$basedir/VULKAN_SDK}
+        test -d $sdk_dir || mkdir -pv $sdk_dir
+        if [[ $version == 'latest' ]] ; then
+          url=https://vulkan.lunarg.com/sdk/latest/$os.txt
+          echo "note: resolving '$version' for '$os' via webservices lookup: $url" >&2
+          version=$(curl -sL $url)
+          test -n "$version" || { echo "could not resolve latest version" ; exit 9 ; }
+          [[ "${{ inputs.quiet }}" == "true" ]] || echo "::notice title=Using Vulkan SDK $version::resolved via '$url'"
+        fi
+        (
+          echo VULKAN_SDK=$sdk_dir
+          echo VULKAN_SDK_VERSION=$version
+          echo VULKAN_SDK_PLATFORM=$os
+        ) | tee -a $GITHUB_ENV
+
+    - name: Check Vulkan SDK installer cache
+      id: vulkan-cached-sdk
+      if: inputs.cache != 'false'
+      # THE ONE CHANGE: upstream has `actions/cache@v4` (floating, Node 20).
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: vulkan_sdk.*
+        key: ${{ runner.os }}-vulkan-prebuilt-sdk-${{ inputs.cache }}-${{ env.VULKAN_SDK_VERSION }}
+
+    - name: Download Vulkan SDK
+      shell: bash
+      run: |
+        # download
+        . $GITHUB_ACTION_PATH/vulkan_prebuilt_helpers.sh
+        download_vulkan_installer ${VULKAN_SDK_PLATFORM}
+
+    - name: Install Vulkan SDK
+      shell: bash
+      run: |
+        # install
+        . $GITHUB_ACTION_PATH/vulkan_prebuilt_helpers.sh
+        unpack_vulkan_installer ${VULKAN_SDK_PLATFORM}
+
+    - name: Cleanup Vulkan SDK download file
+      if: inputs.cache == 'false'
+      shell: bash
+      run: |
+        # cleanup
+        rm -v vulkan_sdk.* || true
+
+    - name: Verify Vulkan SDK binary
+      shell: bash
+      run: |
+        $VULKAN_SDK/bin/glslangValidator --version
+
+    - name: Export bin/ PATH to environment
+      shell: bash
+      run: |
+        echo ${VULKAN_SDK}/bin | tee -a $GITHUB_PATH
+        du -hs ${VULKAN_SDK}

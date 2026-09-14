@@ -76,6 +76,23 @@ jobs:
       - run: pnpm test
       - name: test privacy-minimised landing form
         run: npm --prefix ../landing test
+  workflow-pins:
+    # Every action must be pinned to a commit sha AND run on a live Node runtime.
+    # This exists because the v1.2.0 Release run still warned about Node 20 after
+    # #40 had "fixed" it — build.yml was deferred, and one offender was a floating
+    # `actions/cache@v4` nested INSIDE a third-party composite, invisible to any
+    # grep over our own files. The script opens composites and checks what they
+    # pull in. `--self-test` runs first: a detector nobody has seen fail is
+    # indistinguishable from one that cannot.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: action pins are shas on node24 (and so are the actions they nest)
+        run: |
+          python3 tools/ci/check-action-pins.py --self-test
+          python3 tools/ci/check-action-pins.py
   server-isolation:
     # Enable once server/ exists (Phase 2). Fails the build if the cross-tenant test is missing.
     # hashFiles() is steps-context only (evaluated on the runner): a job-level `if` using it

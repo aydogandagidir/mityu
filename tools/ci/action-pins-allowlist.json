@@ -1,0 +1,3 @@
+{
+  "digicert/ssm-code-signing@fb61e357690ad6aaa11c372000c37fb74d35c000": "Runs on node20 and DigiCert has shipped no node24 release (newest tag v1.2.1 at 1d820463 is also node20, checked 2026-09-14). Every step that uses it is gated behind Authenticode secrets that are not configured — Windows code signing is deferred by owner decision (ADR-0029) — so it never executes. Re-check on each release; remove this entry the moment a node24 tag exists."
+}
