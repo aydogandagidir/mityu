@@ -272,6 +272,7 @@ export function CopilotPanel({
         <CopilotInsights
           state={insight}
           actions={status?.liveActions ?? []}
+          modeName={status?.activeModeName}
           disabled={!recording}
           onRequest={onRequestInsight}
           onCancel={onCancelInsight ?? (() => {})}

@@ -124,6 +124,10 @@ export interface CopilotStatus {
    * and no more — which actions exist is the mode's decision, made in Rust.
    */
   liveActions: LiveAction[];
+  /** The active mode's id, for the panel chip and the Settings selection. */
+  activeModeId: string;
+  /** Its display name — the chip shows this rather than the id. */
+  activeModeName: string;
 }
 
 /* --- Live insights (BACKLOG I3a/I3b, ADR-0038/0040) ----------------------- */

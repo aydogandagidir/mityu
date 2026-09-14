@@ -29,7 +29,7 @@
  * for. `noContext`, `refused` and each failure `kind` get their own sentence.
  */
 
-import { AlertTriangle, Loader2, Quote, ShieldOff, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, Loader2, Quote, ShieldOff, Sparkles, SquarePen, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type {
   InsightFailure,
@@ -208,6 +208,15 @@ export interface CopilotInsightsProps {
   state: InsightState;
   /** The actions the active mode allows. Empty renders no buttons at all. */
   actions: LiveAction[];
+  /**
+   * The active mode's name, shown as a chip (I4b).
+   *
+   * Worth the pixels because the mode is the largest single influence on what
+   * comes back — the same conversation answered as a "Client call" and as a
+   * "Recruiting interview" gets different actions and a different voice. A user
+   * who cannot see which is active cannot explain the answer they got.
+   */
+  modeName?: string;
   /** No recording means no window to answer from. */
   disabled?: boolean;
   onRequest: (action: LiveAction) => void;
@@ -217,6 +226,7 @@ export interface CopilotInsightsProps {
 export function CopilotInsights({
   state,
   actions,
+  modeName,
   disabled = false,
   onRequest,
   onCancel,
@@ -227,6 +237,13 @@ export function CopilotInsights({
   return (
     <section aria-label="Copilot insights" className="shrink-0 border-t border-border">
       <AiDisclosure />
+
+      {modeName && (
+        <p className="flex items-center gap-1 px-3 pt-2 text-[10px] text-muted-foreground">
+          <SquarePen className="h-2.5 w-2.5 shrink-0" aria-hidden />
+          Answering as <span className="font-medium text-foreground">{modeName}</span>
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-1 px-3 pb-1 pt-2">
         {ordered.map((action) => (

@@ -26,7 +26,8 @@ use super::insight::{self, InsightError, LiveInsightOutcome};
 use super::policy::ProtectionVerdict;
 use super::session::LiveContextStatus;
 use super::{keybind, session, shortcuts, store, window};
-use crate::modes::{default_mode, LiveAction};
+use crate::modes::commands::active_mode;
+use crate::modes::LiveAction;
 use crate::state::AppState;
 use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -176,11 +177,15 @@ pub struct CopilotStatus {
     /// The actions the active mode offers (I3b).
     ///
     /// Sent so the panel renders only what the mode allows, rather than showing
-    /// four buttons and letting Rust reject one of them after the click. Until
-    /// I4b lets the user pick a mode this is always the default mode's set —
-    /// the resolution is one line here, and the panel does not change when it
-    /// starts varying.
+    /// four buttons and letting Rust reject one of them after the click. Since
+    /// I4b this is the **active** mode's set, so choosing a mode in Settings
+    /// changes the panel's buttons on the next status poll.
     pub live_actions: Vec<LiveAction>,
+    /// The active mode's id and name, for the panel's chip (I4b). The panel
+    /// shows which mode is answering rather than leaving the user to infer it
+    /// from which buttons happen to be there.
+    pub active_mode_id: String,
+    pub active_mode_name: String,
 }
 
 /// Read the copilot's state. Local-only and cheap enough to poll.
@@ -255,6 +260,7 @@ pub async fn copilot_focus_main_window<R: Runtime>(app: AppHandle<R>) {
 }
 
 async fn build_status<R: Runtime>(app: &AppHandle<R>, config: CopilotConfig) -> CopilotStatus {
+    let mode = active_mode(app);
     let protection = super::policy::current_verdict();
     let recording = crate::audio::recording_commands::is_recording().await;
     // Second bound on how long a finished meeting stays in memory, independent
@@ -279,7 +285,9 @@ async fn build_status<R: Runtime>(app: &AppHandle<R>, config: CopilotConfig) -> 
         protection,
         shortcuts,
         live_context: session::status(),
-        live_actions: default_mode().live.allowed_actions,
+        live_actions: mode.live.allowed_actions,
+        active_mode_id: mode.id,
+        active_mode_name: mode.name,
         config,
     }
 }
@@ -587,7 +595,10 @@ pub async fn copilot_request_insight<R: Runtime>(
     let config = store::load_config(&app);
     let pool = state.db_manager.pool();
     let ctx = crate::context::current();
-    let mode = default_mode();
+    // The ACTIVE mode, so what the user chose in Settings is what the prompt is
+    // built from. `resolve_active` is total: a stale id falls back to the
+    // default rather than failing a request the user just made.
+    let mode = active_mode(&app);
 
     let redaction =
         crate::database::repositories::setting::SettingsRepository::get_redaction_config(
