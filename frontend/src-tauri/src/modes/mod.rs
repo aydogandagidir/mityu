@@ -25,7 +25,10 @@
 //! - [`validator`] — the **pure** check a custom mode passes before install:
 //!   size cap, id and name collision, and ADR-0038's rejected category.
 
+pub mod commands;
 pub mod defaults;
+pub mod registry;
+pub mod store;
 pub mod types;
 pub mod validator;
 

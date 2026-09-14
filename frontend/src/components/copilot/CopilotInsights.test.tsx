@@ -254,6 +254,31 @@ describe('answers', () => {
   });
 });
 
+describe('the mode chip', () => {
+  /**
+   * The mode is the largest single influence on what comes back, so a user who
+   * cannot see which one is active cannot explain the answer they got.
+   */
+  it('names the mode that is answering', () => {
+    render(
+      <CopilotInsights
+        state={{ phase: 'idle' }}
+        actions={ALL_ACTIONS}
+        modeName="Client call"
+        onRequest={() => {}}
+        onCancel={() => {}}
+      />
+    );
+    expect(screen.getByText('Client call')).toBeTruthy();
+  });
+
+  /** Nothing is invented when the backend has not said yet. */
+  it('shows no chip before the status has loaded', () => {
+    const { container } = renderRegion({ phase: 'idle' });
+    expect(container.textContent).not.toMatch(/answering as/i);
+  });
+});
+
 describe('the action buttons', () => {
   /** Which actions exist is the mode's decision, made in Rust. */
   it('renders only the actions it is handed', () => {

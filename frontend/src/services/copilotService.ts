@@ -53,6 +53,8 @@ const BROWSER_STUB: CopilotStatus = {
     evicted: 0,
   },
   liveActions: [],
+  activeModeId: 'general',
+  activeModeName: 'General',
 };
 
 export class CopilotService {

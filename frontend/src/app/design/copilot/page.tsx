@@ -74,6 +74,8 @@ const WINDOWS_RECORDING: CopilotStatus = {
     evicted: 0,
   },
   liveActions: ['suggest', 'followUpQuestions', 'recap', 'define'],
+  activeModeId: 'client_call',
+  activeModeName: 'Client call',
 };
 
 const MACOS_RECORDING: CopilotStatus = {

@@ -730,6 +730,14 @@ pub fn run() {
             copilot::commands::copilot_focus_main_window,
             copilot::commands::copilot_request_insight,
             copilot::commands::copilot_cancel_insight,
+            // Meeting modes (BACKLOG I4a/I4b): the installed set, and which one
+            // the copilot answers with.
+            modes::commands::modes_list,
+            modes::commands::modes_set_active,
+            modes::commands::modes_preview,
+            modes::commands::modes_install,
+            modes::commands::modes_update,
+            modes::commands::modes_remove,
             diarization::commands::api_diarization_availability,
             diarization::commands::api_diarization_download_models,
             diarization::commands::api_diarize_meeting,
