@@ -165,6 +165,7 @@ fn segment(id: &str, text: &str, start: f64, end: f64) -> TranscriptSegment {
         audio_start_time: Some(start),
         audio_end_time: Some(end),
         duration: Some(end - start),
+        sequence_id: None,
     }
 }
 
@@ -233,7 +234,8 @@ async fn inserts_fill_workspace_timestamps_rev_and_updated_by() {
         Some("C:/recordings/kickoff".to_string()),
     )
     .await
-    .expect("save_transcript");
+    .expect("save_transcript")
+    .meeting_id;
 
     // meetings: full synced-column stamp.
     let (ws, rev, updated_by, created_at, updated_at) =
@@ -320,7 +322,8 @@ async fn reads_are_workspace_scoped_in_both_directions() {
         None,
     )
     .await
-    .expect("local save_transcript");
+    .expect("local save_transcript")
+    .meeting_id;
 
     let other_meeting = TranscriptsRepository::save_transcript(
         &pool,
@@ -330,7 +333,8 @@ async fn reads_are_workspace_scoped_in_both_directions() {
         None,
     )
     .await
-    .expect("other save_transcript");
+    .expect("other save_transcript")
+    .meeting_id;
 
     // Listing: each workspace sees exactly its own meeting.
     let local_list = MeetingsRepository::get_meetings(&pool, &local)
@@ -443,7 +447,8 @@ async fn updates_are_workspace_scoped_and_bump_rev() {
         None,
     )
     .await
-    .expect("save_transcript");
+    .expect("save_transcript")
+    .meeting_id;
     SummaryProcessesRepository::create_or_reset_process(&pool, &local, &meeting_id)
         .await
         .expect("summary process");
@@ -602,7 +607,8 @@ async fn child_first_inserts_require_parent_ownership_atomically() {
         None,
     )
     .await
-    .expect("create local parent meeting");
+    .expect("create local parent meeting")
+    .meeting_id;
 
     let summary_error =
         SummaryProcessesRepository::create_or_reset_process(&pool, &other, &meeting_id)
@@ -686,7 +692,8 @@ async fn deletes_are_workspace_scoped() {
         None,
     )
     .await
-    .expect("save_transcript");
+    .expect("save_transcript")
+    .meeting_id;
     SummaryProcessesRepository::create_or_reset_process(&pool, &local, &meeting_id)
         .await
         .expect("summary process");
@@ -1178,7 +1185,8 @@ async fn search_covers_transcripts_and_summaries_scoped_by_workspace() {
         None,
     )
     .await
-    .expect("local save_transcript");
+    .expect("local save_transcript")
+    .meeting_id;
 
     SummaryProcessesRepository::create_or_reset_process(&pool, &local, &meeting_id)
         .await
@@ -1290,7 +1298,8 @@ async fn evidence_search_is_ranked_source_linked_unicode_safe_and_tenant_scoped(
         None,
     )
     .await
-    .expect("seed strongest local meeting");
+    .expect("seed strongest local meeting")
+    .meeting_id;
 
     let second_meeting = TranscriptsRepository::save_transcript(
         &pool,
@@ -1305,7 +1314,8 @@ async fn evidence_search_is_ranked_source_linked_unicode_safe_and_tenant_scoped(
         None,
     )
     .await
-    .expect("seed second local meeting");
+    .expect("seed second local meeting")
+    .meeting_id;
 
     let foreign_meeting = TranscriptsRepository::save_transcript(
         &pool,
@@ -1320,7 +1330,8 @@ async fn evidence_search_is_ranked_source_linked_unicode_safe_and_tenant_scoped(
         None,
     )
     .await
-    .expect("seed foreign meeting");
+    .expect("seed foreign meeting")
+    .meeting_id;
 
     // `istanbul` must match Unicode `İstanbul`; `karar` is a prefix match for
     // `kararı`. Results preserve backend BM25 order and dedupe to one best
@@ -1416,7 +1427,8 @@ async fn evidence_search_deduplicates_meetings_before_limiting_results() {
         None,
     )
     .await
-    .expect("seed dominant meeting");
+    .expect("seed dominant meeting")
+    .meeting_id;
 
     let other_meeting = TranscriptsRepository::save_transcript(
         &pool,
@@ -1426,7 +1438,8 @@ async fn evidence_search_deduplicates_meetings_before_limiting_results() {
         None,
     )
     .await
-    .expect("seed independent meeting");
+    .expect("seed independent meeting")
+    .meeting_id;
 
     let hits = TranscriptsRepository::search_evidence(&pool, &local, "monopolytoken")
         .await
@@ -1461,7 +1474,8 @@ async fn evidence_search_tracks_retranscription_atomically() {
         None,
     )
     .await
-    .expect("seed original transcript");
+    .expect("seed original transcript")
+    .meeting_id;
 
     assert_eq!(
         TranscriptsRepository::search_evidence(&pool, &local, "obsolete")
@@ -1554,7 +1568,8 @@ async fn process_transcript_redacts_chunks_at_rest_when_enabled() {
         None,
     )
     .await
-    .expect("create meeting (disabled case)");
+    .expect("create meeting (disabled case)")
+    .meeting_id;
     let meeting_on = TranscriptsRepository::save_transcript(
         &pool,
         &local,
@@ -1563,7 +1578,8 @@ async fn process_transcript_redacts_chunks_at_rest_when_enabled() {
         None,
     )
     .await
-    .expect("create meeting (enabled case)");
+    .expect("create meeting (enabled case)")
+    .meeting_id;
 
     // --- DISABLED (default): raw text must persist verbatim -------------------
     let cfg_off = SettingsRepository::get_redaction_config(&pool, &local)

@@ -49,8 +49,8 @@ use app_lib::database::repositories::{
 };
 use app_lib::summary::commands::{EditActionItemRequest, FieldPatch};
 use app_lib::summary::draft::{
-    ActionItemDraft, BlockStatus, BlockType, DraftBlock, DraftSection, MeetingNotesDraft,
-    SummaryStatus,
+    ActionItemDraft, BlockProvenance, BlockStatus, BlockType, DraftBlock, DraftSection,
+    MeetingNotesDraft, SummaryStatus,
 };
 
 /// The app's real, compile-time-embedded migration set (same source as
@@ -93,6 +93,7 @@ fn segment(id: &str, text: &str, start: f64, end: f64) -> TranscriptSegment {
         audio_start_time: Some(start),
         audio_end_time: Some(end),
         duration: Some(end - start),
+        sequence_id: None,
     }
 }
 
@@ -122,6 +123,7 @@ fn block(id: &str, chunk: &str) -> DraftBlock {
         source_chunk_id: chunk.to_string(),
         status: BlockStatus::Draft,
         original_content: None,
+        provenance: BlockProvenance::Generated,
     }
 }
 
