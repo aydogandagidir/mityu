@@ -67,7 +67,7 @@
                 },
                 {
                     "identifier": "copilot",
-                    "description": "Live copilot panel (BACKLOG I1/I3b): events, its own window controls, and the frameless window's drag region. Deliberately minimal - the panel has no filesystem, shell, notification, updater or process access. Its insight requests go through the app's own copilot_* commands, which resolve identity in Rust rather than trusting the panel.",
+                    "description": "Live copilot panel (BACKLOG I1/I3b): events, its own window controls, and the frameless window's drag region. This grants no filesystem, shell, notification, updater or process PLUGIN permission - but it is not a sandbox: Tauri 2 capabilities do not gate the app's own #[tauri::command] handlers, so the panel webview can invoke them like any other window. The boundary that matters is that every copilot command resolves identity from AuthContext in Rust and never trusts an id from the renderer.",
                     "windows": [
                         "copilot"
                     ],

@@ -600,12 +600,29 @@ pub async fn copilot_request_insight<R: Runtime>(
     // default rather than failing a request the user just made.
     let mode = active_mode(&app);
 
+    // FAIL CLOSED. `RedactionConfig::default()` is *disabled*, so falling back
+    // to it on a read error would send an unredacted window to a provider in a
+    // workspace that had switched redaction on — silently, and on the one path
+    // where redaction at the prompt boundary is the only line of defence (the
+    // live window never passes through SQLite, so nothing scrubbed it
+    // earlier). Refusing the insight is recoverable; a leaked one is not.
     let redaction =
-        crate::database::repositories::setting::SettingsRepository::get_redaction_config(
+        match crate::database::repositories::setting::SettingsRepository::get_redaction_config(
             pool, &ctx,
         )
         .await
-        .unwrap_or_default();
+        {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                log::warn!("copilot: redaction policy unreadable, refusing the insight: {e}");
+                return Err(InsightFailure {
+                    kind: "redactionUnavailable",
+                    message: "The redaction policy could not be read, so the copilot stopped \
+                              rather than risk sending unredacted speech to a model."
+                        .to_string(),
+                });
+            }
+        };
 
     // Prepared under the lock, awaited outside it.
     let prepared = session::with_context(|live| match live {
