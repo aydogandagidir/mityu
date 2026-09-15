@@ -1,6 +1,6 @@
 # Mityu Privacy Policy
 
-*Last updated: 2026-07-15*
+*Last updated: 2026-09-15*
 
 ## Our Privacy-First Commitment
 
@@ -13,9 +13,11 @@ Mityu is built on the principle that your meeting data should remain private and
 ### Local-First Processing
 - **Meeting transcription**: Processed entirely on your device using local Whisper or Parakeet models
 - **Audio recordings**: Never transmitted to external servers
-- **v1.0.4 raw-audio retention**: The raw recording remains in Mityu-managed local storage until you delete the meeting. Automatic deletion immediately after transcription is not implemented in this version.
+- **Raw-audio retention (unchanged through v1.2.1)**: The raw recording remains in Mityu-managed local storage until you delete the meeting. Automatic deletion immediately after transcription is not implemented yet.
 - **Meeting content**: Remains on your device unless you explicitly choose a third-party LLM provider or export/share it
 - **AI summaries**: Generated locally or through the LLM provider you choose
+- **Ask this meeting**: Answers a question from one finished meeting's transcript using the same model choice as summaries. With a local model nothing leaves your device; with a cloud key, your question and the transcript passages retrieved for it are sent to that provider. Answers are marked AI-generated; a line the model cannot trace to the transcript is dropped rather than shown.
+- **Live copilot (beta, off by default)**: When enabled under Settings → Beta, the panel follows a recording you start. It holds that meeting's transcript in process memory while you record, writes nothing to disk on its own, and releases the buffer when the recording stops or the copilot is switched off. An answer you request is built from the last few minutes of transcript text after your redaction rules have run. By default it may use only a model running on this device; sending that text to a cloud provider requires a separate, explicit switch, and it then goes only to the provider you configured with your own key. Audio is never involved. The only persistence is a note you pin, written into the meeting's summary as a draft when you save the meeting. With the copilot off, none of this runs: no shortcut, no panel, no buffer.
 
 ### Your Data Ownership
 - You own all meeting data, transcripts, and recordings
@@ -27,7 +29,7 @@ Mityu is built on the principle that your meeting data should remain private and
 
 Downloading the installer requires no account, name, email address, or marketing consent. The Mityu website is hosted by Vercel, which may process ordinary request/security logs under its service terms. The download endpoint keeps an aggregate counter. For abuse prevention it also derives a keyed HMAC token from the request IP address using a server-only secret and retains only a request counter under that token. The token expires no later than 15 minutes after the first request; later requests do not extend the window. The KV rate-limit record contains neither the IP address nor the HMAC secret, and the endpoint does not store the user agent, referrer, meeting content, audio, or contact details.
 
-v1.0.4 does not offer or store a product-update signup. Contact collection remains disabled until an email-ownership verification flow, retention/erasure operations, processor terms, transfer safeguards, and the required legal/product approvals are in place.
+Mityu does not offer or store a product-update signup. Contact collection remains disabled until an email-ownership verification flow, retention/erasure operations, processor terms, transfer safeguards, and the required legal/product approvals are in place.
 
 ## Usage Analytics
 
@@ -65,11 +67,11 @@ When enabled, analytics helps us with:
 ### Analytics Implementation
 - **Provider**: PostHog (privacy-focused analytics platform)
 - **Default**: Off by default; analytics starts only after you enable it in settings
-- **v1.0.4 production posture**: The release workflow intentionally embeds no PostHog project key, so analytics remains a local no-op even after opt-in. A later release may enable the processor only after the region, retention, deletion/erasure process, access controls, DPA/subprocessor terms, and this notice are approved.
+- **Production posture (through v1.2.1)**: The release workflow intentionally embeds no PostHog project key, so analytics remains a local no-op even after opt-in. A later release may enable the processor only after the region, retention, deletion/erasure process, access controls, DPA/subprocessor terms, and this notice are approved.
 - **Pseudonymous identifier**: Events are linked to a generated installation/user ID rather than a name or email address
 - **Data retention**: The desktop application does not enforce PostHog-side retention. The active PostHog project configuration and provider policy control retention and must be verified by the distributor.
 - **Encryption**: All data encrypted in transit using industry-standard protocols
-- **Location**: No PostHog processing occurs in v1.0.4. Before a future build enables it, the selected processing region and cross-border transfer basis must be disclosed here.
+- **Location**: No PostHog processing occurs in any release through v1.2.1. Before a future build enables it, the selected processing region and cross-border transfer basis must be disclosed here.
 - **Access Control**: Strictly limited to core development team members
 
 ## Third-Party Services
@@ -104,7 +106,7 @@ Model downloads are started by you and fetch only pinned model artifacts from Hu
 
 Application-controlled deletion enables SQLite and FTS secure deletion, compacts free pages, truncates the SQLite write-ahead log, and overwrites/unlinks Mityu-managed recording artifacts before reporting success. It cannot guarantee forensic erasure from SSD wear-leveling, copy-on-write storage, filesystem or cloud snapshots, backups, swap, exported/shared copies, or residual WebView/browser-storage pages. Unknown files you add to a meeting folder are retained.
 
-Deleting only transcript text or closing the App does not remove the raw recording. To remove Mityu's managed raw audio in v1.0.4, delete the meeting through the App; independently exported or copied files remain under your control.
+Deleting only transcript text or closing the App does not remove the raw recording. To remove Mityu's managed raw audio, delete the meeting through the App; independently exported or copied files remain under your control.
 
 
 ### Analytics Transparency
@@ -154,4 +156,4 @@ As an open-source project under MIT license, you can:
 
 ---
 
-*This privacy policy describes Mityu v1.0.4. For enterprise deployments, additional privacy controls may be available.*
+*This privacy policy describes Mityu v1.2.1. For enterprise deployments, additional privacy controls may be available.*

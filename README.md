@@ -33,7 +33,7 @@ Mityu records meetings and on-site conversations, transcribes them <b>on your de
 
 Mityu is a **Tauri 2 desktop app** (Rust core + Next.js UI) that captures your meetings, transcribes them locally in real time, and generates summaries — without sending audio or transcripts to anyone else's servers. The capture → transcript → summary → store path runs entirely on your machine and keeps working with **no network and no server**. An optional sync/collaboration server can be added later for teams, but it is strictly additive: turn it off and the desktop app keeps working on your local data.
 
-Mityu is designed for professionals and enterprises who must keep control of sensitive conversations. v1.0.4 has not yet completed its human-reviewed target-environment benchmark or pilot, so noisy-field, jargon, diarization, and accuracy claims are intentionally withheld.
+Mityu is designed for professionals and enterprises who must keep control of sensitive conversations. As of v1.2.1 the human-reviewed target-environment benchmark and pilot have not been performed, so noisy-field, jargon, diarization, and accuracy claims are intentionally withheld — and the live copilot ships as a beta, off by default, until its own live check against a real model passes.
 
 ## Why Mityu?
 
@@ -47,12 +47,18 @@ Mityu is designed for professionals and enterprises who must keep control of sen
 
 - **Local transcription** with **Whisper** (`large-v3`) or **NVIDIA Parakeet** — no cloud required.
 - **Real-time transcript** of the meeting as it happens.
+- **Source-linked summaries and action items, human-approved:** every AI-generated block is a labelled draft bound to its transcript segment; nothing is final until you approve it. Approved notes export to **PDF, Word (.docx) and Markdown**, offline.
+- **Ask this meeting:** ask a finished meeting a question and get an answer drawn only from its transcript; each line opens its source, and anything the model cannot trace to the transcript is dropped rather than shown. (v1.1.0)
+- **Speaker separation and talk time:** on-device, after the recording ends, best-effort, with anonymous labels — Mityu never attaches a name to a voice. (v1.1.0)
+- **Evidence search** across your meetings (local FTS5/BM25) and an **Action Center** listing only human-approved action items with their source.
+- **The learning loop:** correct the same thing a few times and Mityu proposes a plain-language rule you can approve, edit or delete — all local.
+- **Live copilot — beta, off by default (v1.2.x):** an always-on-top panel that follows a recording you start and, on request, drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript. Eight meeting modes; every answer AI-labelled and cited to a transcript segment, or refused; "Pin to notes" keeps one as a draft in the meeting's summary. Cloud use is off unless you allow it. Enable under Settings → Beta. Not yet validated against a real model (BACKLOG I9).
 - **AI summaries, BYOK:** choose Ollama (local), Claude, Groq, OpenRouter, or any OpenAI-compatible endpoint. API keys are stored in the OS keychain — never in plaintext.
 - **Import &amp; enhance:** import existing audio to generate a transcript, or re-transcribe a recording with a different model or language — all processed locally.
 - **Professional audio mixing:** capture microphone and system audio simultaneously with ducking and clipping prevention.
 - **GPU acceleration:** Apple Silicon (Metal) + CoreML on macOS; NVIDIA (CUDA) and AMD/Intel (Vulkan) on Windows/Linux — enabled at build time, no configuration needed.
-- **Multi-platform:** macOS and Windows (Linux builds from source).
-- **Local-first storage:** recordings and transcripts stay on your machine. In v1.0.4, raw meeting audio remains local until you delete the meeting.
+- **Platforms:** Windows 10/11 (64-bit) is the published release; macOS and Linux build from source (macOS build in development).
+- **Local-first storage:** recordings and transcripts stay on your machine. Raw meeting audio remains local until you delete the meeting; automatic deletion after transcription is not implemented yet.
 
 <p align="center">
     <img src="docs/summary.png" width="640" style="border-radius: 10px;" alt="Source-linked AI summary" />
@@ -72,8 +78,9 @@ Mityu is designed for professionals and enterprises who must keep control of sen
 
 ### 🍎 macOS
 
-1. Download the `.dmg` from [Releases](https://github.com/aydogandagidir/mityu/releases/latest).
-2. Open it and drag **Mityu** to your Applications folder.
+> **In development — no packaged macOS release is published yet.** The code targets macOS
+> (ScreenCaptureKit / Core Audio tap system audio, Metal + CoreML acceleration), but the release
+> matrix is Windows x64 only (ADR-0043). Build from source with the guides below.
 
 ### 🐧 Linux
 
@@ -109,6 +116,7 @@ Mityu is developed local-first, then server-optional, with go/no-go gates (see [
 - **Phase 1 — Enterprise local-first MVP:** encrypted local store, source-linked HITL summaries, action-item extraction, search, export (PDF/DOCX/Markdown), consent &amp; transparency.
 - **Phase 2 — Optional self-host server:** authenticated, multi-tenant (OIDC + RBAC + Postgres RLS + audit); shared workspaces; the app still works with the server off.
 - **Phase 3 — Managed multi-tenant SaaS.**
+- **Phase I — Live copilot (in progress, beta):** in-meeting assistance that is private, not covert — flag-gated and off by default until the I9 gate (see [EPIC I](docs/BACKLOG.md) and ADR-0038). Shipped so far: panel and shortcuts, live context, grounded on-demand insights, meeting modes, Pin to notes. Next: local knowledge base, on-demand screen context, post-call recipes.
 - **Coming soon — on-device AI agents:** a library of local agents that draft follow-ups and track action items — draft-only, human-approved, no autonomous actions (see [EPIC F](docs/BACKLOG.md)).
 
 ## For Developers
