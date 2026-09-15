@@ -5,9 +5,9 @@ on: workflow_dispatch
 jobs:
   build-test:
     permissions:
-      # See build-windows.yml: build.yml's job requests `contents: write`, and a
-      # caller granting less makes the run invalid before it starts.
-      contents: write
+      # See build-windows.yml: build.yml inherits the caller's permissions, and
+      # a manual build uploads nothing to the repository.
+      contents: read
     strategy:
       fail-fast: false
       matrix:

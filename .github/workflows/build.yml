@@ -57,8 +57,15 @@ on:
 
 jobs:
   build:
-    permissions:
-      contents: write
+    # No `permissions:` here on purpose — the job inherits the caller's.
+    # The token is only used on the production-release path (see the
+    # GITHUB_TOKEN expression on the Tauri step), where release.yml grants
+    # `contents: write`. Declaring write here forced EVERY caller to grant
+    # write: a called workflow may not request more than its caller gives, and
+    # one that does is invalid — rejected as `startup_failure` before any job
+    # exists. That is why the five manual wrappers, all granting read, had never
+    # completed a run, and why a PR-triggered build (ADR-0048) would otherwise
+    # need a write token it has no use for.
     runs-on: ${{ inputs.platform }}
     environment: ${{ inputs.production-release && 'Production' || 'Build-Test' }}
     steps:
