@@ -36,3 +36,10 @@ jobs:
       asset-prefix: "mityu"
       upload-artifacts: ${{ inputs['upload-artifacts'] }}
       is-debug-build: ${{ inputs['build-type'] == 'debug' }}
+    # build.yml reads SM_* / APPLE_* credentials directly and declares no
+    # `workflow_call.secrets` block, so a caller that passes nothing makes it an
+    # invalid workflow: the run dies as `startup_failure` before a single job is
+    # created. release.yml has always inherited; this manual wrapper never did,
+    # which is why it had never completed a run. Signing stays off here
+    # (sign-binaries: false) — inheriting only makes the call valid.
+    secrets: inherit

@@ -76,3 +76,6 @@ jobs:
       asset-prefix: "mityu"
       upload-artifacts: ${{ inputs['upload-artifacts'] }}
       is-debug-build: ${{ inputs['build-type'] == 'debug' }}
+    # See build-windows.yml: build.yml reads credentials it never declares, so a
+    # caller that passes none is an invalid workflow and dies at startup.
+    secrets: inherit
