@@ -46,11 +46,40 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, item_id: &str) {
                 let _ = window.eval("window.location.assign('/settings')");
             }
         }
+        "live_copilot" => live_copilot_handler(app),
         "check_updates" => check_updates_handler(app),
         "quit" => app.exit(0),
         _ => {}
     }
 }
+/// Tray → Live copilot (BACKLOG I1/G3).
+///
+/// This entry exists because the feature was unreachable in practice. The
+/// switch lives in Settings → Beta and the panel opens on a global shortcut,
+/// so a user who had never read the backlog had no way to find either — they
+/// reported not being able to see or test the copilot at all.
+///
+/// **It is shown whether or not the copilot is enabled, and that is the point.**
+/// Hiding the entry while the feature is off makes an invisible feature stay
+/// invisible. Enabled, it toggles the panel. Disabled, it takes the user to the
+/// switch instead of failing silently — the tray teaches where the setting is.
+fn live_copilot_handler<R: Runtime>(app: &AppHandle<R>) {
+    let config = crate::copilot::store::load_config(app);
+    if config.enabled {
+        if let Err(e) = crate::copilot::window::toggle(app) {
+            log::warn!("tray: could not toggle the copilot panel: {e}");
+        }
+        return;
+    }
+
+    focus_main_window(app);
+    if let Some(window) = app.get_webview_window("main") {
+        // The Beta tab, not just Settings: landing on General and leaving the
+        // user to hunt is the same dead end in a smaller room.
+        let _ = window.eval("window.location.assign('/settings?tab=beta')");
+    }
+}
+
 fn toggle_recording_handler<R: Runtime>(app: &AppHandle<R>) {
     focus_main_window(app);
     let app_clone = app.clone();
@@ -417,6 +446,7 @@ fn build_menu<R: Runtime>(
     builder
         .item(&PredefinedMenuItem::separator(app)?)
         .item(&MenuItemBuilder::with_id("open_window", "Open Main Window").build(app)?)
+        .item(&MenuItemBuilder::with_id("live_copilot", "Live copilot").build(app)?)
         .item(&MenuItemBuilder::with_id("settings", "Settings").build(app)?)
         .item(&MenuItemBuilder::with_id("check_updates", "Check for Updates").build(app)?)
         .item(&PredefinedMenuItem::separator(app)?)

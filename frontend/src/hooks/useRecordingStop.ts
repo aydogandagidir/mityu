@@ -520,7 +520,14 @@ export function useRecordingStop(
       setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Unknown error');
       if (stoppedMetadata?.completion_token) {
         toast.error('Recording save needs attention', {
-          description: error instanceof Error ? error.message : 'The local save did not finish.',
+          // Say that starting is blocked, because it is: the native completion
+          // token stays outstanding until this save is acknowledged, and every
+          // later start refuses with "the previous recording is still being
+          // saved". Without this line the user meets that refusal with no idea
+          // what caused it, and the only cure they can find is a restart.
+          description: `${
+            error instanceof Error ? error.message : 'The local save did not finish.'
+          } A new recording cannot start until this is saved or the app is restarted.`,
           action: {
             label: 'Retry save',
             onClick: () => {

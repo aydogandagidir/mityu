@@ -4,6 +4,7 @@
 
 use super::provider::TranscriptionProvider;
 use log::{info, warn};
+use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime};
 
@@ -43,6 +44,172 @@ impl TranscriptionEngine {
             Self::Whisper(_) => "Whisper (direct)",
             Self::Parakeet(_) => "Parakeet (direct)",
             Self::Provider(provider) => provider.provider_name(),
+        }
+    }
+}
+
+// ============================================================================
+// PRE-FLIGHT READINESS (the answer the UI asks before offering to record)
+// ============================================================================
+
+/// Can the transcription engine the user ACTUALLY configured record right now?
+///
+/// This exists because the renderer used to answer that question itself, and
+/// answered it wrong. `useRecordingStart` called `parakeet_has_available_models`
+/// on every start path regardless of the configured provider, so a user on
+/// `localWhisper` with no Parakeet model was told "Transcription model not
+/// ready" and could never start a recording — while
+/// [`validate_transcription_model_ready`], three lines further down the same
+/// path, would have accepted their Whisper model happily.
+///
+/// The rule the repo already follows elsewhere (ADR-0042: no validation
+/// mirrored in TypeScript) is the fix: **which engine is configured is decided
+/// in exactly one place, here.** The renderer asks and renders the answer.
+///
+/// Deliberately CHEAP: it lists models, it does not initialise or load one.
+/// The authoritative check stays in [`validate_transcription_model_ready`] at
+/// the moment recording actually starts; this only decides whether the UI
+/// should offer the button and what to say when it should not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionReadiness {
+    /// May a recording be started with the configured engine?
+    pub ready: bool,
+    /// The provider that was actually consulted — never assumed. The UI shows
+    /// it so a refusal names the engine the user chose, not a different one.
+    pub provider: String,
+    /// A model for THAT provider is downloading: "wait", not "go and get one".
+    pub downloading: bool,
+    /// Why not ready, in a sentence the UI renders verbatim rather than
+    /// composing its own (which is how the wording drifted from the rule).
+    pub reason: Option<String>,
+}
+
+/// What each local engine has on disk. Both are read, so the decision function
+/// is total and testable without a running app.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct EngineModels {
+    pub whisper_available: bool,
+    pub whisper_downloading: bool,
+    pub parakeet_available: bool,
+    pub parakeet_downloading: bool,
+}
+
+/// The decision, separated from the I/O so the engine-blindness bug is
+/// expressible as a unit test.
+pub(crate) fn decide_readiness(provider: &str, models: &EngineModels) -> TranscriptionReadiness {
+    let (available, downloading) = match provider {
+        "localWhisper" => (models.whisper_available, models.whisper_downloading),
+        "parakeet" => (models.parakeet_available, models.parakeet_downloading),
+        other => {
+            return TranscriptionReadiness {
+                ready: false,
+                provider: other.to_string(),
+                downloading: false,
+                reason: Some(format!(
+                    "'{other}' cannot transcribe on this device. Choose Local Whisper or Parakeet in Settings."
+                )),
+            };
+        }
+    };
+
+    let engine_label = if provider == "localWhisper" {
+        "Local Whisper"
+    } else {
+        "Parakeet"
+    };
+
+    if available {
+        return TranscriptionReadiness {
+            ready: true,
+            provider: provider.to_string(),
+            downloading,
+            reason: None,
+        };
+    }
+
+    // Downloading is reported even when a model is also missing: "wait" and
+    // "go and fetch one" are different instructions and the user is owed the
+    // one that is true.
+    let reason = if downloading {
+        format!(
+            "The {engine_label} model is still downloading. Recording can start once it finishes."
+        )
+    } else {
+        format!(
+            "No {engine_label} model is installed yet. Download one in Settings before recording."
+        )
+    };
+
+    TranscriptionReadiness {
+        ready: false,
+        provider: provider.to_string(),
+        downloading,
+        reason: Some(reason),
+    }
+}
+
+/// Read both engines' model lists. Never fails: an engine that is not
+/// initialised, or whose directory cannot be read, reports nothing rather than
+/// taking the whole check down — the authoritative validation still runs when
+/// recording starts.
+async fn read_engine_models() -> EngineModels {
+    use crate::parakeet_engine::ModelStatus as ParakeetStatus;
+    use crate::whisper_engine::ModelStatus as WhisperStatus;
+
+    let mut models = EngineModels::default();
+
+    match crate::whisper_engine::commands::whisper_get_available_models().await {
+        Ok(list) => {
+            models.whisper_available = list
+                .iter()
+                .any(|m| matches!(m.status, WhisperStatus::Available));
+            models.whisper_downloading = list
+                .iter()
+                .any(|m| matches!(m.status, WhisperStatus::Downloading { .. }));
+        }
+        Err(e) => info!("readiness: Whisper models unreadable ({e})"),
+    }
+
+    match crate::parakeet_engine::commands::parakeet_get_available_models().await {
+        Ok(list) => {
+            models.parakeet_available = list
+                .iter()
+                .any(|m| matches!(m.status, ParakeetStatus::Available));
+            models.parakeet_downloading = list
+                .iter()
+                .any(|m| matches!(m.status, ParakeetStatus::Downloading { .. }));
+        }
+        Err(e) => info!("readiness: Parakeet models unreadable ({e})"),
+    }
+
+    models
+}
+
+/// The pre-flight the UI calls before offering to record.
+#[tauri::command]
+pub async fn api_transcription_readiness<R: Runtime>(app: AppHandle<R>) -> TranscriptionReadiness {
+    let provider = configured_provider(&app).await;
+    let models = read_engine_models().await;
+    let readiness = decide_readiness(&provider, &models);
+    info!(
+        "🔍 transcription readiness: provider={} ready={} downloading={}",
+        readiness.provider, readiness.ready, readiness.downloading
+    );
+    readiness
+}
+
+/// The configured transcription provider, with the same default and the same
+/// failure behaviour [`validate_transcription_model_ready`] uses, so the
+/// pre-flight and the authoritative check can never disagree about which
+/// engine is in play.
+async fn configured_provider<R: Runtime>(app: &AppHandle<R>) -> String {
+    match crate::api::api::api_get_transcript_config(app.clone(), app.clone().state(), None).await {
+        Ok(Some(config)) => config.provider,
+        Ok(None) => "parakeet".to_string(),
+        Err(e) => {
+            warn!("⚠️ readiness: transcript config unreadable ({e}); defaulting to parakeet");
+            "parakeet".to_string()
         }
     }
 }
@@ -465,4 +632,103 @@ pub async fn get_or_init_whisper<R: Runtime>(
     }
 
     Ok(engine)
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+
+    fn models(whisper: bool, parakeet: bool) -> EngineModels {
+        EngineModels {
+            whisper_available: whisper,
+            whisper_downloading: false,
+            parakeet_available: parakeet,
+            parakeet_downloading: false,
+        }
+    }
+
+    /// **The bug this function exists to kill.** The renderer asked
+    /// `parakeet_has_available_models` on every start path, whatever the user
+    /// had configured. A Local Whisper user with a working Whisper model and no
+    /// Parakeet model was told to download a transcription model and could not
+    /// record at all — on the core path of the product.
+    #[test]
+    fn a_whisper_user_is_ready_without_any_parakeet_model() {
+        let r = decide_readiness("localWhisper", &models(true, false));
+        assert!(r.ready, "Whisper is configured and installed: {r:?}");
+        assert_eq!(r.provider, "localWhisper");
+        assert!(r.reason.is_none());
+    }
+
+    /// And the mirror image, so the fix cannot be "always say yes".
+    #[test]
+    fn a_parakeet_user_is_ready_without_any_whisper_model() {
+        let r = decide_readiness("parakeet", &models(false, true));
+        assert!(r.ready, "{r:?}");
+        assert_eq!(r.provider, "parakeet");
+    }
+
+    #[test]
+    fn each_engine_is_judged_only_by_its_own_models() {
+        // Configured engine missing, the OTHER engine installed: still not ready.
+        assert!(!decide_readiness("localWhisper", &models(false, true)).ready);
+        assert!(!decide_readiness("parakeet", &models(true, false)).ready);
+    }
+
+    /// "Wait for the download" and "go and install one" are different
+    /// instructions; the user is owed the true one.
+    #[test]
+    fn downloading_is_reported_as_wait_not_as_missing() {
+        let m = EngineModels {
+            whisper_available: false,
+            whisper_downloading: true,
+            ..Default::default()
+        };
+        let r = decide_readiness("localWhisper", &m);
+        assert!(!r.ready);
+        assert!(r.downloading);
+        let reason = r.reason.expect("a reason");
+        assert!(reason.contains("downloading"), "{reason}");
+        assert!(
+            !reason.contains("No Local Whisper model is installed"),
+            "{reason}"
+        );
+    }
+
+    #[test]
+    fn a_missing_model_names_the_engine_the_user_chose() {
+        let whisper = decide_readiness("localWhisper", &models(false, false));
+        assert!(whisper.reason.expect("reason").contains("Local Whisper"));
+        let parakeet = decide_readiness("parakeet", &models(false, false));
+        assert!(parakeet.reason.expect("reason").contains("Parakeet"));
+    }
+
+    /// A cloud provider cannot transcribe locally. The refusal says which one
+    /// and what to do, rather than the old generic "model not ready".
+    #[test]
+    fn a_non_local_provider_is_refused_by_name() {
+        for provider in ["deepgram", "openai", "groq", "elevenLabs", ""] {
+            let r = decide_readiness(provider, &models(true, true));
+            assert!(!r.ready, "{provider} must not be recordable locally");
+            assert_eq!(r.provider, provider);
+            let reason = r.reason.expect("a reason");
+            if !provider.is_empty() {
+                assert!(reason.contains(provider), "{reason}");
+            }
+        }
+    }
+
+    /// Readiness never depends on the OTHER engine's download either.
+    #[test]
+    fn a_download_on_the_other_engine_does_not_say_wait() {
+        let m = EngineModels {
+            whisper_available: true,
+            whisper_downloading: false,
+            parakeet_available: false,
+            parakeet_downloading: true,
+        };
+        let r = decide_readiness("localWhisper", &m);
+        assert!(r.ready);
+        assert!(!r.downloading, "a Parakeet download is not a Whisper wait");
+    }
 }

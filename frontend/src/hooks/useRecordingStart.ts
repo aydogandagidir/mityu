@@ -11,6 +11,30 @@ import { recordingService } from '@/services/recordingService';
 import Analytics from '@/lib/analytics';
 import { showRecordingNotification } from '@/lib/recordingNotification';
 import { toast } from 'sonner';
+import type { TranscriptionReadiness } from '@/types';
+
+/** How a refusal is presented. Separated from the hook so it can be tested. */
+export interface ReadinessMessage {
+  kind: 'downloading' | 'missing';
+  title: string;
+  description: string;
+}
+
+/**
+ * Turn a backend readiness answer into what the user sees.
+ *
+ * Presentation only — whether the engine is ready is decided in Rust
+ * (`api_transcription_readiness`) and is never re-decided here. `description`
+ * is the backend's own sentence; this supplies one only when the backend sent
+ * none, so the UI can never claim a cause the backend did not state.
+ */
+export function readinessMessage(readiness: TranscriptionReadiness): ReadinessMessage {
+  const description =
+    readiness.reason ?? 'The transcription engine is not ready to record yet.';
+  return readiness.downloading
+    ? { kind: 'downloading', title: 'Model download in progress', description }
+    : { kind: 'missing', title: 'Transcription model not ready', description };
+}
 
 interface UseRecordingStartReturn {
   handleRecordingStart: () => Promise<void>;
@@ -61,35 +85,52 @@ export function useRecordingStart(
     return `Meeting ${day}_${month}_${year}_${hours}_${minutes}_${seconds}`;
   }, []);
 
-  // Check if Parakeet transcription model is ready
-  const checkParakeetReady = useCallback(async (): Promise<boolean> => {
+  /**
+   * Can the engine the user actually configured record right now?
+   *
+   * This used to be two calls, and both asked Parakeet — on every start path,
+   * whatever the user had chosen. A Local Whisper user with a perfectly good
+   * Whisper model was told "Transcription model not ready" and could never
+   * record, while the Rust check three lines later would have accepted it.
+   *
+   * The engine decision now lives in Rust and nowhere else, and this renders
+   * its sentence rather than composing one (ADR-0042: no validation mirrored
+   * in TypeScript — a second copy drifts from the rule that governs).
+   *
+   * A failed call is reported, never treated as "not ready": refusing to start
+   * because a pre-flight could not run is the silent failure this whole change
+   * exists to remove. The authoritative validation still runs in the backend
+   * at the moment recording starts, so proceeding is safe.
+   */
+  const checkTranscriptionReady = useCallback(async (): Promise<TranscriptionReadiness> => {
     try {
-      await invoke('parakeet_init');
-      const hasModels = await invoke<boolean>('parakeet_has_available_models');
-      return hasModels;
+      return await invoke<TranscriptionReadiness>('api_transcription_readiness');
     } catch (error) {
-      console.error('Failed to check Parakeet status:', error);
-      return false;
+      console.error('Failed to read transcription readiness:', error);
+      return { ready: true, provider: 'unknown', downloading: false, reason: null };
     }
   }, []);
 
-  // Check if any model is currently downloading
-  const checkIfModelDownloading = useCallback(async (): Promise<boolean> => {
-    try {
-      const models = await invoke<any[]>('parakeet_get_available_models');
-      const isDownloading = models.some(m =>
-        m.status && (
-          typeof m.status === 'object'
-            ? 'Downloading' in m.status
-            : m.status === 'Downloading'
-        )
-      );
-      return isDownloading;
-    } catch (error) {
-      console.error('Failed to check model download status:', error);
-      return false; // Default to not downloading (will show error + modal)
-    }
-  }, []);
+  /**
+   * Tell the user why the recording did not start, in the backend's own words.
+   * Every caller of this used to have its own copy of these two toasts.
+   */
+  const reportNotReady = useCallback(
+    (readiness: TranscriptionReadiness, source: string) => {
+      const message = readinessMessage(readiness);
+      if (message.kind === 'downloading') {
+        toast.info(message.title, { description: message.description, duration: 6000 });
+        Analytics.trackButtonClick('start_recording_blocked_downloading', source);
+        return;
+      }
+      toast.error(message.title, { description: message.description, duration: 6000 });
+      // The model picker is the action the user needs; opening it with the
+      // backend's sentence keeps the reason attached to the remedy.
+      showModal?.('modelSelector', message.description);
+      Analytics.trackButtonClick('start_recording_blocked_missing', source);
+    },
+    [showModal]
+  );
 
   // Handle manual recording start (from button click)
   const handleRecordingStart = useCallback(async () => {
@@ -101,36 +142,29 @@ export function useRecordingStart(
       // the start cleanly (return to IDLE, no backend call).
       const consented = await ensureRecordingConsent();
       if (!consented) {
+        // A cancel is a decision, not a fault — but the button having no
+        // visible effect is indistinguishable from a broken app, which is
+        // exactly how an unreportable "it just doesn't record" starts.
         console.log('Recording start cancelled at consent gate');
+        toast.info('Recording not started', {
+          description: 'Recording consent was not confirmed.',
+          duration: 4000,
+        });
         setStatus(RecordingStatus.IDLE);
         return;
       }
 
-      console.log('Consent confirmed - checking Parakeet model status');
+      console.log('Consent confirmed - checking transcription readiness');
 
       // Check if Parakeet transcription model is ready before starting
-      const parakeetReady = await checkParakeetReady();
-      if (!parakeetReady) {
-        const isDownloading = await checkIfModelDownloading();
-        if (isDownloading) {
-          toast.info('Model download in progress', {
-            description: 'Please wait for the transcription model to finish downloading before recording.',
-            duration: 5000,
-          });
-          Analytics.trackButtonClick('start_recording_blocked_downloading', 'home_page');
-        } else {
-          toast.error('Transcription model not ready', {
-            description: 'Please download a transcription model before recording.',
-            duration: 5000,
-          });
-          showModal?.('modelSelector', 'Transcription model setup required');
-          Analytics.trackButtonClick('start_recording_blocked_missing', 'home_page');
-        }
+      const readiness = await checkTranscriptionReady();
+      if (!readiness.ready) {
+        reportNotReady(readiness, 'home_page');
         setStatus(RecordingStatus.IDLE);
         return;
       }
 
-      console.log('Parakeet ready - setting up meeting title and state');
+      console.log('Transcription engine ready - setting up meeting title and state');
 
       const randomTitle = generateMeetingTitle();
       setMeetingTitle(randomTitle);
@@ -178,7 +212,7 @@ export function useRecordingStart(
       // Re-throw so RecordingControls can handle device-specific errors
       throw error;
     }
-  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkParakeetReady, checkIfModelDownloading, selectedDevices, showModal, setStatus, ensureRecordingConsent, openActivateDialog]);
+  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkTranscriptionReady, reportNotReady, selectedDevices, showModal, setStatus, ensureRecordingConsent, openActivateDialog]);
 
   // Check for autoStartRecording flag and start recording automatically
   useEffect(() => {
@@ -194,29 +228,19 @@ export function useRecordingStart(
           const consented = await ensureRecordingConsent();
           if (!consented) {
             console.log('Auto-start cancelled at consent gate');
+            toast.info('Recording not started', {
+              description: 'Recording consent was not confirmed.',
+              duration: 4000,
+            });
             setStatus(RecordingStatus.IDLE);
             setIsAutoStarting(false);
             return;
           }
 
           // Check if Parakeet transcription model is ready before starting
-          const parakeetReady = await checkParakeetReady();
-          if (!parakeetReady) {
-            const isDownloading = await checkIfModelDownloading();
-            if (isDownloading) {
-              toast.info('Model download in progress', {
-                description: 'Please wait for the transcription model to finish downloading before recording.',
-                duration: 5000,
-              });
-              Analytics.trackButtonClick('start_recording_blocked_downloading', 'sidebar_auto');
-            } else {
-              toast.error('Transcription model not ready', {
-                description: 'Please download a transcription model before recording.',
-                duration: 5000,
-              });
-              showModal?.('modelSelector', 'Transcription model setup required');
-              Analytics.trackButtonClick('start_recording_blocked_missing', 'sidebar_auto');
-            }
+          const readiness = await checkTranscriptionReady();
+          if (!readiness.ready) {
+            reportNotReady(readiness, 'sidebar_auto');
             setStatus(RecordingStatus.IDLE);
             setIsAutoStarting(false);
             return;
@@ -259,8 +283,11 @@ export function useRecordingStart(
               Analytics.trackButtonClick('start_recording_blocked_license', 'sidebar_auto');
             } else {
               console.error('Failed to auto-start recording:', error);
-              setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to auto-start recording');
-              alert('Failed to start recording. Check console for details.');
+              const message = error instanceof Error ? error.message : String(error);
+              setStatus(RecordingStatus.ERROR, message || 'Failed to auto-start recording');
+              // The backend's sentence, not "check the console": the user
+              // cannot open one, and the reason is already in `error`.
+              toast.error('Recording could not start', { description: message, duration: 8000 });
               Analytics.trackButtonClick('start_recording_error', 'sidebar_auto');
             }
           } finally {
@@ -280,8 +307,8 @@ export function useRecordingStart(
     setIsRecording,
     clearTranscripts,
     setIsMeetingActive,
-    checkParakeetReady,
-    checkIfModelDownloading,
+    checkTranscriptionReady,
+    reportNotReady,
     showModal,
     setStatus,
     ensureRecordingConsent,
@@ -303,31 +330,21 @@ export function useRecordingStart(
       const consented = await ensureRecordingConsent();
       if (!consented) {
         console.log('Direct start cancelled at consent gate');
+        toast.info('Recording not started', {
+          description: 'Recording consent was not confirmed.',
+          duration: 4000,
+        });
         setStatus(RecordingStatus.IDLE);
         setIsAutoStarting(false);
         return;
       }
 
-      console.log('Consent confirmed - checking Parakeet model status');
+      console.log('Consent confirmed - checking transcription readiness');
 
       // Check if Parakeet transcription model is ready before starting
-      const parakeetReady = await checkParakeetReady();
-      if (!parakeetReady) {
-        const isDownloading = await checkIfModelDownloading();
-        if (isDownloading) {
-          toast.info('Model download in progress', {
-            description: 'Please wait for the transcription model to finish downloading before recording.',
-            duration: 5000,
-          });
-          Analytics.trackButtonClick('start_recording_blocked_downloading', 'sidebar_direct');
-        } else {
-          toast.error('Transcription model not ready', {
-            description: 'Please download a transcription model before recording.',
-            duration: 5000,
-          });
-          showModal?.('modelSelector', 'Transcription model setup required');
-          Analytics.trackButtonClick('start_recording_blocked_missing', 'sidebar_direct');
-        }
+      const readiness = await checkTranscriptionReady();
+      if (!readiness.ready) {
+        reportNotReady(readiness, 'sidebar_direct');
         setStatus(RecordingStatus.IDLE);
         setIsAutoStarting(false);
         return;
@@ -369,8 +386,9 @@ export function useRecordingStart(
           Analytics.trackButtonClick('start_recording_blocked_license', 'sidebar_direct');
         } else {
           console.error('Failed to start recording from sidebar:', error);
-          setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to start recording from sidebar');
-          alert('Failed to start recording. Check console for details.');
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(RecordingStatus.ERROR, message || 'Failed to start recording from sidebar');
+          toast.error('Recording could not start', { description: message, duration: 8000 });
           Analytics.trackButtonClick('start_recording_error', 'sidebar_direct');
         }
       } finally {
@@ -392,8 +410,8 @@ export function useRecordingStart(
     setIsRecording,
     clearTranscripts,
     setIsMeetingActive,
-    checkParakeetReady,
-    checkIfModelDownloading,
+    checkTranscriptionReady,
+    reportNotReady,
     showModal,
     setStatus,
     ensureRecordingConsent,

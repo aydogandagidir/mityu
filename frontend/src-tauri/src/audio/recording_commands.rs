@@ -143,13 +143,39 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     if let Err(validation_error) = transcription::validate_transcription_model_ready(&app).await {
         error!("Model validation failed: {}", validation_error);
 
-        // Emit error event for frontend - actionable: false to show toast instead of modal
-        // (download progress is already shown in top-right toast)
-        let _ = app.emit("transcription-error", serde_json::json!({
-            "error": validation_error,
-            "userMessage": "Recording cannot start: Transcription model is still downloading. Please wait for the download to complete.",
-            "actionable": false
-        }));
+        // The user is told what actually happened.
+        //
+        // This used to announce "Transcription model is still downloading.
+        // Please wait for the download to complete." for EVERY validation
+        // failure — a missing model, a corrupt file, an engine that would not
+        // initialise, a provider that cannot transcribe locally. A user with
+        // nothing downloading was told to wait for a download that was never
+        // going to finish, and `actionable: false` meant the model picker they
+        // actually needed never opened.
+        //
+        // `validation_error` is the engine's own sentence and already names the
+        // cause. The readiness pre-flight decides whether something is
+        // downloading; when it is, waiting is the true instruction, and only
+        // then is a toast the right surface.
+        let readiness = transcription::engine::api_transcription_readiness(app.clone()).await;
+        let downloading = readiness.downloading;
+        let user_message = if downloading {
+            readiness
+                .reason
+                .unwrap_or_else(|| "The transcription model is still downloading.".to_string())
+        } else {
+            validation_error.clone()
+        };
+        let _ = app.emit(
+            "transcription-error",
+            serde_json::json!({
+                "error": validation_error,
+                "userMessage": user_message,
+                // A download is a wait (toast). Anything else needs the model
+                // picker, which is what `actionable` opens.
+                "actionable": !downloading,
+            }),
+        );
 
         return Err(validation_error);
     }

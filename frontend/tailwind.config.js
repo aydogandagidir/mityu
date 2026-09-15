@@ -13,6 +13,23 @@ module.exports = {
   				'var(--font-dm-sans)'
   			]
   		},
+  		// A capped type scale (G4).
+  		//
+  		// Before this there was none: components picked from eight Tailwind
+  		// sizes plus arbitrary values like text-[10px], text-[11px] and
+  		// text-[13px], so nothing on screen had a reliable rank and every
+  		// surface read as one undifferentiated wall of text. Five steps is
+  		// deliberately few — a component must choose a level that already
+  		// exists instead of inventing a pixel value, which is how the drift
+  		// started. Line heights ship with the sizes so prose spacing cannot
+  		// drift independently of them.
+  		fontSize: {
+  			display: ['1.5rem', { lineHeight: '2rem', letterSpacing: '-0.01em' }],
+  			title: ['1rem', { lineHeight: '1.5rem', letterSpacing: '-0.005em' }],
+  			body: ['0.875rem', { lineHeight: '1.375rem' }],
+  			meta: ['0.8125rem', { lineHeight: '1.25rem' }],
+  			caption: ['0.75rem', { lineHeight: '1.125rem' }]
+  		},
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',

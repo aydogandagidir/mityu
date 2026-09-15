@@ -18,6 +18,22 @@ export interface Transcript {
   duration?: number;          // Segment duration in seconds (e.g., 3.3)
 }
 
+/**
+ * Whether the transcription engine the user configured can record right now.
+ * Mirrors `audio::transcription::engine::TranscriptionReadiness`.
+ *
+ * `provider` is the engine that was actually consulted, so a refusal names the
+ * one the user chose. `reason` is the backend's own sentence and is rendered
+ * verbatim — composing a second one here is how the UI came to say
+ * "download a transcription model" to users who already had one.
+ */
+export interface TranscriptionReadiness {
+  ready: boolean;
+  provider: string;
+  downloading: boolean;
+  reason: string | null;
+}
+
 export interface TranscriptUpdate {
   text: string;
   timestamp: string; // Wall-clock time for reference

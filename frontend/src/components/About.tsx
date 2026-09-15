@@ -70,7 +70,7 @@ export function About() {
                     />
                 </div>
                 <span className="text-sm text-muted-foreground"> v{currentVersion}</span>
-                <p className="text-medium text-muted-foreground mt-1">
+                <p className="text-body text-muted-foreground mt-1">
                     Meetings captured and reviewed — entirely on your machine. No bots, no uploads, no account.
                 </p>
                 <div className="mt-3">
@@ -127,15 +127,15 @@ export function About() {
 
             {/* Coming Soon - Compact */}
             <div className="bg-accent rounded p-3">
-                <p className="text-s text-primary">
+                <p className="text-caption text-primary">
                     <span className="font-bold">Coming soon:</span> A library of on-device AI agents — drafting follow-ups, tracking action items, and more. Draft-only: nothing is sent until you approve it.
                 </p>
             </div>
 
             {/* CTA Section - Compact */}
             <div className="text-center space-y-2">
-                <h3 className="text-medium font-semibold text-foreground">Ready to push your business further?</h3>
-                <p className="text-s text-muted-foreground">
+                <h3 className="text-title font-semibold text-foreground">Ready to push your business further?</h3>
+                <p className="text-caption text-muted-foreground">
                     If you&apos;re planning to build privacy-first custom AI agents or a fully tailored product for your <span className="font-bold">business</span>, we can help you build it.
                 </p>
                 <button

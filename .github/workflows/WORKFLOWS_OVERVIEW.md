@@ -2,19 +2,23 @@
 
 This document provides a quick overview of all available CI/CD workflows in this repository.
 
-**Note:** Most workflows in this repository — every build and release workflow below — use **manual triggers only** (`workflow_dispatch`). The exception is **`ci.yml`**, which triggers **automatically** on push (`main`, `feat/**`, `fix/**`, `chore/**`, `docs/**`) and on every pull request, in addition to supporting manual dispatch.
+**Note:** Most workflows in this repository — every build and release workflow below — use **manual triggers only** (`workflow_dispatch`). The exception is **`ci.yml`**, which triggers **automatically** on push (`main`, `feat/**`, `fix/**`, `chore/**`, `docs/**`) and on every pull request, in addition to supporting manual dispatch. Since ADR-0048 it also runs the **full Windows release build on every pull request** that touches anything native, and uploads the installer.
+
+**Until ADR-0048 the five manual build wrappers had never completed a run.** `build.yml` declared `contents: write` on its job, so any caller granting less was an invalid workflow — `startup_failure`, zero jobs, in two seconds. Only `release.yml` granted write. `build.yml` now inherits the caller's permissions; the wrappers grant `contents: read` and pass `secrets: inherit`.
 
 ## Workflow Files
 
 ### 1. **ci.yml** - Continuous Integration
-**Purpose:** Lint, type-check, and test every push and pull request — the automatic quality gate (not a build/release workflow, produces no artifacts)
+**Purpose:** Lint, type-check, and test every push and pull request — the automatic quality gate. On pull requests it is also the one place a Windows compile happens automatically (ADR-0048).
 
 **Key Features:**
 - `rust` job: `cargo fmt --all --check`, `cargo clippy --all-targets`, `cargo test --all`
 - `frontend` job: exact Node 20.19.4 + pnpm 10.33.0, `pnpm install --frozen-lockfile`, `pnpm run lint`, `pnpm tsc --noEmit`, `pnpm test`
 - `server-isolation` job: fails the build if `server/` exists without a `*cross_tenant*` isolation test (no-op guard until `server/` ships, see CLAUDE.md §5)
 - `workflow-pins` job: `tools/ci/check-action-pins.py --self-test` then the real check — every `uses:` in `.github/` must be pinned to a commit sha and run on Node 24 (composite/docker allowed); composites are opened and their nested `uses:` held to the same rules; `# vX.Y.Z` labels must match a real tag. One documented exception lives in `tools/ci/action-pins-allowlist.json`. Added after the v1.2.0 release run still warned about Node 20 (ADR-0044).
-- No build artifacts, no signing, no releases
+- `changes` job (pull requests only): classifies the PR's changed files on the merge commit (`git diff --name-only HEAD^1 HEAD`). Fails toward building — only a PR whose every file is under `docs/`, `landing/`, `.claude/`, `*.md` or `LICENSE` skips the Windows build.
+- `windows-build` job (pull requests only, when `changes` says native): calls `build.yml` for `windows-latest` / `x86_64-pc-windows-msvc`, release profile, signing off, read-only token. Uploads artifact **`mityu-pr-x86_64-pc-windows-msvc`** (the `.msi` and the NSIS `.exe`, 30-day retention) — download it from the run's Summary page to smoke-test the PR without building locally. A newer push to the same PR cancels the build in flight. Never runs when `release.yml` calls this file, so a release does not build Windows twice. It is a compile-and-bundle proof, **not** the manual smoke test CLAUDE.md §4 still requires.
+- No signing, no releases
 
 **Triggers:**
 - **Automatic** — push to `main`, `feat/**`, `fix/**`, `chore/**`, `docs/**`

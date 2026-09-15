@@ -28,8 +28,16 @@ export default function SettingsPage() {
   const router = useRouter();
   const { transcriptModelConfig, setTranscriptModelConfig } = useConfig();
 
-  // Animation state for tabs
-  const [activeTab, setActiveTab] = useState('general');
+  // Animation state for tabs. The initial tab may be named in the URL
+  // (`/settings?tab=beta`), which is how the tray's "Live copilot" entry takes
+  // a user straight to the switch instead of dropping them on General to hunt
+  // for it. An unknown value falls back to General rather than rendering an
+  // empty panel.
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === 'undefined') return 'general';
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    return requested && TABS.some((tab) => tab.value === requested) ? requested : 'general';
+  });
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [underlineStyle, setUnderlineStyle] = useState({ left: 0, width: 0 });
 
