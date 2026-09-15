@@ -100,7 +100,9 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
       // 4. Update UI state
       await onRecordingStart();
     } catch (error) {
-      console.error('Failed to start recording');
+      // The error object, not just the sentence: without it the console shows
+      // "Failed to start recording" and nothing about why.
+      console.error('Failed to start recording', error);
 
       // Parse error message to provide user-friendly feedback
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -122,9 +124,19 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           message: 'Recording permissions are required. Please:\n• Grant microphone access in System Settings\n• Grant screen recording access for system audio (macOS)\n• Restart the app after granting permissions'
         });
       } else {
+        // Whatever the backend said, verbatim.
+        //
+        // This branch used to replace the real reason with "check your audio
+        // device settings" — advice that is wrong for most of what reaches it
+        // (a model that will not load, a licence gate, a previous recording
+        // still saving). The user was sent to reconfigure hardware that was
+        // working, and the actual cause was discarded here and nowhere else.
         setDeviceError({
           title: 'Recording Failed',
-          message: 'Unable to start recording. Please check your audio device settings and try again.'
+          message:
+            errorMsg.trim().length > 0
+              ? errorMsg
+              : 'Unable to start recording, and the app did not report a reason.'
         });
       }
     }

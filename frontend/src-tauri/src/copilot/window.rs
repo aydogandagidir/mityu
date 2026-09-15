@@ -35,7 +35,7 @@ const COPILOT_ROUTE: &str = "copilot";
 /// The command layer turns this into a message; the point is that the guard
 /// lives here, so the window cannot be created by any path while disabled.
 pub const DISABLED_ERROR: &str =
-    "The live copilot is off. Turn it on in Settings → Copilot to open the panel.";
+    "The live copilot is off. Turn it on in Settings → Beta → Live copilot to open the panel.";
 
 /// Is the panel currently open?
 pub fn is_open<R: Runtime>(app: &AppHandle<R>) -> bool {
