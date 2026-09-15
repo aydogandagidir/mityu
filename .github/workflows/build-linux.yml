@@ -66,7 +66,9 @@ jobs:
   build-linux:
     needs: prepare
     permissions:
-      contents: read
+      # See build-windows.yml: build.yml's job requests `contents: write`, and a
+      # caller granting less makes the run invalid before it starts.
+      contents: write
     uses: ./.github/workflows/build.yml
     with:
       platform: ${{ inputs['ubuntu-version'] }}

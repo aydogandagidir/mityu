@@ -19,7 +19,9 @@ jobs:
   build-devtest:
     name: Build ${{ matrix.platform-name }}
     permissions:
-      contents: read
+      # See build-windows.yml: build.yml's job requests `contents: write`, and a
+      # caller granting less makes the run invalid before it starts.
+      contents: write
     strategy:
       fail-fast: false
       matrix:

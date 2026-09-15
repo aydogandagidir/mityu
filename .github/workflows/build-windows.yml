@@ -26,7 +26,13 @@ concurrency:
 jobs:
   build-windows:
     permissions:
-      contents: read
+      # build.yml's job declares `contents: write` (it uploads release assets
+      # when given a release-id). A called workflow may not request more than
+      # its caller grants, so `contents: read` here did not downgrade the token
+      # — it made the whole run invalid, which is the `startup_failure`.
+      # release.yml grants write, which is why only the release path ever built.
+      # A manual dispatch passes no release-id and so uploads nothing.
+      contents: write
     uses: ./.github/workflows/build.yml
     with:
       platform: "windows-latest"
