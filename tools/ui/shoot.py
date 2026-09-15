@@ -126,6 +126,22 @@ def serve(directory: str):
     return httpd, port
 
 
+def chrome_flags() -> list:
+    """Flags every Chrome invocation needs on this machine.
+
+    Chrome refuses to start as root without --no-sandbox (crbug.com/638180),
+    which is exactly how it runs in a container/CI. Detect that instead of
+    failing with "chrome exited 1 and rendered nothing". MITYU_CHROME_FLAGS
+    (space-separated) appends anything else a machine needs.
+    """
+    flags = []
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        flags.append("--no-sandbox")
+    extra = os.environ.get("MITYU_CHROME_FLAGS", "").split()
+    flags.extend(extra)
+    return flags
+
+
 def shoot(chrome: str, url: str, png: str, width: int, height: int) -> int:
     # Delete first. Otherwise a Chrome that fails or crashes leaves the PREVIOUS
     # run's PNG in place, and every check below then validates a stale file --
@@ -136,6 +152,7 @@ def shoot(chrome: str, url: str, png: str, width: int, height: int) -> int:
     r = subprocess.run(
         [
             chrome,
+            *chrome_flags(),
             "--headless",
             "--disable-gpu",
             "--hide-scrollbars",
@@ -155,6 +172,7 @@ def dump_dom(chrome: str, url: str) -> str:
     r = subprocess.run(
         [
             chrome,
+            *chrome_flags(),
             "--headless",
             "--disable-gpu",
             "--virtual-time-budget=6000",
