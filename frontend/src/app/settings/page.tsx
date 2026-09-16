@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { ArrowLeft, Settings2, Mic, Database as DatabaseIcon, SparkleIcon, FlaskConical, KeyRound } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { motion } from 'framer-motion';
@@ -13,31 +13,29 @@ import { BetaSettings } from '@/components/BetaSettings';
 import { LicenseSettings } from '@/components/licensing/LicenseSettings';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { TABS, resolveTabFromSearch } from './tabs';
 
-// Tabs configuration (constant)
-const TABS = [
-  { value: 'general', label: 'General', icon: Settings2 },
-  { value: 'recording', label: 'Recordings', icon: Mic },
-  { value: 'Transcriptionmodels', label: 'Transcription', icon: DatabaseIcon },
-  { value: 'summaryModels', label: 'Summary', icon: SparkleIcon },
-  { value: 'beta', label: 'Beta', icon: FlaskConical },
-  { value: 'license', label: 'License', icon: KeyRound }
-] as const;
 
 export default function SettingsPage() {
   const router = useRouter();
   const { transcriptModelConfig, setTranscriptModelConfig } = useConfig();
 
-  // Animation state for tabs. The initial tab may be named in the URL
-  // (`/settings?tab=beta`), which is how the tray's "Live copilot" entry takes
-  // a user straight to the switch instead of dropping them on General to hunt
-  // for it. An unknown value falls back to General rather than rendering an
-  // empty panel.
-  const [activeTab, setActiveTab] = useState(() => {
-    if (typeof window === 'undefined') return 'general';
-    const requested = new URLSearchParams(window.location.search).get('tab');
-    return requested && TABS.some((tab) => tab.value === requested) ? requested : 'general';
-  });
+  // The tab may be named in the URL (`/settings?tab=beta`) — that is how the
+  // tray's "Live copilot" entry takes a user straight to the switch instead of
+  // dropping them on General to hunt for it. But the first render is ALWAYS
+  // 'general', on both sides, and the URL is applied in an effect afterwards.
+  //
+  // Reading the query string in the initialiser instead desynchronised the two
+  // renders: this app ships as a static export (next.config `output: 'export'`),
+  // so the prerendered HTML can only ever say General, while the client said
+  // Beta and React threw "Hydration failed because the server rendered HTML
+  // didn't match the client", discarded the server tree and rebuilt it. The tab
+  // did end up correct, which is exactly why it went unnoticed.
+  const [activeTab, setActiveTab] = useState<string>('general');
+  useEffect(() => {
+    const requested = resolveTabFromSearch(window.location.search);
+    if (requested) setActiveTab(requested);
+  }, []);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [underlineStyle, setUnderlineStyle] = useState({ left: 0, width: 0 });
 

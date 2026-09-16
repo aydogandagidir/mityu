@@ -104,3 +104,7 @@ target/
 frontend/src-tauri/binaries/
 __pycache__/
 *.pyc
+
+# Ad-hoc output from tools/ui/shoot.py and manual render probes. Screenshots are
+# evidence for a review, not repository content.
+.verify-shots/

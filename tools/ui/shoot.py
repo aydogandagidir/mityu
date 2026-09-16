@@ -126,6 +126,18 @@ def serve(directory: str):
     return httpd, port
 
 
+# Chrome refuses to start as root without this, and exits 1 having rendered
+# nothing: "Running as root without --no-sandbox is not supported."
+# Every container this repo builds and tests in runs as root, so without the
+# flag the screenshot gate could not run in CI or in an agent sandbox at all --
+# a verification tool that is itself unrunnable verifies nothing. The sandbox is
+# a defence against hostile page content; these pages are our own static export,
+# served from localhost by this same script.
+# `os.geteuid` is Unix-only, so ask for it rather than assuming it: this script
+# also runs on the Windows dev machines listed in CHROME_CANDIDATES.
+SANDBOX_FLAGS = ["--no-sandbox"] if getattr(os, "geteuid", lambda: 1)() == 0 else []
+
+
 def shoot(chrome: str, url: str, png: str, width: int, height: int) -> int:
     # Delete first. Otherwise a Chrome that fails or crashes leaves the PREVIOUS
     # run's PNG in place, and every check below then validates a stale file --
@@ -137,6 +149,7 @@ def shoot(chrome: str, url: str, png: str, width: int, height: int) -> int:
         [
             chrome,
             "--headless",
+            *SANDBOX_FLAGS,
             "--disable-gpu",
             "--hide-scrollbars",
             f"--window-size={width},{height}",
@@ -156,6 +169,7 @@ def dump_dom(chrome: str, url: str) -> str:
         [
             chrome,
             "--headless",
+            *SANDBOX_FLAGS,
             "--disable-gpu",
             "--virtual-time-budget=6000",
             "--dump-dom",

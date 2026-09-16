@@ -117,6 +117,28 @@ jobs:
         run: cargo clippy --all-targets
       - name: test
         run: cargo test --all
+      - name: the app starts and writes exactly one log file
+        # The ONLY check in this repo that can see a capability silently ABSENT
+        # at runtime. v1.2.1 shipped with tauri-plugin-log declared under
+        # `[target.'cfg(target_os = "macos")'.dependencies]`, so Windows linked
+        # no log crate and wrote no file — and nothing caught it, because a
+        # plugin you never registered is not a compile error and `cargo test`
+        # only ever ran on ubuntu. Starting the program and looking is the only
+        # thing that finds this class of defect.
+        #
+        # It also pins the shape of the fix: `Builder::new().target(x).target(y)`
+        # APPENDS to the two targets the builder already carries, which shipped
+        # two byte-identical log files and halved the effective rotation
+        # ceiling. Asserting exactly one file is what keeps that from returning.
+        #
+        # This runs on ubuntu, so it does NOT prove the Windows build logs — only
+        # that the dependency is no longer macOS-gated and the registration
+        # works off macOS. It proves nothing about recording: there is no audio
+        # device on a runner, and CLAUDE.md §4 still owes a human smoke test.
+        run: |
+          sudo apt-get install -y xvfb
+          cargo build -p mityu
+          tools/ci/verify-startup.sh
   frontend:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: frontend } }
