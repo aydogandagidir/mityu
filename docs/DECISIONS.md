@@ -1331,3 +1331,25 @@ Two settings existed **twice**. The recordings folder was printed in General and
 4. **Two primitives** carry the shape: `SettingsCard` (the card chrome nine copies of which were written out by hand) and `SwitchRow` (a real `<label>` bound to the control, with the consequence in a description rather than a `title=` tooltip no keyboard user sees).
 
 **Explicitly not in this tranche, and why.** The 1387-line `ModelSettingsModal` is **not** decomposed, and `ApiKeyField` / `ModelCard` are not extracted: five importers depend on its exact props and its `ModelConfig` type, and splitting it is a change that needs the app running to verify — a summary that silently stops generating is not something a fixture screenshot can catch. `ThemeToggle` does **not** yet call `setTheme` on the native window; that needs a `core:window:allow-set-theme` grant in the inline capabilities and a Rust build to prove, and **the Rust gates cannot run in this environment** (no GTK/WebKitGTK development packages — `cargo clippy` dies in `gdk-sys`). Both are recorded here rather than claimed.
+
+---
+## ADR-0062 (design ADR-N) — Approval is legible without colour, and the review controls stop hiding from the keyboard
+
+**Status:** Accepted (2026-09-16). Implements DESIGN_SYSTEM.md §5.10 (WP10). **No string, role or `aria-label` on this surface changed** — only layout, colour and disclosure.
+
+**Context.** `DraftSummaryView` is the product's moat: it is where a person turns model output into a record they will stand behind. Three things about it worked against that.
+
+**The status chips were colour and a word, and the colour came from the raw palette** — twelve hardcoded values with no dark variant beyond a tint. In greyscale, in a printed export, in a screenshot pasted into a dispute file, or to a reader with a colour-vision deficiency, "Approved" and "Rejected" were the same grey pill with different text. That is the one context where this product's output matters.
+
+**The primary action was a guess.** Approve, Edit and Reject were three identical 32px outline buttons, distinguished only by a tick, a pencil and a cross at 16px. Nothing said which one the screen existed for.
+
+**The source link could vanish silently.** `SourceLink` returned `null` when `onJumpToSource` was absent, so a parent that forgot one prop removed the evidence link from every block — and the summary looked exactly as complete as one whose evidence resolved. That is the failure this whole surface exists to prevent.
+
+**Decision.**
+1. **Status chips become `StatusPill`:** the same four words, each with an icon, on tokens. Status is never carried by colour alone.
+2. **Approve keeps its word** (`Check` + "Approve"), and Edit and Reject reveal on hover or keyboard focus while staying in the DOM **and in the tab order** — `opacity-0`, never `display:none` and never `pointer-events-none`, which is how a reveal-on-hover pattern quietly becomes mouse-only. `@media (pointer: coarse)` makes all three visible where there is no hover at all.
+3. **The source chip is always drawn.** A caller without a handler gets the unresolved state, which says so in a sentence, instead of nothing at all. 🔒 The accessible name is unchanged.
+4. **The Art. 50 banner is the `Notice` primitive**, which **drops** any element passed as a child rather than rendering it — so "this marking contains no control" is a property of the component instead of a promise a later edit can break. It moves from amber to the AI register: amber is this app's warning colour, a draft is not an error, and a marking that looks like an error is one a reader learns to dismiss. 🔒 `role="note"`, the accessible name, both sentences and its presence in all four states are unchanged.
+5. **The edit and reject fields move onto tokens**, including their focus rings; they had been drawing blue and red borders from the palette with `focus:ring` rather than `focus-visible`.
+
+**Consequences.** 🔒 Everything the register pins is intact: the eleven per-item accessible names, the optional never-gating reject reason with Enter submitting blank and Escape cancelling, the whole-summary gate and its five disabled reasons, the export gating and its disclosure, the lock predicate and its unit test, the Original toggle, and `data-tour="summary-approve-block"` on the first draft block. The `/design/hitl` fixture now passes a jump handler, so the source control it was silently omitting is part of the screenshot.

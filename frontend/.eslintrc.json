@@ -92,7 +92,6 @@
         "src/app/notes/**",
         "src/components/AISummary/Block.tsx",
         "src/components/AISummary/BlockNoteSummaryView.tsx",
-        "src/components/AISummary/DraftSummaryView.tsx",
         "src/components/AISummary/Section.tsx",
         "src/components/AISummary/index.tsx",
         "src/components/About.tsx",
