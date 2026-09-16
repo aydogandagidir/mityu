@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { RecordingControls } from '@/components/RecordingControls';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
@@ -8,7 +8,7 @@ import { usePermissionCheck } from '@/hooks/usePermissionCheck';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useConfig } from '@/contexts/ConfigContext';
-import { StatusOverlays } from '@/app/_components/StatusOverlays';
+import { WrapUpPipeline } from '@/app/_components/WrapUpPipeline';
 import Analytics from '@/lib/analytics';
 import { SettingsModals } from './_components/SettingsModal';
 import { TranscriptPanel } from './_components/TranscriptPanel';
@@ -27,6 +27,13 @@ export default function Home() {
   // Local page state (not moved to contexts)
   const [isRecording, setIsRecordingState] = useState(false);
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
+  /**
+   * The wrap-up panel outlives the statuses that open it: SAVING flips to COMPLETED
+   * two seconds before `useRecordingStop` navigates to the report, and to ERROR when
+   * the save fails. Gating on the status alone would tear the panel down at exactly
+   * the two moments it finally has something to say.
+   */
+  const [showWrapUp, setShowWrapUp] = useState(false);
 
   // Use contexts for state management
   const { meetingTitle, transcripts } = useTranscripts();
@@ -34,11 +41,11 @@ export default function Home() {
   const recordingState = useRecordingState();
 
   // Extract status from global state
-  const { status, isStopping, isProcessing, isSaving } = recordingState;
+  const { status, statusMessage, isStopping, isProcessing } = recordingState;
 
   // Hooks
   const { hasMicrophone } = usePermissionCheck();
-  const { setIsMeetingActive, refetchMeetings } = useSidebar();
+  const { setIsMeetingActive, refetchMeetings, currentMeeting } = useSidebar();
   const { modals, messages, showModal, hideModal } = useModalState(transcriptModelConfig);
   const { isRecordingDisabled, setIsRecordingDisabled } = useRecordingStateSync(isRecording, setIsRecordingState, setIsMeetingActive);
   const { handleRecordingStart } = useRecordingStart(isRecording, setIsRecordingState, showModal);
@@ -174,6 +181,21 @@ export default function Home() {
   // Computed values using global status
   const isProcessingStop = status === RecordingStatus.PROCESSING_TRANSCRIPTS || isProcessing;
 
+  useEffect(() => {
+    if (status === RecordingStatus.PROCESSING_TRANSCRIPTS || status === RecordingStatus.SAVING) {
+      setShowWrapUp(true);
+    } else if (status === RecordingStatus.IDLE || recordingState.isRecording) {
+      setShowWrapUp(false);
+    }
+  }, [status, recordingState.isRecording]);
+
+  const dismissWrapUp = useCallback(() => setShowWrapUp(false), []);
+  const openLastReport = useCallback(() => {
+    if (currentMeeting?.id) {
+      router.push(`/meeting-details?id=${currentMeeting.id}`);
+    }
+  }, [currentMeeting?.id, router]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -244,11 +266,20 @@ export default function Home() {
             </div>
           )}
 
-        {/* Status Overlays - Processing and Saving */}
-        <StatusOverlays
-          isProcessing={status === RecordingStatus.PROCESSING_TRANSCRIPTS && !recordingState.isRecording}
-          isSaving={status === RecordingStatus.SAVING}
-        />
+        {/* What happens after Stop: the status message the app has always written and
+            never shown, with the steps around it (DESIGN_SYSTEM.md §6.2). */}
+        {showWrapUp && !recordingState.isRecording && (
+          <div className="absolute inset-0 z-20 grid place-items-center overflow-y-auto bg-background/80 backdrop-blur-sm">
+            <WrapUpPipeline
+              status={status}
+              statusMessage={statusMessage}
+              segmentCount={transcripts.length}
+              meetingId={currentMeeting?.id}
+              onOpenReport={openLastReport}
+              onRecordAnother={dismissWrapUp}
+            />
+          </div>
+        )}
       </div>
     </motion.div>
   );
