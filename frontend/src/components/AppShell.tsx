@@ -45,6 +45,7 @@ import { LicensingProvider } from '@/contexts/LicensingContext'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 import { isTauri } from '@/lib/isTauri'
 import { TourProvider } from '@/components/tour'
+import { CommandPalette } from '@/components/shell/CommandPalette'
 
 
 // Module-level component — stable reference across RootLayout re-renders.
@@ -119,14 +120,11 @@ export function AppShell({
       })
   }, [])
 
-  // Disable context menu in production
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'production') {
-      const handleContextMenu = (e: MouseEvent) => e.preventDefault();
-      document.addEventListener('contextmenu', handleContextMenu);
-      return () => document.removeEventListener('contextmenu', handleContextMenu);
-    }
-  }, []);
+  // The production build used to `preventDefault()` every context menu, which killed
+  // right-click copy and paste in the BlockNote editor and in the transcript — the two
+  // places in this app where a person most needs them. Whatever it was guarding against
+  // (a developer-tools entry the WebView does not offer in a release build anyway), the
+  // cost was the standard editing menu of the platform.
   useEffect(() => {
     // Listen for tray recording toggle request
     const unlisten = listen('request-recording-toggle', () => {
@@ -272,6 +270,12 @@ export function AppShell({
                             <LicensingProvider>
                               {/* Download progress toast provider - listens for background downloads */}
                               <DownloadProgressToastProvider />
+
+                              {/* ⌘K, the shortcuts sheet and the global keys. Mounted
+                                  inside the providers it reads, and NOT during
+                                  onboarding — a palette that can navigate away from
+                                  setup is a way to skip it by accident. */}
+                              {!showOnboarding && <CommandPalette />}
 
                               {/* Show onboarding or main app */}
                               {showOnboarding ? (

@@ -1353,3 +1353,22 @@ Two settings existed **twice**. The recordings folder was printed in General and
 5. **The edit and reject fields move onto tokens**, including their focus rings; they had been drawing blue and red borders from the palette with `focus:ring` rather than `focus-visible`.
 
 **Consequences.** 🔒 Everything the register pins is intact: the eleven per-item accessible names, the optional never-gating reject reason with Enter submitting blank and Escape cancelling, the whole-summary gate and its five disabled reasons, the export gating and its disclosure, the lock predicate and its unit test, the Original toggle, and `data-tour="summary-approve-block"` on the first draft block. The `/design/hitl` fixture now passes a jump handler, so the source control it was silently omitting is part of the screenshot.
+
+---
+## ADR-0063 (design ADR-O) — A keyboard model, and the return of the context menu
+
+**Status:** Accepted (2026-09-16). Implements DESIGN_SYSTEM.md §3.4 (WP5).
+
+**Context.** The app had **no keyboard model**. Enter and Escape worked inside inputs; nothing else. There was no way to start or stop a recording, reach a meeting, open a settings section, or find out what the keys were — while the beta copilot registered *global operating-system* shortcuts. A desktop app that people leave open all day, and that is almost entirely text, was mouse-only.
+
+It was also **suppressing the context menu in production** — `preventDefault()` on every `contextmenu` event — which killed right-click copy and paste in the BlockNote editor and in the transcript, the two places in this app where a person most needs them.
+
+**Decision.**
+1. **A command palette on `⌘K`**, built on the `cmdk` dependency the project already carries, covering: Home, Actions, Settings, start-or-open the recording, evidence search, the recent meetings, and every settings section by name.
+2. **Global keys:** `⌘K` palette · `⌘⇧R` start or open the recording · `⌘B` show or hide the meetings pane · `⌘,` Settings · `/` evidence search · `?` the shortcuts sheet · Escape closes the evidence drawer, a dialog or the palette.
+3. **Single-character keys never steal a keystroke.** `/` and `?` are ignored whenever focus is in an input, a textarea, a select or anything `contentEditable` — this app is full of text fields and `?` is a character people type.
+4. **The palette never starts a recording itself.** It calls the same `handleRecordingToggle` every other entry point calls, which dispatches or navigates depending on the route. 🔒 One path to capture.
+5. **It is not mounted during onboarding.** A palette that can navigate away from setup is a way to skip setup by accident.
+6. **The context menu comes back.** Whatever the suppression was guarding against — a developer-tools entry a release WebView does not offer anyway — the cost was the platform's standard editing menu.
+
+**Consequences.** The shortcut table lives beside the handlers, in the same file, so the sheet and the behaviour cannot drift apart. Recording start and stop still belong to the recording surface; a global *stop* from any route needs the session provider that package owns, and is not claimed here.
