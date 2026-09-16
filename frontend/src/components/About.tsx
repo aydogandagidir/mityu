@@ -70,7 +70,7 @@ export function About() {
                     />
                 </div>
                 <span className="text-sm text-muted-foreground"> v{currentVersion}</span>
-                <p className="text-medium text-muted-foreground mt-1">
+                <p className="text-body text-muted-foreground mt-1">
                     Meetings captured and reviewed — entirely on your machine. No bots, no uploads, no account.
                 </p>
                 <div className="mt-3">
@@ -127,12 +127,17 @@ export function About() {
 
             {/* In beta — the live copilot (BACKLOG EPIC I). Same wording as the
                 landing page's FAQ so the app and the site describe it identically:
-                off by default, Settings → Beta, not validated against a real model. */}
+                off by default, Settings → Beta, not validated against a real model.
+
+                This is the STANDING description of what the app is, which is why
+                it names no version. Per-release changes belong to the What's new
+                dialog (`lib/releaseNotes.ts`, ADR-0047) — two surfaces, two jobs,
+                so neither has to be rewritten when the other changes. */}
             <div className="space-y-3">
-                <h2 className="text-base font-semibold text-foreground">In beta</h2>
+                <h2 className="text-title font-semibold text-foreground">In beta</h2>
                 <div className="bg-muted rounded p-3">
-                    <h3 className="font-bold text-sm text-foreground mb-1">Live copilot — off by default</h3>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
+                    <h3 className="font-bold text-body text-foreground mb-1">Live copilot — off by default</h3>
+                    <p className="text-caption text-muted-foreground">
                         Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; eight meeting modes decide what it offers. Every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. Pin to notes keeps an answer as a draft in the meeting&apos;s summary when you save it. It never records on its own, never hides Mityu, and may use a cloud provider only if you separately allow it. It has not yet been checked against a real model.
                     </p>
                 </div>
@@ -142,10 +147,10 @@ export function About() {
                 No dates, no promises: each item ships only when it can be described
                 honestly (the on-device agents line is the one docs/ROADMAP.md cites). */}
             <div className="bg-accent rounded p-3 space-y-1.5">
-                <p className="text-s text-primary">
+                <p className="text-caption text-primary">
                     <span className="font-bold">In development, not in this build:</span>
                 </p>
-                <ul className="text-xs text-primary leading-relaxed list-disc pl-4 space-y-1">
+                <ul className="text-caption text-primary list-disc pl-4 space-y-1">
                     <li>macOS build — the code targets it; nothing is published yet.</li>
                     <li>Two validation gates: transcription measured on real recordings, and the copilot&apos;s live check against a real model. These decide what Mityu is allowed to claim.</li>
                     <li>Copilot: check claims against your own documents, and attach one screenshot you preview and confirm — never continuous.</li>
@@ -157,8 +162,8 @@ export function About() {
 
             {/* CTA Section - Compact */}
             <div className="text-center space-y-2">
-                <h3 className="text-medium font-semibold text-foreground">Ready to push your business further?</h3>
-                <p className="text-s text-muted-foreground">
+                <h3 className="text-title font-semibold text-foreground">Ready to push your business further?</h3>
+                <p className="text-caption text-muted-foreground">
                     If you&apos;re planning to build privacy-first custom AI agents or a fully tailored product for your <span className="font-bold">business</span>, we can help you build it.
                 </p>
                 <button

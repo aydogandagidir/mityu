@@ -26,6 +26,10 @@ concurrency:
 jobs:
   build-windows:
     permissions:
+      # build.yml inherits the caller's permissions (it declares none of its
+      # own). It only needs `contents: write` on the production-release path,
+      # where release.yml grants it. A manual dispatch passes no release-id,
+      # uploads nothing to the repository, and gets a read-only token.
       contents: read
     uses: ./.github/workflows/build.yml
     with:
@@ -36,3 +40,10 @@ jobs:
       asset-prefix: "mityu"
       upload-artifacts: ${{ inputs['upload-artifacts'] }}
       is-debug-build: ${{ inputs['build-type'] == 'debug' }}
+    # build.yml reads SM_* / APPLE_* credentials directly and declares no
+    # `workflow_call.secrets` block, so a caller that passes nothing makes it an
+    # invalid workflow: the run dies as `startup_failure` before a single job is
+    # created. release.yml has always inherited; this manual wrapper never did,
+    # which is why it had never completed a run. Signing stays off here
+    # (sign-binaries: false) — inheriting only makes the call valid.
+    secrets: inherit

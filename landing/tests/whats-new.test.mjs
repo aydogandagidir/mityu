@@ -16,12 +16,20 @@ import test from 'node:test';
  *   notice, and the desktop About dialog uses the same load-bearing phrases
  *   (`frontend/src/components/About.test.tsx` asserts that side);
  * - ADR-0038 invariant 1: the word "undetectable" never appears in product
- *   copy or marketing.
+ *   copy or marketing;
+ * - the site and the app agree on which releases exist. The app ships its own
+ *   per-release notes (`frontend/src/lib/releaseNotes.ts`, ADR-0047); a release
+ *   the app tells a user about must be one the site also lists, or the two
+ *   surfaces are describing different products.
  */
 
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const privacy = await readFile(new URL('../privacy.html', import.meta.url), 'utf8');
 const pkg = JSON.parse(await readFile(new URL('../../frontend/package.json', import.meta.url), 'utf8'));
+const releaseNotesSource = await readFile(
+  new URL('../../frontend/src/lib/releaseNotes.ts', import.meta.url),
+  'utf8',
+);
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
 
@@ -68,6 +76,29 @@ test('the newest listed release is on the same release line as the app version',
   const [appMajor, appMinor] = parse(pkg.version);
   assert.equal(major, appMajor, `landing lists ${newest}, app is ${pkg.version}`);
   assert.ok(appMinor - minor <= 1, `landing lists ${newest}, app is ${pkg.version} — the what's-new list is a minor behind`);
+});
+
+test('every release the app has notes for is also listed on the site', () => {
+  // Parsed, not imported: this is a Node test suite with no TypeScript loader,
+  // and the shape it needs is one literal field. A `version:` line that stops
+  // matching means the module was restructured — the test says so rather than
+  // silently asserting over an empty list.
+  const appVersions = [...releaseNotesSource.matchAll(/^\s*version: '([^']+)',$/gm)].map((m) => m[1]);
+  assert.ok(appVersions.length > 0, 'no version entries found in releaseNotes.ts — has its shape changed?');
+
+  // EXACT match, deliberately. The first draft of this test matched on
+  // major.minor so a patch note would not force a new site entry — and a
+  // mutation proved that hole: with 1.2.1 listed, dropping 1.2.0 from the site
+  // still passed, because 1.2.1 "covered the 1.2 line". That is precisely the
+  // case the test exists to catch. Exact match also enforces the process
+  // RELEASE_CHECKLIST §0 documents: one site entry per release.
+  const listed = new Set(listedReleases());
+  for (const version of appVersions) {
+    assert.ok(
+      listed.has(version),
+      `the app's release notes describe ${version} but the site's what's-new list does not: [${[...listed].join(', ')}]`,
+    );
+  }
 });
 
 test('the copilot is described as a beta that is off by default, reached from Settings → Beta', () => {

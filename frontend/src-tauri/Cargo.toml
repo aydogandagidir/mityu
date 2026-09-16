@@ -195,12 +195,21 @@ tauri-plugin-single-instance = "=2.3.7"
 # enabled.
 tauri-plugin-global-shortcut = "2.3.0"
 
+# Logging. Declared for EVERY platform, not just macOS.
+#
+# It used to sit under `[target.'cfg(target_os = "macos")'.dependencies]`, so on
+# Windows and Linux the crate was never linked and the plugin could not be
+# registered even in principle — which is why the shipped Windows build wrote no
+# log file anywhere, and why a user whose recording would not start had nothing
+# to send. CLAUDE.md §3 listed `log` among the plugins in use; on the platform
+# this product actually ships to, it was not.
+tauri-plugin-log = { version = "2.6.0", features = ["colored"] }
+
 # macOS-specific dependencies with Metal GPU acceleration
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri = { version = "2.6.2", features = ["protocol-asset", "macos-private-api", "tray-icon"] }
 once_cell = "1.17.1"
 objc = "0.2.7"
-tauri-plugin-log = { version = "2.6.0", features = ["colored"] }
 anyhow = "1.0"
 time = { version = "0.3", features = ["formatting"] }
 reqwest = { version = "0.11", features = ["multipart", "json"] }

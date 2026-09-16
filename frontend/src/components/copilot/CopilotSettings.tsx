@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Settings → Copilot (BACKLOG I1, ADR-0038).
+ * Settings → Beta → Live copilot (BACKLOG I1, ADR-0038; moved there by ADR-0045).
  *
  * Three things the user controls: whether the copilot exists at all, whether it
  * asks the OS to keep it out of screen captures, and its shortcut.
@@ -24,7 +24,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AlertTriangle, Info, Loader2, PanelRight, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Cloud, Info, Loader2, PanelRight, ShieldCheck } from 'lucide-react';
 import { copilotService } from '@/services/copilotService';
 import type { CopilotConfig, CopilotStatus } from '@/types/copilot';
 
@@ -115,15 +115,65 @@ export default function CopilotSettings() {
         </div>
 
         {config.enabled && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void copilotService.togglePanel()}
-            className="gap-1"
-          >
-            <PanelRight className="h-3.5 w-3.5" /> Show the panel
-          </Button>
+          <div className="space-y-2">
+            {/* The one instruction a user actually needs, with the binding they
+                actually have. "I could not work out how to use the Copilot" was
+                the report; a switch with no next step is what produced it. The
+                panel is empty without a recording, so say that here rather than
+                letting the user discover it by opening an empty panel. */}
+            <p className="text-xs text-muted-foreground">
+              Start a recording, then press{' '}
+              <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">
+                {config.keybinds.togglePanel.replace('CommandOrControl', 'Ctrl')}
+              </kbd>{' '}
+              to open the panel. It answers only from the meeting you are recording, so it stays
+              empty until one is running.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void copilotService.togglePanel()}
+              className="gap-1"
+            >
+              <PanelRight className="h-3.5 w-3.5" /> Show the panel
+            </Button>
+          </div>
         )}
+      </section>
+
+      {/* Where a live insight may be sent.
+          *
+          * This switch existed in the config, was enforced on every request,
+          * and had NO user interface anywhere. A user whose summary provider is
+          * a cloud one (OpenAI, Anthropic, Groq, a remote Ollama) was refused on
+          * every single action press, told to change a setting, and given no
+          * setting to change — the feature was untestable for them and there was
+          * no way to find that out from inside the app.
+          *
+          * It stays OFF by default and the wording says plainly what turning it
+          * on means, because a live insight fires from a hotkey mid-sentence:
+          * the user is authorising something that then happens without another
+          * prompt. */}
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+              <Cloud className="h-4 w-4" /> Allow cloud insights
+            </h3>
+            <p className="max-w-xl text-xs text-muted-foreground">
+              Off by default. While it is off, the copilot answers only with a model running on this
+              computer, and refuses rather than sending anything away. Turning it on lets the last
+              few minutes of the conversation be sent to the AI provider you configured under
+              Summary — on every press of an action button, with no further prompt.
+            </p>
+          </div>
+          <Switch
+            checked={config.allowCloudInsights}
+            disabled={isSaving}
+            onCheckedChange={(allowCloudInsights) => persist({ ...config, allowCloudInsights })}
+            aria-label="Allow live insights to be sent to a cloud provider"
+          />
+        </div>
       </section>
 
       <section className="space-y-3 rounded-lg border border-border p-4">

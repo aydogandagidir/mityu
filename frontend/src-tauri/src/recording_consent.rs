@@ -100,17 +100,34 @@ impl RecordingConsentTicketState {
 /// persisted or logged.
 #[tauri::command]
 pub async fn authorize_recording_start<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
+    // The prompt is OWNED by the main window.
+    //
+    // Without a parent this is a message box with a NULL owner: on Windows it
+    // is not modal to Mityu and the window manager is free to paint it behind
+    // the app or on another monitor. The renderer has already set the status to
+    // "Initializing recording…" by the time this runs, so a user who never sees
+    // the box sees an app that started something and then stopped — the exact
+    // shape of "I press record and nothing happens", with no error to report.
+    //
+    // Owning it also makes it modal, so it cannot be lost behind the window it
+    // is asking about.
     let dialog_app = app.clone();
+    let parent = app.get_webview_window("main");
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
-        dialog_app
+        let builder = dialog_app
             .dialog()
             .message(
                 "Start recording only after informing all participants and confirming you have permission under the applicable rules.",
             )
             .title("Confirm recording permission")
             .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::YesNo)
-            .blocking_show()
+            .buttons(MessageDialogButtons::YesNo);
+        // A missing main window is not a reason to refuse consent; it only
+        // means there is nothing to own the dialog.
+        match parent {
+            Some(window) => builder.parent(&window).blocking_show(),
+            None => builder.blocking_show(),
+        }
     })
     .await
     .map_err(|_| "Recording consent confirmation is temporarily unavailable.".to_string())?;

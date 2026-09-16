@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import { Switch } from "./ui/switch"
-import { FolderOpen, Compass } from "lucide-react"
+import { FolderOpen, Compass, Sparkles } from "lucide-react"
 import { openDatabaseFolder, openModelsFolder, openRecordingsFolder } from "@/services/systemService"
 import Analytics from "@/lib/analytics"
 import { useTour } from "@/components/tour"
@@ -11,6 +11,9 @@ import RecordingConsentSettings from "./RecordingConsentSettings"
 import RedactionSettings from "./RedactionSettings"
 import LearningSettings from "./LearningSettings"
 import { ThemeToggle } from "./ThemeToggle"
+import { WhatsNew } from "./WhatsNew"
+import { SettingCard } from "./ui/setting-card"
+import { APP_VERSION } from "@/lib/appVersion"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 
 export function PreferenceSettings() {
@@ -23,6 +26,7 @@ export function PreferenceSettings() {
   } = useConfig();
 
   const { replayTour } = useTour();
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
 
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -154,114 +158,101 @@ export function PreferenceSettings() {
   const notificationsEnabledValue = notificationsEnabled ?? false;
 
   return (
-    <div className="space-y-6">
-      {/* Appearance Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Appearance</h3>
-            <p className="text-sm text-muted-foreground">Follow your system theme, or force light or dark.</p>
-          </div>
-          <ThemeToggle />
-        </div>
-      </div>
+    <div className="space-y-4">
+      {/* Every card here is the same primitive now (G4). Before, each was a
+          hand-rolled div at p-6 with a text-lg heading, so a theme toggle and
+          the storage-and-deletion caveats carried identical weight and the
+          screen read as one wall of text. */}
+      <SettingCard
+        title="Appearance"
+        description="Follow your system theme, or force light or dark."
+        action={<ThemeToggle />}
+      />
 
-      {/* Notifications Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Notifications</h3>
-            <p className="text-sm text-muted-foreground">Enable or disable notifications of start and end of meeting</p>
-          </div>
+      <SettingCard
+        title="Notifications"
+        description="Tell me when a meeting starts and ends."
+        action={
           <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
-        </div>
-      </div>
+        }
+      />
 
-      {/* Product Tour Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Product tour</h3>
-            <p className="text-sm text-muted-foreground">
-              Replay the guided walkthrough on the sample meeting — transcript, source-linked summary, and your first recording.
-            </p>
-          </div>
+      <SettingCard
+        title="Product tour"
+        description="Replay the guided walkthrough on the sample meeting."
+        action={
           <button
             onClick={() => {
               void Analytics.trackButtonClick('replay_product_tour', 'settings');
               replayTour();
             }}
-            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-meta font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            <Compass className="w-4 h-4" />
-            Replay product tour
+            <Compass className="h-4 w-4" />
+            Replay
+          </button>
+        }
+        details="It walks through a sample meeting: the transcript, the source-linked summary, and starting your first recording."
+        detailsLabel="What the tour covers"
+      />
+
+      {/* What's new (G2). The update dialog shows itself once; this is how a
+          user reads it again after dismissing it. */}
+      <SettingCard
+        title="What's new"
+        description={`What changed in version ${APP_VERSION}, including what is still off by default.`}
+        action={
+          <button
+            onClick={() => {
+              void Analytics.trackButtonClick('open_whats_new', 'settings');
+              setWhatsNewOpen(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-meta font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <Sparkles className="h-4 w-4" />
+            Open
+          </button>
+        }
+      />
+      <WhatsNew open={whatsNewOpen} onOpenChange={setWhatsNewOpen} />
+
+      <SettingCard
+        title="Where your data is stored"
+        description="Everything stays on this computer."
+        details={
+          <>
+            <p>
+              The database and the transcription models live together in the application data
+              directory.
+            </p>
+            {/* This stays a claim the user can read, not a claim that was cut.
+                Deleting a meeting has limits, and saying so is an honesty
+                obligation — folding it keeps the sentence, it does not remove
+                it (the summary above states the limit in one line). */}
+            <p>
+              Deleting a meeting removes the database, search, recording and recovery-cache data
+              Mityu manages. Copies outside Mityu can survive it: SSD wear-levelling,
+              copy-on-write filesystems, snapshots, backups, exports and browser storage are not
+              something the app can reach.
+            </p>
+          </>
+        }
+        detailsLabel="What deleting a meeting does and does not erase"
+      >
+        <div className="rounded-lg border border-border bg-muted p-4">
+          <div className="text-meta font-medium text-foreground">Meeting recordings</div>
+          <div className="mt-1 break-all font-mono text-caption text-muted-foreground">
+            {storageLocations?.recordings || 'Loading...'}
+          </div>
+          <button
+            onClick={() => handleOpenFolder('recordings')}
+            className="mt-3 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-meta transition-colors hover:bg-background"
+          >
+            <FolderOpen className="h-4 w-4" />
+            Open folder
           </button>
         </div>
-      </div>
-
-      {/* Data Storage Locations Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Data Storage Locations</h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          View and access where Mityu stores your data
-        </p>
-
-        <div className="space-y-4">
-          {/* Database Location */}
-          {/* <div className="p-4 border border-border rounded-lg bg-muted">
-            <div className="font-medium mb-2">Database</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.database || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('database')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div> */}
-
-          {/* Models Location */}
-          {/* <div className="p-4 border border-border rounded-lg bg-muted">
-            <div className="font-medium mb-2">Whisper Models</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.models || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('models')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div> */}
-
-          {/* Recordings Location */}
-          <div className="p-4 border border-border rounded-lg bg-muted">
-            <div className="font-medium mb-2 text-foreground">Meeting Recordings</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.recordings || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('recordings')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 p-3 bg-accent rounded-md">
-          <p className="text-xs text-accent-foreground">
-            <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
-          </p>
-          <p className="mt-2 text-xs text-accent-foreground">
-            Meeting deletion covers Mityu-managed database/search, recording, and recovery-cache data. Physical traces or separate copies may remain on SSD wear-leveling, copy-on-write filesystems, snapshots, backups, exports, or WebView/browser storage; Mityu cannot erase those external layers.
-          </p>
-        </div>
-      </div>
+      </SettingCard>
 
       {/* Recording Consent Section */}
       <div className="bg-card rounded-lg border border-border p-6 shadow-sm">

@@ -1,14 +1,7 @@
 "use client"
 
 import React from "react"
-import { Switch } from "./ui/switch"
 import { FlaskConical, AlertCircle } from "lucide-react"
-import { useConfig } from "@/contexts/ConfigContext"
-import {
-  BetaFeatureKey,
-  BETA_FEATURE_NAMES,
-  BETA_FEATURE_DESCRIPTIONS
-} from "@/types/betaFeatures"
 import CopilotSettings from "./copilot/CopilotSettings"
 import ModesSettings from "./copilot/ModesSettings"
 
@@ -39,12 +32,6 @@ function BetaCard({ title, description, children }: { title: string; description
 }
 
 export function BetaSettings() {
-  const { betaFeatures, toggleBetaFeature } = useConfig();
-
-  // Define feature order for display (allows custom ordering)
-  // Structured summaries are a mandatory trust invariant in v1.0.4, not a
-  // user-disableable beta switch.
-  const featureOrder: BetaFeatureKey[] = [];
 
   return (
     <div className="space-y-6">
@@ -58,38 +45,6 @@ export function BetaSettings() {
           </p>
         </div>
       </div>
-
-      {/* Dynamic Feature Toggles - Automatically renders all features */}
-      {featureOrder.map((featureKey) => (
-        <div
-          key={featureKey}
-          className="bg-card rounded-lg border border-border p-6 shadow-sm"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <FlaskConical className="h-5 w-5 text-muted-foreground" />
-                <h3 className="text-lg font-semibold text-foreground">
-                  {BETA_FEATURE_NAMES[featureKey]}
-                </h3>
-                <span className="px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">
-                  BETA
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {BETA_FEATURE_DESCRIPTIONS[featureKey]}
-              </p>
-            </div>
-
-            <div className="ml-6">
-              <Switch
-                checked={betaFeatures[featureKey]}
-                onCheckedChange={(checked) => toggleBetaFeature(featureKey, checked)}
-              />
-            </div>
-          </div>
-        </div>
-      ))}
 
       {/* Live copilot (BACKLOG EPIC I). Off by default until the I9 gate; the
           switch is inside the card. */}
