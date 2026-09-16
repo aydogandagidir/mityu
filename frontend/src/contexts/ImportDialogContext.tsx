@@ -4,11 +4,12 @@ import { createContext, useContext, useCallback, ReactNode } from 'react';
 import { useConfig } from './ConfigContext';
 import { toast } from 'sonner';
 
-interface ImportDialogContextType {
+export interface ImportDialogContextType {
   openImportDialog: (filePath?: string | null) => void;
 }
 
-const ImportDialogContext = createContext<ImportDialogContextType | null>(null);
+/** Exported for the `/design/*` fixtures only — see RecordingStateContext. */
+export const ImportDialogContext = createContext<ImportDialogContextType | null>(null);
 
 export const useImportDialog = () => {
   const ctx = useContext(ImportDialogContext);

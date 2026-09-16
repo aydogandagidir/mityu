@@ -6,9 +6,15 @@ interface ConfirmationModalProps {
   text: string;
   isOpen: boolean;
   isBusy?: boolean;
+  /**
+   * Names the thing being destroyed. Optional and defaulted, so the existing call
+   * site is unchanged — but a confirmation that recites a disclosure without saying
+   * WHAT it is about to delete is asking the user to approve a blank cheque.
+   */
+  title?: string;
 }
 
-export function ConfirmationModal({ onConfirm, onCancel, text, isOpen, isBusy = false }: ConfirmationModalProps) {
+export function ConfirmationModal({ onConfirm, onCancel, text, isOpen, isBusy = false, title = 'Confirm Delete' }: ConfirmationModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -20,7 +26,7 @@ export function ConfirmationModal({ onConfirm, onCancel, text, isOpen, isBusy = 
         aria-labelledby="delete-confirmation-title"
         aria-busy={isBusy}
       >
-        <h2 id="delete-confirmation-title" className="text-xl font-semibold mb-4">Confirm Delete</h2>
+        <h2 id="delete-confirmation-title" className="text-xl font-semibold mb-4">{title}</h2>
         <p className="text-muted-foreground mb-6">{text}</p>
         <div className="flex justify-end space-x-4">
           <button

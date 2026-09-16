@@ -40,8 +40,7 @@ import { UpdateCheckProvider } from '@/components/UpdateCheckProvider'
 import { RecordingPostProcessingProvider } from '@/contexts/RecordingPostProcessingProvider'
 import { ImportAudioDialog, ImportDropOverlay } from '@/components/ImportAudio'
 import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
-import { EncryptionStatusBanner } from '@/components/consent/EncryptionStatusBanner'
-import { TrialBanner } from '@/components/licensing/TrialBanner'
+import { SystemNotices } from '@/components/shell/SystemNotices'
 import { LicensingProvider } from '@/contexts/LicensingContext'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 import { isTauri } from '@/lib/isTauri'
@@ -283,18 +282,15 @@ export function AppShell({
                                 // overlay + coach-marks and, post-onboarding, routes to the
                                 // pre-seeded sample meeting. isTauri()-gated internally.
                                 <TourProvider>
-                                  <div className="flex">
+                                  <div className="flex h-screen overflow-hidden">
                                     <Sidebar />
                                     <MainContent>
-                                      {/* ADR-0014: warns when the local DB opened UNENCRYPTED at rest.
-                                          Renders nothing in the normal (encrypted) case. Sits above
-                                          every main-app view and the recording indicator; not shown
-                                          during onboarding (DB may not be initialized yet). */}
-                                      <EncryptionStatusBanner />
-                                      {/* ADR-0023: trial/license chrome — quiet chip in the last
-                                          trial week, persistent slim banner once expired/revoked,
-                                          nothing while licensed or early in the trial. */}
-                                      <TrialBanner />
+                                      {/* One slot for app-wide notices, so the trial chrome
+                                          (ADR-0023) and the unencrypted-at-rest warning
+                                          (ADR-0014) cannot each bring their own top gutter.
+                                          Both keep their own visibility rules and render
+                                          nothing in the normal case. */}
+                                      <SystemNotices />
                                       {children}
                                     </MainContent>
                                   </div>

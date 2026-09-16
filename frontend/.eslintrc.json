@@ -132,7 +132,6 @@
         "src/components/RecordingSettings.tsx",
         "src/components/RedactionSettings.tsx",
         "src/components/Sidebar/SearchResultsList.tsx",
-        "src/components/Sidebar/index.tsx",
         "src/components/TranscriptRecovery/TranscriptRecovery.tsx",
         "src/components/TranscriptSettings.tsx",
         "src/components/TranscriptView.tsx",
@@ -140,7 +139,6 @@
         "src/components/UpdateNotification.tsx",
         "src/components/VirtualizedTranscriptView.tsx",
         "src/components/WhisperModelManager.tsx",
-        "src/components/consent/EncryptionStatusBanner.tsx",
         "src/components/consent/RecordingConsentDialog.tsx",
         "src/components/copilot/CopilotInsights.tsx",
         "src/components/copilot/CopilotPanel.tsx",
@@ -258,15 +256,6 @@
             "message": "Guardrail 2 (DESIGN_SYSTEM.md 11.4): arbitrary type size. The 4.5 scale is real utilities now: text-display/title-lg/title/title-sm/read/body/label/caption/micro/eyebrow."
           }
         ]
-      }
-    },
-    {
-      // All four — the rail is the single largest un-migrated surface (WP4).
-      "files": [
-        "src/components/Sidebar/index.tsx"
-      ],
-      "rules": {
-        "no-restricted-syntax": "off"
       }
     }
   ]

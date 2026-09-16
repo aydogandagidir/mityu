@@ -36,7 +36,7 @@ interface RecordingState {
   statusMessage?: string;  // Optional message for current status
 }
 
-interface RecordingStateContextType extends RecordingState {
+export interface RecordingStateContextType extends RecordingState {
   // NEW: Setters for status management
   setStatus: (status: RecordingStatus, message?: string) => void;
 
@@ -46,7 +46,13 @@ interface RecordingStateContextType extends RecordingState {
   isSaving: boolean;
 }
 
-const RecordingStateContext = createContext<RecordingStateContextType | null>(null);
+/**
+ * Exported for the Tauri-free `/design/*` fixtures ONLY (DESIGN_SYSTEM.md §11.1): they
+ * provide a literal value so the REAL shell components can be screenshotted in a plain
+ * browser. Product code uses the hook, never the context — the hook's throw is what
+ * keeps a consumer from silently rendering outside its provider.
+ */
+export const RecordingStateContext = createContext<RecordingStateContextType | null>(null);
 
 export const useRecordingState = () => {
   const context = useContext(RecordingStateContext);

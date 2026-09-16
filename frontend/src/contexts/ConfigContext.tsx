@@ -40,7 +40,7 @@ export interface NotificationSettings {
   };
 }
 
-interface ConfigContextType {
+export interface ConfigContextType {
   // Model configuration
   modelConfig: ModelConfig;
   setModelConfig: (config: ModelConfig | ((prev: ModelConfig) => ModelConfig)) => void;
@@ -91,7 +91,8 @@ interface ConfigContextType {
   updateNotificationSettings: (settings: NotificationSettings) => Promise<void>;
 }
 
-const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
+/** Exported for the `/design/*` fixtures only — see RecordingStateContext. */
+export const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
