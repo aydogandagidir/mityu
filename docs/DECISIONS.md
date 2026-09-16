@@ -1255,3 +1255,22 @@ Two smaller defects sat beside it. The meeting cards printed a date parsed with 
 5. **The tour opens where the user already is.** `TourProvider` keeps 🔒 `TOUR_ANCHORS`, `WELCOME_COPY` and the three steps verbatim, and `replayTour` still navigates — there the user asked for it. The sample becomes an **offer** on Home ("Try the sample report").
 
 **Consequences.** `/design/home` renders the real screen with an injected service — the `LearningSettings` pattern — across four states: drafts, load failure, nothing waiting, and first run. Its `--expect 'AI-generated · review required'` marker is the machine-checkable proof that the Art. 50 gap is closed, and one fixture item's reject resolves `false` so the revert path is visible rather than only asserted. Nothing on this surface reports anything about the content it shows: 🔒 `Analytics.trackPageView('home')` stays where it was, and no new tracking is introduced on a screen that handles meeting text.
+
+---
+## ADR-0058 (design ADR-I) — The Action Center is on tokens, and its contract is now a test rather than a comment
+
+**Status:** Accepted (2026-09-16). Implements DESIGN_SYSTEM.md §6.4 (WP11).
+
+**Context.** `/actions` was the single largest un-themed surface in the app: **72 raw palette utilities and zero `dark:` variants**, so opening it in dark mode switched the window to white. It was also a 307-line screen with **no automated coverage at all**, holding four behaviours that are invisible to a reader and only appear when pages arrive in an order the happy path does not produce.
+
+**Decision.**
+1. **Every colour is a token**, and the provenance disclosure becomes a `consent`-tone `Notice` rather than a hand-built blue box. 🔒 Its `aria-label="Action provenance"`, its title `AI-extracted · human approved` and its sentence are unchanged, as are the `role="status"` loading text, the `role="alert"` failure title and its constant, the empty-state text, and `<ul aria-label="Approved actions">`.
+2. **The screen moves to `components/actions/ActionCenter`** and `app/actions/page.tsx` becomes a thin route shell. Next validates a route component's props against its own `PageProps`, so a screen that takes an injected loader cannot BE the route — and without injection the fixture and the test would each have to re-implement the screen they claim to check.
+3. **Four behaviours are now asserted**: backend order is preserved (the fixture data is deliberately neither alphabetical nor chronological, so any local sort fails the test); pages merge by id, because offsets shift and the same row can arrive twice; a stale response loses to a newer one, because Tauri invokes are not cancellable and the guard is a request nonce; and a failed page keeps a way forward.
+4. **`Load more` no longer hides behind the error.** It previously rendered only when `error` was null, so the one control that could retry the failed page disappeared exactly when it was needed; it now stays and reads `Try again`.
+5. **The worker's UTC timestamp is never printed as a position in the recording.** `audioStartTime` formats as `mm:ss`; `sourceTimestamp` is an absolute date and showing it where a clock time belongs tells the reader an action came from four minutes into a meeting when it did not. A row without an offset gets a plain `Source` chip and a sentence saying the position was not stored. 🔒 The accessible name keeps its existing value, including that fallback — it names the target rather than claiming a position.
+6. **The empty state ships a next action** ("Open the review queue"), where it previously ended the journey.
+7. A **client-side filter** narrows what is already loaded. It issues no query, changes no order and mutates nothing — 🔒 ADR-0025's read-only rule is intact, and there is still no complete, snooze, due-date editor or overdue styling.
+8. 🔒 **Zero analytics.** This surface handles meeting content and reports nothing; the redesign introduces no tracking here.
+
+**Consequences.** `/design/actions` renders the real screen with an injected loader across loaded, empty and failed states in both themes, including the no-offset row. The suite count moves from 25 files / 258 tests to 26 / 264.

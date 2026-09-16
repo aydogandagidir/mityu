@@ -86,7 +86,6 @@
       // type size, a bare ring-ring or an unreplaced outline-none before its WP arrives.
       "files": [
         "src/app/_components/SettingsModal.tsx",
-        "src/app/actions/page.tsx",
         "src/app/design/copilot/page.tsx",
         "src/app/design/report/page.tsx",
         "src/app/design/speakers/page.tsx",
