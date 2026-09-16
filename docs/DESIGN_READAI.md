@@ -90,6 +90,16 @@ reviewable drafts.
 
 ## Status
 
-Accepted as design direction (2026-07-09), scope = follow read.ai closely within the four guardrails. Phase A
-(token/dark-mode migration) underway. Phase B (the Report) is the highest-value redesign; Phase E
-(diarization/metrics research) promoted to run alongside B since metrics are now first-class.
+**Superseded as the VISUAL direction (2026-09-16) by `docs/DESIGN_SYSTEM.md`.** The owner asked for the
+app's visual and interaction design to be redesigned from scratch; three complete directions were specified
+and judged, and the result is the design system, which is now the source of truth for tokens, components and
+screens.
+
+**What this document still governs, and why it is not deleted.** Its *information architecture* survived the
+redesign and is cited by it: the Report as the hero artifact, chapters and topics derived on-device, action
+items as drafts bound to a source segment, playback synced to the transcript, and a Home that aggregates
+across meetings. So do its four guardrails — fully on-device, human-in-the-loop with source links and Art. 50
+labelling, no "charisma"/bias biometric scoring, and no default cloud bot — and its REJECT column, which is
+the record of what this product deliberately does not do however common it is elsewhere.
+
+Read this for *what the product shows*; read `docs/DESIGN_SYSTEM.md` for *how it looks and behaves*.

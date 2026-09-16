@@ -46,6 +46,25 @@ of nothing:
 Shots land in `target/ui-shots/` (ignored). This does not replace running the
 real app — it catches "renders nothing" early, not "wrong in the app".
 
+**A fixture renders the REAL component, or it proves nothing.** Every product route
+`invoke()`s on mount, so a fixture cannot mount the containers — but it must not
+re-implement them either: a fixture that draws its own lookalike of a card proves the
+lookalike. Two patterns, in order of preference:
+
+1. **Inject the data source.** Give the screen an optional prop for its service or
+   loader (`HomeDashboard`'s `service`, `ActionCenter`'s `loadPage`) that product code
+   never passes. The fixture and the test then exercise the same screen the user gets.
+   Where Next refuses — a route component's props are validated against its own
+   `PageProps` — move the screen into `components/` and leave the route a thin shell.
+2. **Provide the contexts as literal values.** `SidebarContext`, `RecordingStateContext`,
+   `ConfigContext` and `ImportDialogContext` are exported for exactly this. Product code
+   still uses the hooks, whose throw is what stops a consumer rendering outside its
+   provider.
+
+A modal portals to the body and covers the page, so a fixture shows **one at a time**,
+selected by a query parameter (`/design/dialogs?dialog=consent`) — two open at once
+screenshots whichever won, over a dimmed copy of everything else.
+
 A route may carry a query string — `design/hitl?reject=1`, `design/tour?tour=3` — which the
 tool splits off before appending `.html` and strips out of the PNG filename. `--expect` also
 accepts a marker that begins with `-` (`--expect "--ai-surface"`), because half the markers
