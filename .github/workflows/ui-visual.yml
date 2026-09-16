@@ -1,0 +1,110 @@
+# The /design/* fixture set, enforced.
+#
+# WHY: `tsc`, lint and a passing test suite all succeed on a screen that renders
+# nothing. The owner's standing rule is that a UI change is not done until it has been
+# SEEN, and until now "seen" meant a human remembering to run tools/ui/shoot.py. This
+# job makes it a contract: every fixture route named in DESIGN_SYSTEM.md §11.2 is built,
+# served over HTTP (the export references assets by absolute path, so file:// renders an
+# unstyled shell that is still a valid PNG), screenshotted, and checked for the DOM
+# markers that prove the FEATURE rendered rather than a loading state.
+#
+# ROLLOUT: `continue-on-error` is true on the first landing. The redesign must not be
+# gated on a job that has never run green in CI. Flip it to false after one green week —
+# that flip is the whole point of this file and is not optional.
+#
+# NOT DUPLICATED HERE: the Rust gates (cargo fmt / build / clippy / test) already run in
+# ci.yml's `rust` job, sidecars and all. A second copy would be two places to keep in
+# step and one of them would rot.
+name: ui-visual
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/src/**'
+      - 'frontend/package.json'
+      - 'frontend/tailwind.config.*'
+      - 'tools/ui/shoot.py'
+      - '.github/workflows/ui-visual.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # ← flip to false after one green week
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with: { version: 10.33.0 }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 20.19.4, cache: pnpm, cache-dependency-path: frontend/pnpm-lock.yaml }
+      - name: install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # The export is built ONCE here and reused by every shoot.py call below
+      # (`--build` on each would rebuild fourteen times). next/font downloads at BUILD
+      # time and self-hosts into the export, which is the only step that needs network.
+      - name: build the static export
+        working-directory: frontend
+        run: pnpm exec next build
+
+      - name: light theme — every fixture route with its §11.2 markers
+        env:
+          MITYU_CHROME: /usr/bin/google-chrome
+        run: |
+          shoot() { python3 tools/ui/shoot.py --height 3600 --out-dir target/ui-shots "$@"; }
+          shoot design --expect "Type scale" --expect "--ai-surface" --expect "--verified" --expect "Focus ring"
+          shoot design/primitives --expect "Button" --expect "Focus"
+          shoot design/shell --expect "Meetings" --expect "Search meeting evidence"
+          shoot design/home --expect "Needs review" --expect "AI-generated"
+          shoot design/actions --expect "Action" --expect "Source"
+          shoot design/report --expect "Action items" --expect "review required"
+          shoot design/hitl --expect "Approve" --expect "AI-generated"
+          shoot "design/hitl?reject=1" --expect "Reject"
+          shoot design/settings --expect "Settings"
+          shoot design/dialogs --expect "Cancel"
+          shoot design/record --expect "Recording" --expect "Paused" --expect "Listening for speech"
+          shoot design/wrapup --expect "Wrapping up" --expect "What went wrong"
+          shoot design/copilot --expect "AI-generated"
+          shoot design/speakers --expect "Speaker"
+          shoot design/learning --expect "Learning"
+          shoot design/tour --expect "Tour"
+          shoot "design/tour?tour=3" --expect "Tour"
+
+      # Only the routes that do NOT draw their own light/dark panels. A fixture that
+      # wraps half of itself in `.dark` to show both themes side by side is already its
+      # own dark evidence, and forcing the page dark would just relabel its light panel.
+      - name: dark theme — the routes that do not draw their own panels
+        env:
+          MITYU_CHROME: /usr/bin/google-chrome
+        run: |
+          python3 tools/ui/shoot.py --theme dark --height 3600 --out-dir target/ui-shots \
+            design/record design/wrapup design/hitl design/copilot design/speakers design/learning design/tour
+
+      # The compensating control for the ESLint blind spot. The palette guardrails see
+      # literal `className="…"` sites and nothing else; this reads the classes that
+      # actually reached the exported HTML and checks each against the rules that
+      # actually reached the built CSS. It already caught one: `bg-warning-surface0`, a
+      # token that does not exist, assembled in a template literal, leaving the copilot's
+      # paused dot with no fill.
+      #
+      # KNOWN RED: `prose` / `prose-blue` on the legacy `/notes/*` route, which has no
+      # importers, renders fabricated meeting records through dangerouslySetInnerHTML,
+      # and is inventory for the dead-code package. This step goes green when that route
+      # is deleted — which is also when the job as a whole can stop being advisory.
+      - name: every class in the markup has a rule behind it
+        run: |
+          python3 tools/ui/check-dead-classes.py --self-test
+          python3 tools/ui/check-dead-classes.py
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ui-shots
+          path: target/ui-shots
+          retention-days: 7

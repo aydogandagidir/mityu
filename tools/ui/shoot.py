@@ -59,6 +59,7 @@ check light mode, set the class first and read the computed colours:
 
 import argparse
 import http.server
+import io
 import os
 import re
 import shutil
@@ -129,13 +130,54 @@ def build() -> None:
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
+    """The export, served quietly, with the theme forced when asked.
+
+    THEME IS A CLASS, NOT A MEDIA QUERY. `--force-prefers-color-scheme=dark` does not
+    flip this app: `next-themes` writes `class="dark"` on <html> and the stylesheet keys
+    off that class. Headless Chrome's CLI has no hook to run script before first paint,
+    so the class is injected HERE, in the bytes that go over the wire -- on <html> so the
+    first paint is already correct, and into localStorage so `next-themes` agrees on
+    hydration instead of overwriting it a frame later.
+    """
+
+    theme = None  # set by serve(); None means "leave the app's own default alone"
+
     def log_message(self, *_args):
         pass
 
+    def send_head(self):
+        if not self.theme or not self.path.split("?")[0].endswith(".html"):
+            return super().send_head()
 
-def serve(directory: str):
+        path = self.translate_path(self.path)
+        try:
+            with open(path, "rb") as f:
+                body = f.read()
+        except OSError:
+            return super().send_head()
+
+        boot = (
+            f"<script>try{{localStorage.setItem('theme','{self.theme}')}}"
+            "catch(e){}</script>"
+        ).encode()
+        body = body.replace(b"<html", b'<html class="' + self.theme.encode() + b'"', 1)
+        body = body.replace(b"<head>", b"<head>" + boot, 1)
+
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        return io.BytesIO(body)
+
+
+def serve(directory: str, theme=None):
     """Serve the export on an ephemeral port, in a background thread."""
-    handler = lambda *a, **k: Quiet(*a, directory=directory, **k)  # noqa: E731
+
+    class Themed(Quiet):
+        pass
+
+    Themed.theme = theme
+    handler = lambda *a, **k: Themed(*a, directory=directory, **k)  # noqa: E731
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -243,6 +285,12 @@ def main() -> int:
         "the only check is that the page is not blank.",
     )
     ap.add_argument("--min-bytes", type=int, default=MIN_PNG_BYTES)
+    ap.add_argument(
+        "--theme",
+        choices=("light", "dark"),
+        help="force the theme by injecting the class on <html> at serve time "
+        "(--force-prefers-color-scheme does NOT flip this app -- the theme is a class)",
+    )
     args = ap.parse_args(glue_expect(sys.argv[1:]))
 
     if args.build:
@@ -254,7 +302,7 @@ def main() -> int:
 
     chrome = find_chrome()
     os.makedirs(args.out_dir, exist_ok=True)
-    httpd, port = serve(EXPORT)
+    httpd, port = serve(EXPORT, theme=args.theme)
     failures = []
     try:
         for route in args.routes:
@@ -267,8 +315,9 @@ def main() -> int:
             url = f"http://127.0.0.1:{port}/{path.lstrip('/')}.html" + (
                 f"?{query}" if query else ""
             )
+            suffix = f"-{args.theme}" if args.theme else ""
             png = os.path.join(
-                args.out_dir, re.sub(r"[^A-Za-z0-9._-]", "-", route) + ".png"
+                args.out_dir, re.sub(r"[^A-Za-z0-9._-]", "-", route) + suffix + ".png"
             )
             code = shoot(chrome, url, png, args.width, args.height)
 

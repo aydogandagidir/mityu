@@ -33,6 +33,7 @@ import { Eye, EyeOff, Mic, Monitor, Pause, Play, ShieldCheck, ShieldAlert, X } f
 import type { CopilotStatus } from '@/types/copilot';
 import { CopilotInsights, type InsightState } from './CopilotInsights';
 import type { TranscriptUpdate } from '@/types';
+import { cn } from '@/lib/utils';
 
 /** One line in the panel's transcript tail. */
 export interface PanelLine {
@@ -208,8 +209,16 @@ export function CopilotPanel({
           <>
             <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
               <span className="inline-flex items-center gap-1.5 text-caption font-medium text-foreground">
+                {/* `bg-warning-surface0` used to sit here — a token that does not
+                    exist, assembled inside a template literal where Tailwind's scanner
+                    could not see it, so the paused dot rendered with no fill at all.
+                    Square for paused, round for recording, matching the session dock:
+                    reduced motion removes the pulse, so shape is what is left. */}
                 <span
-                  className={`h-2 w-2 rounded-full ${paused ? 'bg-warning-surface0' : 'bg-recording'}`}
+                  className={cn(
+                    'size-2 shrink-0',
+                    paused ? 'bg-warning' : 'rounded-full bg-recording'
+                  )}
                   aria-hidden
                 />
                 {paused ? 'Recording paused' : 'Recording'}

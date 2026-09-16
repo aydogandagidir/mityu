@@ -103,10 +103,17 @@ Three consequences:
    in §4.4.6 (the ring against every offset surface, worst case 5.32:1) and the
    `ringOffsetColor` map in `tailwind.config.js` that makes `ring-offset-card` compile at
    all. The rule only stops the most common way of forgetting the offset.
-3. The compensating control is the **dead-class / built-CSS check** (§11.4 guardrail 6): it
-   greps every emitted `className` token against the built stylesheet, so it sees classes
-   however they were composed — including through `cn()` — and it is what catches a
-   `ring-offset-card` that never compiled. Prefer it over trusting the selectors.
+3. The compensating control is the **dead-class / built-CSS check** (§11.4 guardrail 6),
+   and it now exists: **`tools/ui/check-dead-classes.py`**, run by the `ui-visual`
+   workflow after `next build`. It reads every `class` token that actually reached the
+   exported HTML and checks it against the rules that actually reached the built CSS, so
+   it sees classes however they were composed — including through `cn()` and template
+   literals — and it is what catches a `ring-offset-card` that never compiled. Run
+   `--self-test` first; a detector nobody has seen fail is indistinguishable from one
+   that cannot. It found its first defect on the day it landed: `bg-warning-surface0` in
+   `CopilotPanel.tsx`, a token that does not exist, composed inside a template literal,
+   leaving the copilot's paused indicator with no fill at all. Prefer it over trusting
+   the selectors.
 
 Compose focus styling from the shared exported constant rather than hand-writing it at a
 `cn()` site, so the string those 180 compositions carry is one that was reviewed once. That

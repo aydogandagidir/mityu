@@ -1415,3 +1415,25 @@ Starting deliberately stays on `/`. The rail's Record button navigates there fir
 The tray tooltip and the window title now read `● Mityu — recording` / `❚❚ Mityu — paused`. A recorder capturing while its window is hidden, and saying so nowhere but inside that window, is a consent problem rather than a polish one.
 
 **Risk accepted.** This is the highest-risk change in the redesign: re-sequencing these handlers can break the completion-token lease and lock recording behind "Previous recording needs recovery". The automated gates (tsc, lint, 278 tests, the `/design/record` fixture shot, `cargo fmt`/`build`/`clippy`) are green; **the manual smoke test required by CLAUDE.md §4 — record → transcript appears, on a macOS and a Windows path, plus a stop from `/settings` and a tray stop — has not been run in this environment and is owed before release.**
+
+## ADR-0067 (design ADR-R) — The fixture set becomes a contract, and the blind spot gets its detector
+
+**Status:** Accepted · 2026-09-16 · relates to ADR-0037 (the purge blind spot), ADR-0059 (the fixture routes)
+
+**Context.** `/design/*` existed as a convention: fourteen Tauri-free fixture routes that render the real components with injected data, screenshotted by `tools/ui/shoot.py` whenever somebody remembered. `tsc`, lint and a green test suite all pass on a screen that renders nothing, so "it has been seen" was the only gate that could catch a blank panel — and it depended on a human running a script.
+
+Two things were also never checked at all: **the dark theme** (no shot of it existed anywhere in the redesign), and **the class names Tailwind never generated**. The four ESLint palette guardrails read the `className` attribute's *literal* value, so they are blind to roughly 180 `cn()` and template-literal compositions — and `ui/`, where `cn()` is densest, is exactly where a missing utility hides best.
+
+**Decision.** Three things, all in this package:
+
+1. **`shoot.py --theme {light,dark}`.** The theme is a **class on `<html>`**, not a media query, so `--force-prefers-color-scheme` does nothing — a fact the script's own docstring already recorded and which made dark mode unshootable. Headless Chrome's CLI has no hook to run script before first paint, so the class is injected into the bytes the local server sends: on `<html>` so the first paint is right, and into `localStorage` so `next-themes` agrees on hydration instead of overwriting it a frame later. The theme lands in the PNG filename so a light and a dark shot of one route do not overwrite each other.
+
+2. **`.github/workflows/ui-visual.yml`.** Seventeen route/marker pairs in light — including the two query-string routes `design/hitl?reject=1` and `design/tour?tour=3`, which §10.7 calls a load-bearing URL API — and seven in dark. Only the routes that do *not* draw their own light/dark panels are shot dark: a fixture that wraps half of itself in `.dark` is already its own dark evidence, and forcing the page dark would just relabel its light panel. The export is built **once** and reused; `--build` on each call would rebuild seventeen times.
+
+3. **`tools/ui/check-dead-classes.py`.** It reads every `class` token that reached the exported HTML and checks it against the rules that reached the built CSS, so it sees a class however it was composed. Two escaping details decide whether it is a detector or a noise generator: the export HTML-escapes the attribute (`[&>*]:mt-2` is written `[&amp;&gt;*]:mt-2`), and Tailwind escapes some selector characters **numerically** (`,` becomes `\2c ` with the trailing space consumed), so a naive backslash strip reports every arbitrary variant in the app as dead. With both handled, 70 false positives became 3 real ones.
+
+**Consequences.** The checker found its first defect the day it landed: `bg-warning-surface0` in `CopilotPanel.tsx:212` — a token that does not exist, composed inside a template literal where the ESLint rules cannot read it, leaving the copilot panel's **paused indicator with no fill at all**. Fixed here, and made a square rather than a dot, matching the session dock for the reason §4.9 gives.
+
+The remaining two findings are `prose` and `prose-blue` on the legacy `/notes/*` route — a route with no importers that renders fabricated meeting records through `dangerouslySetInnerHTML`, and whose typography plugin is not installed. **The dead-class step is red until that route is deleted**, which is why the whole job ships `continue-on-error: true`. That flag is the rollout, not a permanent state: it flips to `false` once the dead-code package lands and the job has been green for a week.
+
+**No `rust-gates.yml`.** The work package called for one on the premise that "today's pipeline has no Rust step". That premise was stale: `ci.yml`'s `rust` job already runs `cargo fmt --check`, both sidecar builds, the GPL-espeak check, `cargo clippy --all-targets` and `cargo test --all`. A second copy would be two places to keep in step, and one of them would rot.
