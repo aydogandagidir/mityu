@@ -95,23 +95,20 @@ function MeetingDetailsContent() {
         return;
       }
 
-      // DB is empty - check if gemma3:1b exists as fallback
+      // DB is empty — is there a local model we can auto-generate with?
       const hasGemma = await checkForGemmaModel();
 
       if (hasGemma) {
-        console.log('💾 DB empty, using gemma3:1b as initial default');
-
-        await invoke('api_save_model_config', {
-          provider: 'ollama',
-          model: '',
-          whisperModel: 'large-v3',
-          apiKey: null,
-          ollamaEndpoint: null,
-        });
-
+        // It used to WRITE a model configuration here, as a side effect of a user
+        // opening a report. Viewing is not configuring: a read-only act quietly
+        // changed a stored setting the user had never been asked about, and the
+        // written record ("provider ollama, model empty") was not even the
+        // configuration it then generated with. Auto-generation proceeds on the
+        // in-memory default; choosing a model stays in Settings, where the user can
+        // see what they are choosing.
         setShouldAutoGenerate(true);
       } else {
-        console.log('⚠️ No model configured and gemma3:1b not found');
+        console.log('No model configured and no local fallback found');
       }
     } catch (error) {
       console.error('Failed to set up auto-generation');

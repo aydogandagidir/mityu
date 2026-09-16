@@ -87,7 +87,6 @@
       "files": [
         "src/app/_components/SettingsModal.tsx",
         "src/app/design/copilot/page.tsx",
-        "src/app/design/report/page.tsx",
         "src/app/design/speakers/page.tsx",
         "src/app/meeting-details/page.tsx",
         "src/app/notes/**",

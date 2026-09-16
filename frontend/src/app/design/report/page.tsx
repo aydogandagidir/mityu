@@ -16,55 +16,65 @@ import {
   Sparkles, ListChecks, MessageSquareQuote, Clock, FileText, Users,
   CheckCircle2, Circle, Download, Check, ChevronRight, Hash,
 } from 'lucide-react';
+import { AiLabel, SourceChip } from '@/components/report/primitives';
+import { StatTile } from '@/components/ui/stat-tile';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
-/* ---------- primitives ---------- */
-
-function StatTile({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
-  return (
-    <div className="flex-1 min-w-[130px] rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="h-4 w-4" />
-        <span className="text-xs uppercase tracking-wide">{label}</span>
-      </div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{value}</div>
-      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
-    </div>
-  );
-}
-
-function AiLabel() {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-accent-foreground">
-      <Sparkles className="h-3 w-3" /> AI-generated · review required
-    </span>
-  );
-}
-
-function SourceChip({ t }: { t: string }) {
-  return (
-    <button className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors">
-      <Clock className="h-3 w-3" /> {t}
-    </button>
-  );
-}
-
+/**
+ * The section card is the only shape this fixture still declares, and it is a LAYOUT,
+ * not a primitive: a titled `Card` with the Art. 50 marking in its header. The four
+ * private copies of StatTile, AiLabel, SourceChip and the card chrome that used to live
+ * here were deleted — a fixture that renders its own lookalikes proves the lookalikes.
+ */
 function SectionCard({
-  icon: Icon, title, count, children, accent,
-}: { icon: any; title: string; count?: number; children: React.ReactNode; accent?: boolean }) {
+  icon: Icon,
+  title,
+  count,
+  children,
+  accent,
+  marking = true,
+}: {
+  icon: any;
+  title: string;
+  count?: number;
+  children: React.ReactNode;
+  accent?: boolean;
+  /**
+   * The Art. 50 marking belongs on MODEL OUTPUT. Chapters are computed on-device from
+   * pauses — deterministic, no model involved — and the transcript is the evidence a
+   * claim is checked against, not a claim. Marking either of them "AI-generated" would
+   * be inaccurate in the direction that costs the most: a reader who sees the label
+   * everywhere stops reading it anywhere.
+   */
+  marking?: boolean;
+}) {
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-      <header className="flex items-center gap-2 border-b border-border px-5 py-3">
-        <span className={`grid h-7 w-7 place-items-center rounded-lg ${accent ? 'bg-primary text-primary-foreground' : 'bg-accent text-accent-foreground'}`}>
-          <Icon className="h-4 w-4" />
-        </span>
-        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-        {count != null && (
-          <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{count}</span>
-        )}
-        <div className="ml-auto"><AiLabel /></div>
-      </header>
-      <div className="p-5">{children}</div>
-    </section>
+    <Card className="overflow-hidden p-0">
+      <section aria-label={title}>
+        <header className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+          <span
+            className={`grid size-7 place-items-center rounded-sm ${
+              accent ? 'bg-primary text-primary-foreground' : 'bg-accent text-accent-foreground'
+            }`}
+          >
+            <Icon className="size-4" aria-hidden="true" />
+          </span>
+          <h2 className="text-title text-foreground">{title}</h2>
+          {count != null && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-caption tabular-nums text-muted-foreground">
+              {count}
+            </span>
+          )}
+          {marking && (
+            <div className="ml-auto">
+              <AiLabel />
+            </div>
+          )}
+        </header>
+        <div className="p-5">{children}</div>
+      </section>
+    </Card>
   );
 }
 
@@ -137,7 +147,7 @@ export default function ReportPreview() {
               <li key={i} className="flex items-start gap-3">
                 <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                 <span className="flex-1 text-[15px] text-foreground/90">{k}</span>
-                <SourceChip t={['08:12', '50:03', '61:20'][i]} />
+                <SourceChip timestamp={['08:12', '50:03', '61:20'][i]} />
               </li>
             ))}
           </ul>
@@ -158,7 +168,7 @@ export default function ReportPreview() {
                       <span className="grid h-4 w-4 place-items-center rounded-full bg-primary text-[9px] font-semibold text-primary-foreground">{a.owner}</span>
                       {a.due}
                     </span>
-                    <SourceChip t={a.src} />
+                    <SourceChip timestamp={a.src} />
                   </div>
                 </div>
               </li>
@@ -167,7 +177,7 @@ export default function ReportPreview() {
         </SectionCard>
 
         {/* Topics / chapters timeline */}
-        <SectionCard icon={Hash} title="Topics & chapters" count={TOPICS.length}>
+        <SectionCard icon={Hash} title="Topics & chapters" count={TOPICS.length} marking={false}>
           <div className="space-y-2.5">
             {TOPICS.map((topic, i) => (
               <button key={i} className="group flex w-full items-center gap-3 text-left">
@@ -186,7 +196,7 @@ export default function ReportPreview() {
         </SectionCard>
 
         {/* Transcript (secondary, collapsible in the real view) */}
-        <SectionCard icon={FileText} title="Transcript">
+        <SectionCard icon={FileText} title="Transcript" marking={false}>
           <div className="space-y-3 text-sm">
             {[['05:10', 'A', 'So the main question is how we package the managed tier for Acme.'],
               ['05:24', 'B', 'Right — and whether security review blocks the timeline.'],

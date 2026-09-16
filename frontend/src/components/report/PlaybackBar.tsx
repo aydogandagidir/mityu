@@ -23,6 +23,19 @@ import { Pause, Play } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { isTauri } from '@/lib/isTauri';
 
+/** "1 hour 24 minutes 4 seconds" — what `aria-valuetext` needs, where `fmt` gives digits. */
+function spoken(totalSeconds: number): string {
+  const total = Math.max(0, Math.floor(totalSeconds || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const parts: string[] = [];
+  if (h) parts.push(`${h} hour${h === 1 ? '' : 's'}`);
+  if (m) parts.push(`${m} minute${m === 1 ? '' : 's'}`);
+  if (s || parts.length === 0) parts.push(`${s} second${s === 1 ? '' : 's'}`);
+  return parts.join(' ');
+}
+
 export interface PlaybackBarHandle {
   /** Seek to a position (seconds from recording start) and start playing. */
   seekTo: (sec: number) => void;
@@ -102,6 +115,11 @@ export const PlaybackBar = forwardRef<PlaybackBarHandle, { folderPath?: string |
           {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
         </button>
         <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{fmt(current)}</span>
+        {/* A native range input IS a slider: it already has the role, the value
+            semantics and pointer handling. What it lacked was a value a screen reader
+            can read out ("0.1" of "5040" is not a position in a meeting) and steps a
+            person can actually navigate an hour of audio with. So the semantics stay
+            native and the keys are widened: ←/→ 5s, ⇧←/⇧→ 30s, Home/End. */}
         <input
           type="range"
           min={0}
@@ -112,7 +130,21 @@ export const PlaybackBar = forwardRef<PlaybackBarHandle, { folderPath?: string |
             const el = audioRef.current;
             if (el) el.currentTime = Number(e.target.value);
           }}
-          aria-label="Seek"
+          onKeyDown={(e) => {
+            const el = audioRef.current;
+            if (!el) return;
+            const step = e.shiftKey ? 30 : 5;
+            let next: number | null = null;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = el.currentTime + step;
+            else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = el.currentTime - step;
+            else if (e.key === 'Home') next = 0;
+            else if (e.key === 'End') next = duration || 0;
+            if (next === null) return;
+            e.preventDefault();
+            el.currentTime = Math.min(Math.max(next, 0), duration || 0);
+          }}
+          aria-label="Playback position"
+          aria-valuetext={`${spoken(current)} of ${spoken(duration)}`}
           className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-[hsl(var(--primary))]"
         />
         <span className="w-12 shrink-0 text-xs tabular-nums text-muted-foreground">{fmt(duration)}</span>

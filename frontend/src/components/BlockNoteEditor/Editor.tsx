@@ -6,6 +6,7 @@ import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import "@blocknote/shadcn/style.css";
 import "@blocknote/core/fonts/inter.css";
+import { useTheme } from "next-themes";
 
 interface EditorProps {
   initialContent?: Block[];
@@ -20,6 +21,7 @@ export default function Editor({ initialContent, onChange, editable = true }: Ed
     editable
   });
 
+  const { resolvedTheme } = useTheme();
   const editor = useCreateBlockNote({
     initialContent: initialContent as PartialBlock[] | undefined,
   });
@@ -47,5 +49,15 @@ export default function Editor({ initialContent, onChange, editable = true }: Ed
     };
   }, [editor, onChange]);
 
-  return <BlockNoteView editor={editor} editable={editable} theme="light" />;
+  // The editor used to be pinned to `theme="light"`, so in dark mode a summary opened
+  // as a white sheet inside a near-black page. `next-themes` resolves `system` to the
+  // actual value, which is what BlockNote needs — passing "system" through would leave
+  // it light. The globals.css `!important` sizing overrides are untouched.
+  return (
+    <BlockNoteView
+      editor={editor}
+      editable={editable}
+      theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
+    />
+  );
 }
