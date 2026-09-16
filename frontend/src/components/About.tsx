@@ -131,14 +131,14 @@ export function About() {
 
                 This is the STANDING description of what the app is, which is why
                 it names no version. Per-release changes belong to the What's new
-                dialog (`lib/releaseNotes.ts`, ADR-0047) — two surfaces, two jobs,
+                dialog (`lib/releaseNotes.ts`, BACKLOG G2, added in #54) — two surfaces, two jobs,
                 so neither has to be rewritten when the other changes. */}
             <div className="space-y-3">
                 <h2 className="text-title font-semibold text-foreground">In beta</h2>
                 <div className="bg-muted rounded p-3">
                     <h3 className="font-bold text-body text-foreground mb-1">Live copilot — off by default</h3>
-                    <p className="text-caption text-muted-foreground">
-                        Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; eight meeting modes decide what it offers. Every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. Pin to notes keeps an answer as a draft in the meeting&apos;s summary when you save it. It never records on its own, never hides Mityu, and may use a cloud provider only if you separately allow it. It has not yet been checked against a real model.
+                    <p className="text-caption leading-relaxed text-muted-foreground">
+                        Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; eight meeting modes decide what it offers. Every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. Pin to notes keeps an answer as a draft in the meeting&apos;s summary when you save it. In this release it works only with a model running on your device, so the conversation it reads does not reach a cloud provider. It never records on its own and never hides Mityu. It has not yet been checked against a real model.
                     </p>
                 </div>
             </div>

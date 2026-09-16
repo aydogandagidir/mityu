@@ -92,8 +92,17 @@ test('every release the app has notes for is also listed on the site', () => {
   // still passed, because 1.2.1 "covered the 1.2 line". That is precisely the
   // case the test exists to catch. Exact match also enforces the process
   // RELEASE_CHECKLIST §0 documents: one site entry per release.
+  // One carve-out, and only one: the version equal to `package.json` is the
+  // release being cut right now. It is not published yet, so the site correctly
+  // does not list it — RELEASE_CHECKLIST §0 says that entry lands once the
+  // signed release exists. Without this the next bump PR would fail CI, and the
+  // only way to pass would be to advertise a release nobody can download yet:
+  // simulated against a scratch copy, and it failed exactly that way. Every
+  // OLDER version the app has notes for must already be on the site, which is
+  // the staleness this test exists to catch.
   const listed = new Set(listedReleases());
   for (const version of appVersions) {
+    if (version === pkg.version) continue;
     assert.ok(
       listed.has(version),
       `the app's release notes describe ${version} but the site's what's-new list does not: [${[...listed].join(', ')}]`,
@@ -110,7 +119,11 @@ test('the copilot is described as a beta that is off by default, reached from Se
   assert.match(index, /not yet been checked against a real model/i);
   assert.match(index, /cites the transcript segment it came from, or is refused/i);
   assert.match(privacy, /last few minutes of transcript text/i);
-  assert.match(privacy, /separate, explicit switch/i);
+  // The shipped build has no UI for the cloud-egress setting, so the notice must
+  // say the copilot stays on-device rather than offering a switch nobody can reach.
+  assert.match(privacy, /separate workspace setting that is off by default/i);
+  assert.match(privacy, /offers no way to turn that setting on/i);
+  assert.match(index, /works only with a model running on your device/i);
 });
 
 test('no page claims what the I9 gate has not measured, and ADR-0038 wording rules hold', () => {

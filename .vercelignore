@@ -3,3 +3,10 @@
 /*
 !landing
 !landing/**
+
+# The Vercel deployment is zero-config, so every file under the Root Directory
+# is served. Without this the suite below would be fetchable at
+# https://mityu.bluedev.dev/tests/whats-new.test.mjs — internal process notes on
+# the marketing domain. CI runs it from the repository, not from the upload.
+landing/tests
+landing/README.md

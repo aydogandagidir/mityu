@@ -662,15 +662,15 @@ a{color:inherit;text-decoration:none}
           </div>
           <div class="rel" data-release="1.2.0">
             <span class="ver">1.2.0</span>
-            <p><b>Live copilot — beta, off by default.</b> A small always-on-top panel that follows a recording you start and, when you ask, drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript. Eight meeting modes (general, client call, team meeting, interview, lecture, consultation, field visit, support call) decide what it offers. Every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. Cloud use is off unless you allow it.<span class="when">September 2026</span></p>
+            <p><b>Live copilot — beta, off by default.</b> A small always-on-top panel that follows a recording you start and, when you ask, drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript. Eight meeting modes (general, client call, team meeting, interview, lecture, consultation, field visit, support call) decide what it offers. Every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. It works only with a model running on your device. In this build the copilot’s own switch could not be reached, which the release above fixed.<span class="when">September 2026</span></p>
           </div>
           <div class="rel" data-release="1.1.0">
             <span class="ver">1.1.0</span>
-            <p><b>Speaker separation, and Ask this meeting.</b> Who spoke when, and for how long — on-device, after the recording ends, with anonymous labels. Ask a finished meeting a question and get an answer drawn only from its transcript, each line opening its source.<span class="when">August 2026</span></p>
+            <p><b>Speaker separation, and Ask this meeting.</b> Who spoke when, and for how long — on-device, after the recording ends, with anonymous labels. Ask a finished meeting a question and get an answer drawn only from its transcript, each line opening its source. The learning loop also arrives here: correct the same thing a few times and Mityu proposes a plain-language rule you approve, edit or delete.<span class="when">August 2026</span></p>
           </div>
           <div class="rel" data-release="1.0.4">
-            <span class="ver">1.0</span>
-            <p><b>The foundation.</b> On-device transcription, source-linked summaries and action items behind your approval, evidence search across meetings, the learning loop, export to PDF, Word and Markdown, and verifiable local deletion.<span class="when">July 2026</span></p>
+            <span class="ver">1.0.4</span>
+            <p><b>The foundation.</b> On-device transcription, source-linked summaries and action items behind your approval, evidence search across meetings, export to PDF, Word and Markdown, and verifiable local deletion.<span class="when">July 2026</span></p>
           </div>
         </div>
       </article>
@@ -763,7 +763,7 @@ a{color:inherit;text-decoration:none}
         </ul>
       </article>
     </div>
-    <p class="footnote">Mityu is available now for Windows 10/11 (64-bit) — download the free trial or buy a Pro license above. Every plan includes the current release, beta features off by default.</p>
+    <p class="footnote">Mityu is available now for Windows 10/11 (64-bit) — download the free trial or buy a Pro license above. Every plan includes the current release, with the live copilot beta off by default.</p>
     <p class="footnote">Every purchase comes with a 14-day money-back guarantee.</p>
   </section>
 
@@ -777,7 +777,7 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Is my audio uploaded anywhere?</summary>
-        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize or ask about is sent to that provider — your audio never leaves the machine. The beta live copilot follows the same rule and adds one more: it may use a cloud provider only if you separately allow it, and until then it works only with a model running on your device.</p>
+        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize or ask about is sent to that provider — your audio never leaves the machine. The beta live copilot is stricter still: in the current release it works only with a model running on your device, so what it reads never reaches a cloud provider at all.</p>
       </details>
       <details>
         <summary>Does a bot join my meetings?</summary>
@@ -793,11 +793,11 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Which models and API keys can I use?</summary>
-        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Ask this meeting and the beta live copilot use the same model choice; the copilot is additionally limited to on-device models unless you allow cloud use.</p>
+        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Ask this meeting uses that same model choice. The beta live copilot does not: in the current release it works only with a model running on your device.</p>
       </details>
       <details>
         <summary>What is the live copilot, and is it on?</summary>
-        <p class="a">It is off by default, and it is a beta. Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. It never records on its own, never hides Mityu from you or anyone in the room, and on Windows it can stay out of your screen share. It has not yet been checked against a real model, which is why it is a beta and why we publish no accuracy or latency figure for it.</p>
+        <p class="a">It is off by default, and it is a beta. Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. In the current release it works only with a model running on your device, so the conversation it reads does not reach a cloud provider. It never records on its own, never hides Mityu from you or anyone in the room, and on Windows it can stay out of your screen share. It has not yet been checked against a real model, which is why it is a beta and why we publish no accuracy or latency figure for it.</p>
       </details>
       <details>
         <summary>Can I ask a meeting a question afterwards?</summary>

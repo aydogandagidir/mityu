@@ -51,7 +51,7 @@ Mityu is designed for professionals and enterprises who must keep control of sen
 - **Ask this meeting:** ask a finished meeting a question and get an answer drawn only from its transcript; each line opens its source, and anything the model cannot trace to the transcript is dropped rather than shown. (v1.1.0)
 - **Speaker separation and talk time:** on-device, after the recording ends, best-effort, with anonymous labels — Mityu never attaches a name to a voice. (v1.1.0)
 - **Evidence search** across your meetings (local FTS5/BM25) and an **Action Center** listing only human-approved action items with their source.
-- **The learning loop:** correct the same thing a few times and Mityu proposes a plain-language rule you can approve, edit or delete — all local.
+- **The learning loop:** correct the same thing a few times and Mityu proposes a plain-language rule you can approve, edit or delete — all local. (v1.1.0)
 - **Live copilot — beta, off by default (v1.2.x):** an always-on-top panel that follows a recording you start and, on request, drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript. Eight meeting modes; every answer AI-labelled and cited to a transcript segment, or refused; "Pin to notes" keeps one as a draft in the meeting's summary. Cloud use is off unless you allow it. Enable under Settings → Beta. Not yet validated against a real model (BACKLOG I9).
 - **AI summaries, BYOK:** choose Ollama (local), Claude, Groq, OpenRouter, or any OpenAI-compatible endpoint. API keys are stored in the OS keychain — never in plaintext.
 - **Import &amp; enhance:** import existing audio to generate a transcript, or re-transcribe a recording with a different model or language — all processed locally.
