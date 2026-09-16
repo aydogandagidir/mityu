@@ -1372,3 +1372,14 @@ It was also **suppressing the context menu in production** — `preventDefault()
 6. **The context menu comes back.** Whatever the suppression was guarding against — a developer-tools entry a release WebView does not offer anyway — the cost was the platform's standard editing menu.
 
 **Consequences.** The shortcut table lives beside the handlers, in the same file, so the sheet and the behaviour cannot drift apart. Recording start and stop still belong to the recording surface; a global *stop* from any route needs the session provider that package owns, and is not claimed here.
+
+---
+## ADR-0064 (design ADR-P) — The copilot panel joins the design system, and its compliance text leaves the 10px floor
+
+**Status:** Accepted (2026-09-16). Implements DESIGN_SYSTEM.md §6.7 (WP14).
+
+**Context.** The copilot is a separate 380px frameless window, and its width had been used to justify type sizes the rest of the app does not allow: **twenty-three arbitrary `text-[10px]` and `text-[11px]` values**, many of them carrying the surfaces that exist to be *read* — the Art. 50 marking, the refusal explanations, the screen-share protection statement, the source citations. The design system sets 12px (`text-caption`) as the floor for anything a person must read, and reserves 11px (`text-micro`) for an eyebrow, a count or an `mm:ss`. A narrow window is a reason to show less, not to shrink a disclosure until it is not read.
+
+**Decision.** Every one of those values becomes `text-caption`, and the panel's remaining palette colours become tokens. 🔒 Nothing else moves: the `AiMarking` note in every insight phase, the AI disclosure region and its acknowledgement key, the refusal copy, the four action labels and their order, the pin controls and their id scheme, the absence of any start/record control, the protection headline taken verbatim from the backend, the drag region, the close label, the footer sentences, and the exact `<li>` text of a transcript line — roughly forty pinned strings and roles across two suites, all green.
+
+**Consequences.** The panel is denser in the sense that matters — 12px text in a 380px column reads; 10px text in the same column is decoration that happens to be legally required. Both copilot files leave the lint quarantine.
