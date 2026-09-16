@@ -140,7 +140,6 @@
         "src/components/report/ReportHeader.tsx",
         "src/components/report/SpeakerTurns.tsx",
         "src/components/report/TopicsTimeline.tsx",
-        "src/components/report/primitives.tsx",
         "src/components/shared/DownloadProgressToast.tsx",
         "src/lib/recordingNotification.tsx"
       ],
