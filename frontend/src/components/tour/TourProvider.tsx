@@ -163,7 +163,11 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
           meetings.some((m) => m?.id === SAMPLE_MEETING_ID);
         if (!exists) return; // no sample (older installs) → fall back to normal home
 
-        navigateToSample();
+        // The welcome overlay opens where the user already is. It used to navigate to
+        // the sample meeting first, so the very first thing a new user saw was a report
+        // of a meeting they had never recorded — presented in the same chrome as their
+        // own. The sample is now an offer on Home ("Try the sample report"), and
+        // `replayTour` still navigates, because there the user asked for it.
         openWelcome();
       } catch {
         // Any local read failing must never surface — just skip the tour.
@@ -173,7 +177,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [navigateToSample, openWelcome]);
+  }, [openWelcome]);
 
   // --- Welcome handlers ----------------------------------------------------
   const handleTakeTour = useCallback(() => {
