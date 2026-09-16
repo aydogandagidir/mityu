@@ -55,13 +55,23 @@ describe('About describes the app the way the landing page does', () => {
     expect(text).toMatch(/Export approved notes to PDF, Word or Markdown/);
   });
 
-  it('lists what is in development without dates and never uses forbidden wording', () => {
+  it('points at the What\'s new dialog instead of repeating a changelog', () => {
     render(<About />);
     const text = document.body.textContent ?? '';
-    expect(text).toMatch(/In development, not in this build/);
-    expect(text).toMatch(/macOS build/);
+    // About is the standing description. Per-release changes are the What's new
+    // dialog's job, so About names where it is and stops there.
+    expect(text).toMatch(/What changed in this version/);
+    expect(text).toMatch(/Settings → General/);
+    // The roadmap list that used to sit here is gone; only the one line
+    // docs/ROADMAP.md Phase F cites remains.
+    expect(text).toMatch(/Coming soon:/);
+    expect(text).not.toMatch(/In development, not in this build/);
+  });
+
+  it('never uses forbidden wording or an unmeasured figure', () => {
+    render(<About />);
+    const text = document.body.textContent ?? '';
     expect(text).not.toMatch(/undetectable/i);
-    expect(text).not.toMatch(/Coming soon:/);
     // No latency or accuracy figure before the I9 / A5 gates.
     expect(text).not.toMatch(/\b\d+(\.\d+)?\s?(ms|milliseconds)\b/i);
   });
