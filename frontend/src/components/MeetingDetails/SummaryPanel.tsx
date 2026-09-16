@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, RefObject } from 'react';
 import { toast } from 'sonner';
 import { Languages, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Notice } from '@/components/ui/notice';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { LanguagePickerPopover } from '@/components/LanguagePickerPopover';
 import { useRecentLanguages } from '@/hooks/useRecentLanguages';
@@ -434,11 +435,19 @@ export function SummaryPanel({
             />
           </div>
           {summaryStatus !== 'idle' && (
-            <div className={`mt-4 p-4 rounded-lg ${summaryStatus === 'error' ? 'bg-red-100 text-red-700 dark:text-red-300' :
-              summaryStatus === 'completed' ? 'bg-green-100 text-green-700 dark:text-green-400' :
-                'bg-accent text-primary'
-              }`}>
-              <p className="text-sm font-medium">{getSummaryStatusMessage(summaryStatus)}</p>
+            <div className="mt-4">
+              <Notice
+                as="status"
+                aria-live="polite"
+                tone={
+                  summaryStatus === 'error'
+                    ? 'destructive'
+                    : summaryStatus === 'completed'
+                      ? 'success'
+                      : 'info'
+                }
+                title={getSummaryStatusMessage(summaryStatus)}
+              />
             </div>
           )}
         </div>

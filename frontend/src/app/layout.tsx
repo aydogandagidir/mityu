@@ -6,6 +6,7 @@ import { Toaster } from 'sonner'
 import "sonner/dist/styles.css"
 import { usePathname } from 'next/navigation'
 import { ThemeProvider } from '@/components/theme-provider'
+import { MotionConfig } from 'framer-motion'
 import { AppShell } from '@/components/AppShell'
 
 // Inter (DESIGN_SYSTEM.md §4.1, ADR-B). Drawn for 12-16px UI, with the x-height to
@@ -51,6 +52,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${sans.variable} font-sans antialiased`}>
+        {/* Reduced motion, once, for every framer-motion animation in the tree.
+            The global CSS block in globals.css collapses CSS animations and
+            transitions, but framer-motion animates with JavaScript transforms, which
+            no stylesheet can reach — so eleven files were animating regardless of the
+            user's preference. `reducedMotion="user"` makes every `motion` component
+            under it drop transform and layout animation while keeping opacity, which
+            is the guidance for vestibular triggers: things may still appear, they must
+            not fly. This is one provider instead of eleven `useReducedMotion()` calls
+            that each have to be remembered. */}
+        <MotionConfig reducedMotion="user">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {isBareRoute ? children : <AppShell>{children}</AppShell>}
 
@@ -82,6 +93,7 @@ export default function RootLayout({
             }}
           />
         </ThemeProvider>
+        </MotionConfig>
       </body>
     </html>
   )
