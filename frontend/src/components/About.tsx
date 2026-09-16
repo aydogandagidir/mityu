@@ -143,21 +143,26 @@ export function About() {
                 </div>
             </div>
 
-            {/* In development — mirrors the landing page's "In development" card.
-                No dates, no promises: each item ships only when it can be described
-                honestly (the on-device agents line is the one docs/ROADMAP.md cites). */}
-            <div className="bg-accent rounded p-3 space-y-1.5">
-                <p className="text-caption text-primary">
-                    <span className="font-bold">In development, not in this build:</span>
+            {/* Where per-release changes live. About answers "what is this app";
+                what changed in THIS version is the What's new dialog's job
+                (`lib/releaseNotes.ts`, BACKLOG G2) — auto-opened once after an
+                update from AppShell, and re-openable from Settings → General.
+                Naming it here is the whole of About's involvement: a second copy
+                of the changelog is a second thing to keep true. */}
+            <div className="bg-muted rounded p-3">
+                <p className="text-caption text-muted-foreground leading-relaxed">
+                    <span className="font-semibold text-foreground">What changed in this version:</span>{' '}
+                    Mityu shows you after every update, and you can re-open it any time from Settings → General.
                 </p>
-                <ul className="text-caption text-primary list-disc pl-4 space-y-1">
-                    <li>macOS build — the code targets it; nothing is published yet.</li>
-                    <li>Two validation gates: transcription measured on real recordings, and the copilot&apos;s live check against a real model. These decide what Mityu is allowed to claim.</li>
-                    <li>Copilot: check claims against your own documents, and attach one screenshot you preview and confirm — never continuous.</li>
-                    <li>Post-call recipes from approved notes only; manual speaker names.</li>
-                    <li>A library of on-device AI agents — drafting follow-ups, tracking action items. Draft-only: nothing is sent until you approve it.</li>
-                    <li>Team workspaces through an optional server you can host yourself; the app keeps working without it.</li>
-                </ul>
+            </div>
+
+            {/* The one forward-looking line, kept because docs/ROADMAP.md's
+                Phase F cites this exact promise. A longer roadmap belongs in
+                docs/, not in a dialog a user opens to learn what they have. */}
+            <div className="bg-accent rounded p-3">
+                <p className="text-caption text-primary">
+                    <span className="font-bold">Coming soon:</span> A library of on-device AI agents — drafting follow-ups, tracking action items, and more. Draft-only: nothing is sent until you approve it.
+                </p>
             </div>
 
             {/* CTA Section - Compact */}
