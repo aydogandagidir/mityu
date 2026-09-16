@@ -142,8 +142,6 @@
         "src/components/report/TopicsTimeline.tsx",
         "src/components/report/primitives.tsx",
         "src/components/shared/DownloadProgressToast.tsx",
-        "src/components/ui/dialog.tsx",
-        "src/components/ui/sheet.tsx",
         "src/lib/recordingNotification.tsx"
       ],
       "rules": {

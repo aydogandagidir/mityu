@@ -83,7 +83,22 @@ Three consequences:
    `ring-offset-card` that never compiled. Prefer it over trusting the selectors.
 
 Compose focus styling from the shared exported constant rather than hand-writing it at a
-`cn()` site, so the string those 180 compositions carry is one that was reviewed once.
+`cn()` site, so the string those 180 compositions carry is one that was reviewed once. That
+constant is **`frontend/src/components/ui/focus-ring.ts`**: `focusRing(surface)` for a
+control, `focusRingWithin(surface)` for a composed field whose ring belongs to the group,
+and `HIGHLIGHT_ITEM` for a Radix roving-focus menu item, where the `--accent` highlight is
+the replacement for the stripped outline and a ring would double-draw. `surface` is chosen
+mechanically from DESIGN_SYSTEM.md §5's table by **what the control sits on** — a filled
+control takes its *parent* surface, never its own fill, because Tailwind draws the offset
+outside the border box.
+
+**`cn()` has to be taught every custom key you add to an existing Tailwind class group.**
+`frontend/src/lib/utils.ts` registers the §4.5 type steps, `shadow-elev-*`, `duration-*` and
+`max-w-measure` with `extendTailwindMerge`. Without that, `tailwind-merge` classifies
+`text-label` as a *colour* (anything after `text-` that is not a t-shirt size is), and
+`cn('text-label', 'text-muted-foreground')` silently returns only the colour — the type step
+disappears with no error. A token added to `tailwind.config.js` without a matching entry
+there works everywhere except inside `cn()`, which is the hardest place to notice it.
 
 The last `overrides` entry in `.eslintrc.json` is a **shrinking quarantine** of files that
 still carry pre-redesign classes. Delete your files from it when you migrate them; never

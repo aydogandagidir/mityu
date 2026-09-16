@@ -416,7 +416,7 @@ function BlockRow({
           {isEditing ? (
             <>
               <Button
-                variant="green"
+                variant="outline"
                 size="sm"
                 onClick={saveEdit}
                 disabled={isSaving || reviewLocked}
@@ -442,7 +442,7 @@ function BlockRow({
           ) : isRejecting ? (
             <>
               <Button
-                variant="red"
+                variant="destructive"
                 size="sm"
                 onClick={confirmReject}
                 disabled={isPending}
@@ -485,7 +485,7 @@ function BlockRow({
           ) : (
             <>
               <Button
-                variant={block.status === 'approved' ? 'green' : 'outline'}
+                variant="outline"
                 size="sm"
                 onClick={onApprove}
                 disabled={isPending || reviewLocked || block.status === 'approved'}
@@ -666,7 +666,7 @@ function ActionItemRow({
           {isEditing ? (
             <>
               <Button
-                variant="green"
+                variant="outline"
                 size="sm"
                 onClick={saveEdit}
                 disabled={isSaving}
@@ -692,7 +692,7 @@ function ActionItemRow({
           ) : isRejecting ? (
             <>
               <Button
-                variant="red"
+                variant="destructive"
                 size="sm"
                 onClick={confirmReject}
                 disabled={isPending}
@@ -735,7 +735,7 @@ function ActionItemRow({
           ) : (
             <>
               <Button
-                variant={item.status === 'approved' ? 'green' : 'outline'}
+                variant="outline"
                 size="sm"
                 onClick={onApprove}
                 disabled={isPending || item.status === 'approved'}
@@ -1096,7 +1096,7 @@ export function DraftSummaryView({
 
   const approveButton = (
     <Button
-      variant="green"
+      variant="verified"
       size="sm"
       onClick={approveWholeSummary}
       disabled={
