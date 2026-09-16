@@ -1,0 +1,143 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+/**
+ * The landing page now carries a "What's new / In development" section and a
+ * copilot FAQ. These tests protect the claims that section makes, in the same
+ * spirit as the privacy-notice tests next door:
+ *
+ * - it never advertises a version newer than the one the app build carries
+ *   (`frontend/package.json` is the canonical version source per
+ *   RELEASE_CHECKLIST §0), because `main` publishes to Vercel on merge and a
+ *   listed release nobody can download is the failure PR #35 held merge for;
+ * - the copilot is described the way the product ships it — a beta, off by
+ *   default, reached from Settings → Beta — on both the page and the privacy
+ *   notice, and the desktop About dialog uses the same load-bearing phrases
+ *   (`frontend/src/components/About.test.tsx` asserts that side);
+ * - ADR-0038 invariant 1: the word "undetectable" never appears in product
+ *   copy or marketing;
+ * - the site and the app agree on which releases exist. The app ships its own
+ *   per-release notes (`frontend/src/lib/releaseNotes.ts`, ADR-0047); a release
+ *   the app tells a user about must be one the site also lists, or the two
+ *   surfaces are describing different products.
+ */
+
+const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const privacy = await readFile(new URL('../privacy.html', import.meta.url), 'utf8');
+const pkg = JSON.parse(await readFile(new URL('../../frontend/package.json', import.meta.url), 'utf8'));
+const releaseNotesSource = await readFile(
+  new URL('../../frontend/src/lib/releaseNotes.ts', import.meta.url),
+  'utf8',
+);
+
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+
+function parse(version) {
+  const m = SEMVER.exec(version);
+  assert.ok(m, `not a three-part version: ${version}`);
+  return m.slice(1).map(Number);
+}
+
+function compare(a, b) {
+  const [pa, pb] = [parse(a), parse(b)];
+  for (let i = 0; i < 3; i += 1) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+
+function listedReleases() {
+  return [...index.matchAll(/data-release="([^"]+)"/g)].map((m) => m[1]);
+}
+
+test('the what\'s-new list exists, is newest-first, and names only released versions', () => {
+  const releases = listedReleases();
+  assert.ok(releases.length >= 2, 'expected at least two release entries');
+  for (let i = 1; i < releases.length; i += 1) {
+    assert.ok(
+      compare(releases[i - 1], releases[i]) > 0,
+      `release entries must be newest-first: ${releases[i - 1]} then ${releases[i]}`,
+    );
+  }
+  assert.ok(
+    compare(releases[0], pkg.version) <= 0,
+    `the landing lists ${releases[0]} but the app build is ${pkg.version} — never advertise a release before it exists`,
+  );
+});
+
+test('the newest listed release is on the same release line as the app version', () => {
+  // The list may LAG the app version (a bump lands on main before its signed
+  // release exists, and merging publishes the site), but it may never lead it,
+  // and it must not fall a whole minor behind — that is the staleness this PR
+  // fixed, where the page still said "Mityu 1.0" two minors later.
+  const [newest] = listedReleases();
+  const [major, minor] = parse(newest);
+  const [appMajor, appMinor] = parse(pkg.version);
+  assert.equal(major, appMajor, `landing lists ${newest}, app is ${pkg.version}`);
+  assert.ok(appMinor - minor <= 1, `landing lists ${newest}, app is ${pkg.version} — the what's-new list is a minor behind`);
+});
+
+test('every release the app has notes for is also listed on the site', () => {
+  // Parsed, not imported: this is a Node test suite with no TypeScript loader,
+  // and the shape it needs is one literal field. A `version:` line that stops
+  // matching means the module was restructured — the test says so rather than
+  // silently asserting over an empty list.
+  const appVersions = [...releaseNotesSource.matchAll(/^\s*version: '([^']+)',$/gm)].map((m) => m[1]);
+  assert.ok(appVersions.length > 0, 'no version entries found in releaseNotes.ts — has its shape changed?');
+
+  // EXACT match, deliberately. The first draft of this test matched on
+  // major.minor so a patch note would not force a new site entry — and a
+  // mutation proved that hole: with 1.2.1 listed, dropping 1.2.0 from the site
+  // still passed, because 1.2.1 "covered the 1.2 line". That is precisely the
+  // case the test exists to catch. Exact match also enforces the process
+  // RELEASE_CHECKLIST §0 documents: one site entry per release.
+  // One carve-out, and only one: the version equal to `package.json` is the
+  // release being cut right now. It is not published yet, so the site correctly
+  // does not list it — RELEASE_CHECKLIST §0 says that entry lands once the
+  // signed release exists. Without this the next bump PR would fail CI, and the
+  // only way to pass would be to advertise a release nobody can download yet:
+  // simulated against a scratch copy, and it failed exactly that way. Every
+  // OLDER version the app has notes for must already be on the site, which is
+  // the staleness this test exists to catch.
+  const listed = new Set(listedReleases());
+  for (const version of appVersions) {
+    if (version === pkg.version) continue;
+    assert.ok(
+      listed.has(version),
+      `the app's release notes describe ${version} but the site's what's-new list does not: [${[...listed].join(', ')}]`,
+    );
+  }
+});
+
+test('the copilot is described as a beta that is off by default, reached from Settings → Beta', () => {
+  for (const [name, text] of [['index.html', index], ['privacy.html', privacy]]) {
+    assert.match(text, /off by default/i, `${name} must say the copilot is off by default`);
+    assert.match(text, /Settings → Beta/, `${name} must say where the switch is`);
+    assert.match(text, /beta/i, `${name} must call it a beta`);
+  }
+  assert.match(index, /not yet been checked against a real model/i);
+  assert.match(index, /cites the transcript segment it came from, or is refused/i);
+  assert.match(privacy, /last few minutes of transcript text/i);
+  // The shipped build has no UI for the cloud-egress setting, so the notice must
+  // say the copilot stays on-device rather than offering a switch nobody can reach.
+  assert.match(privacy, /separate workspace setting that is off by default/i);
+  assert.match(privacy, /offers no way to turn that setting on/i);
+  assert.match(index, /works only with a model running on your device/i);
+});
+
+test('no page claims what the I9 gate has not measured, and ADR-0038 wording rules hold', () => {
+  for (const [name, text] of [['index.html', index], ['privacy.html', privacy]]) {
+    assert.doesNotMatch(text, /undetectable/i, `${name}: "undetectable" never appears in product copy (ADR-0038)`);
+    assert.doesNotMatch(text, /\b\d+(\.\d+)?\s?(ms|milliseconds|seconds? latency)\b/i, `${name}: no latency figure before I9`);
+    assert.doesNotMatch(text, /\b\d{2,3}\s?%\s?(accura|WER|word error)/i, `${name}: no accuracy figure before A5`);
+  }
+});
+
+test('the stale "Mityu 1.0 is available now" claim is gone and the version lives in one place', () => {
+  assert.doesNotMatch(index, /Mityu 1\.0 is available now/);
+  // Outside the data-release list, no literal x.y.z version is hard-coded into
+  // prose, so a release bump has exactly one landing edit to make.
+  const prose = index.replace(/data-release="[^"]+"/g, '').replace(/<span class="ver">[^<]*<\/span>/g, '');
+  assert.doesNotMatch(prose, /\b1\.\d+\.\d+\b/, 'a literal version outside the release list will go stale');
+});

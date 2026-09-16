@@ -38,6 +38,7 @@ a{color:inherit;text-decoration:none}
 .skip{position:absolute;left:16px;top:-56px;z-index:100;background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;font-size:14px}
 .skip:focus{top:12px}
 .container{max-width:1200px;margin:0 auto;padding-left:24px;padding-right:24px}
+#loop,#learn,#whats-new,#pricing,#faq{scroll-margin-top:72px}
 
 /* ---------- buttons ---------- */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 20px;border-radius:999px;font-size:14px;font-weight:500;white-space:nowrap;transition:background .15s ease}
@@ -96,6 +97,27 @@ a{color:inherit;text-decoration:none}
 .checks li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--gray);line-height:1.5}
 .ck{color:var(--ink);font-weight:600;flex:none}
 .u{text-decoration:underline;text-underline-offset:3px}
+
+/* ---------- what's new / in development ---------- */
+.updates{margin-top:160px}
+.updates-head{text-align:center;max-width:60ch;margin:0 auto 44px}
+.updates-k{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--blue)}
+.updates-k::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
+.updates-head h2{margin-top:14px;font-size:clamp(1.8rem,3.6vw,2.9rem);font-weight:500;letter-spacing:-.03em;line-height:1.1}
+.updates-head p{margin:16px auto 0;max-width:56ch;color:var(--gray);font-size:clamp(1rem,1.4vw,1.15rem);line-height:1.65}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;align-items:start}
+@media (max-width:940px){.grid2{grid-template-columns:1fr;max-width:560px;margin-left:auto;margin-right:auto}}
+.releases{display:grid;gap:18px}
+.rel{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:start}
+.ver{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;background:#fff;border:1px solid var(--hair);color:var(--ink);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rel p{color:var(--gray);font-size:14px;line-height:1.6}
+.rel p b{color:var(--ink);font-weight:600}
+.rel .when{display:block;margin-top:4px;color:var(--gray);font-size:12px}
+.card.dev{background:var(--blue-bg)}
+.card.dev .badge{background:#fff}
+.card.dev .checks li{color:#3B4658}
+.card.dev .ck{color:var(--blue)}
+.updates .footnote{margin-top:26px}
 
 /* ---------- pricing ---------- */
 .pricing{margin-top:160px}
@@ -407,6 +429,7 @@ a{color:inherit;text-decoration:none}
     </a>
     <nav class="nav-links" aria-label="Primary">
       <a href="#loop">How it works</a>
+      <a href="#whats-new">What&rsquo;s new</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </nav>
@@ -429,7 +452,7 @@ a{color:inherit;text-decoration:none}
         <a class="btn btn-gray" href="#pricing">See pricing</a>
       </div>
       <p class="platforms">Windows 10/11 (64-bit) · macOS in development</p>
-      <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. Target-environment validation and the human pilot have not been performed; review important output against its source audio. Speaker separation is a best-effort estimate, runs after the recording ends rather than live, and takes roughly a quarter of the recording&rsquo;s length; speaker labels stay anonymous and Mityu never attaches a name to a voice, because storing which voice belongs to whom would be biometric data. Raw meeting audio remains local until you delete the meeting.</p>
+      <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. Target-environment validation and the human pilot have not been performed; review important output against its source audio. Speaker separation is a best-effort estimate, runs after the recording ends rather than live, and takes roughly a quarter of the recording&rsquo;s length; speaker labels stay anonymous and Mityu never attaches a name to a voice, because storing which voice belongs to whom would be biometric data. The live copilot is a beta: off by default, and not yet checked against a real model. Raw meeting audio remains local until you delete the meeting.</p>
     </div>
   </section>
 
@@ -549,11 +572,13 @@ a{color:inherit;text-decoration:none}
       <article class="card">
         <span class="badge">Human-approved</span>
         <h3>Drafts until you approve.</h3>
-        <p class="desc">Every AI-generated line is a labeled draft linked to its source in the transcript. Nothing is final until you sign it off.</p>
+        <p class="desc">Every AI-generated line is a labeled draft linked to its source in the transcript. Nothing is final until you sign it off — and a question you ask a meeting afterwards is answered from that transcript alone.</p>
         <div class="divider"></div>
         <ul class="checks">
           <li><span class="ck">✓</span><span>“AI-generated” label on every draft</span></li>
           <li><span class="ck">✓</span><span>Source links to exact timestamps</span></li>
+          <li><span class="ck">✓</span><span>Ask this meeting: answers cite the transcript, or refuse</span></li>
+          <li><span class="ck">✓</span><span>Export approved notes to PDF, Word or Markdown</span></li>
           <li><span class="ck">✓</span><span>BYOK: Ollama, OpenAI, Anthropic, Groq, OpenRouter</span></li>
         </ul>
       </article>
@@ -615,6 +640,56 @@ a{color:inherit;text-decoration:none}
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- ================= what's new / in development ================= -->
+  <section class="updates container" id="whats-new" aria-label="What is new and what is in development">
+    <div class="updates-head">
+      <span class="updates-k">What&rsquo;s new</span>
+      <h2>Shipped, and in progress.</h2>
+      <p>Every release keeps one rule: nothing ships as a claim it cannot back. Here is what is in the download today, and what is being built next.</p>
+    </div>
+    <div class="grid2">
+      <article class="card">
+        <span class="badge">Shipped</span>
+        <h3>In the download today.</h3>
+        <p class="desc">Windows 10/11 (64-bit). The installer always serves the current release under its versioned name.</p>
+        <div class="divider"></div>
+        <div class="releases">
+          <div class="rel" data-release="1.2.1">
+            <span class="ver">1.2.1</span>
+            <p><b>Reachable copilot switch, and Pin to notes.</b> The live copilot&rsquo;s on-switch and its meeting modes now live under Settings → Beta. A copilot answer you keep during a recording is written into the meeting&rsquo;s summary when you save it, as a draft you review — and a pin can never fail a save.<span class="when">September 2026</span></p>
+          </div>
+          <div class="rel" data-release="1.2.0">
+            <span class="ver">1.2.0</span>
+            <p><b>Live copilot — beta, off by default.</b> A small always-on-top panel that follows a recording you start and, when you ask, drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript. Eight meeting modes (general, client call, team meeting, interview, lecture, consultation, field visit, support call) decide what it offers. Every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. It works only with a model running on your device. In this build the copilot’s own switch could not be reached, which the release above fixed.<span class="when">September 2026</span></p>
+          </div>
+          <div class="rel" data-release="1.1.0">
+            <span class="ver">1.1.0</span>
+            <p><b>Speaker separation, and Ask this meeting.</b> Who spoke when, and for how long — on-device, after the recording ends, with anonymous labels. Ask a finished meeting a question and get an answer drawn only from its transcript, each line opening its source. The learning loop also arrives here: correct the same thing a few times and Mityu proposes a plain-language rule you approve, edit or delete.<span class="when">August 2026</span></p>
+          </div>
+          <div class="rel" data-release="1.0.4">
+            <span class="ver">1.0.4</span>
+            <p><b>The foundation.</b> On-device transcription, source-linked summaries and action items behind your approval, evidence search across meetings, export to PDF, Word and Markdown, and verifiable local deletion.<span class="when">July 2026</span></p>
+          </div>
+        </div>
+      </article>
+      <article class="card dev">
+        <span class="badge">In development</span>
+        <h3>Being built — not in the download yet.</h3>
+        <p class="desc">No dates. Each item ships when it can be described honestly, and the copilot stays off by default until its live check against a real model passes.</p>
+        <div class="divider"></div>
+        <ul class="checks">
+          <li><span class="ck">→</span><span><b>macOS build.</b> The code targets it; nothing is published yet.</span></li>
+          <li><span class="ck">→</span><span><b>Two validation gates.</b> Transcription measured on real recordings, and the copilot&rsquo;s live check — these decide what Mityu is allowed to claim, including any accuracy or latency figure.</span></li>
+          <li><span class="ck">→</span><span><b>Copilot: local knowledge and screen context.</b> Check claims against your own documents as well as the transcript; attach one screenshot you preview and confirm — never continuous.</span></li>
+          <li><span class="ck">→</span><span><b>Post-call recipes.</b> Follow-up drafts and decision logs from approved notes only; manual speaker names.</span></li>
+          <li><span class="ck">→</span><span><b>On-device agents.</b> Draft follow-ups and track action items — draft-only, nothing is sent without your approval.</span></li>
+          <li><span class="ck">→</span><span><b>Team workspaces.</b> Through an optional server you can host yourself; the desktop app keeps working without it.</span></li>
+        </ul>
+      </article>
+    </div>
+    <p class="footnote">Target-environment validation and the human pilot have not been performed; no accuracy figure is published for any release above.</p>
   </section>
 
   <!-- ================= pricing ================= -->
@@ -688,7 +763,7 @@ a{color:inherit;text-decoration:none}
         </ul>
       </article>
     </div>
-    <p class="footnote">Mityu 1.0 is available now for Windows 10/11 (64-bit) — download the free trial or buy a Pro license above.</p>
+    <p class="footnote">Mityu is available now for Windows 10/11 (64-bit) — download the free trial or buy a Pro license above. Every plan includes the current release, with the live copilot beta off by default.</p>
     <p class="footnote">Every purchase comes with a 14-day money-back guarantee.</p>
   </section>
 
@@ -698,11 +773,11 @@ a{color:inherit;text-decoration:none}
       <h2 class="faq-h">Frequently asked questions</h2>
       <details>
         <summary>When can I get Mityu?</summary>
-        <p class="a">Mityu 1.0 is available now for Windows 10 and 11 (64-bit). Download the free 14-day trial, or buy a Pro license — both from the buttons above. macOS support is in development.</p>
+        <p class="a">Mityu is available now for Windows 10 and 11 (64-bit); the current release is listed under <a class="u" href="#whats-new">What&rsquo;s new</a>. Download the free 14-day trial, or buy a Pro license — both from the buttons above. macOS support is in development.</p>
       </details>
       <details>
         <summary>Is my audio uploaded anywhere?</summary>
-        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize is sent to that provider — your audio never leaves the machine.</p>
+        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize or ask about is sent to that provider — your audio never leaves the machine. The beta live copilot is stricter still: in the current release it works only with a model running on your device, so what it reads never reaches a cloud provider at all.</p>
       </details>
       <details>
         <summary>Does a bot join my meetings?</summary>
@@ -710,7 +785,7 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Which platforms are supported?</summary>
-        <p class="a">Mityu is available on Windows 10 and 11 (64-bit). macOS support is in development, and Linux is being explored. Join the launch list and we’ll tell you the moment new platforms land.</p>
+        <p class="a">Mityu is available on Windows 10 and 11 (64-bit). macOS support is in development, and Linux is being explored. <a class="u" href="mailto:info@bluedev.dev?subject=Mityu%20launch%20list">Write to us</a> and we’ll tell you the moment new platforms land.</p>
       </details>
       <details>
         <summary>Does it work offline?</summary>
@@ -718,7 +793,15 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Which models and API keys can I use?</summary>
-        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter.</p>
+        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Ask this meeting uses that same model choice. The beta live copilot does not: in the current release it works only with a model running on your device.</p>
+      </details>
+      <details>
+        <summary>What is the live copilot, and is it on?</summary>
+        <p class="a">It is off by default, and it is a beta. Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. In the current release it works only with a model running on your device, so the conversation it reads does not reach a cloud provider. It never records on its own, never hides Mityu from you or anyone in the room, and on Windows it can stay out of your screen share. It has not yet been checked against a real model, which is why it is a beta and why we publish no accuracy or latency figure for it.</p>
+      </details>
+      <details>
+        <summary>Can I ask a meeting a question afterwards?</summary>
+        <p class="a">Yes. Open a finished meeting and ask; the answer is drawn only from that meeting’s transcript, each line opens the segment it came from, and anything the model cannot trace to the transcript is dropped rather than shown. Every answer is marked as AI-generated and needs your review.</p>
       </details>
       <details>
         <summary>What’s the refund policy?</summary>
@@ -736,6 +819,7 @@ a{color:inherit;text-decoration:none}
     <nav class="foot-cols" aria-label="Footer">
       <ul>
         <li><a href="mailto:info@bluedev.dev?subject=Mityu%20launch%20list">Get notified</a></li>
+        <li><a href="#whats-new">What&rsquo;s new</a></li>
         <li><a href="#pricing">Pricing</a></li>
         <li><a href="#faq">FAQ</a></li>
       </ul>
