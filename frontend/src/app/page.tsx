@@ -14,9 +14,8 @@ import { SettingsModals } from './_components/SettingsModal';
 import { TranscriptPanel } from './_components/TranscriptPanel';
 import { HomeDashboard } from './_components/HomeDashboard';
 import { useModalState } from '@/hooks/useModalState';
-import { useRecordingStateSync } from '@/hooks/useRecordingStateSync';
 import { useRecordingStart } from '@/hooks/useRecordingStart';
-import { useRecordingStop } from '@/hooks/useRecordingStop';
+import { useRecordingSession } from '@/contexts/RecordingSessionContext';
 import { useTranscriptRecovery } from '@/hooks/useTranscriptRecovery';
 import { TranscriptRecovery } from '@/components/TranscriptRecovery';
 import { indexedDBService } from '@/services/indexedDBService';
@@ -24,8 +23,20 @@ import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
 export default function Home() {
-  // Local page state (not moved to contexts)
-  const [isRecording, setIsRecordingState] = useState(false);
+  /**
+   * The recording session now lives in the shell (ADR-F): `window.handleRecordingStop`
+   * has to survive navigation, and the dock's Stop has to exist on every route. This
+   * page reads that session instead of mounting the lifecycle hooks itself — the ONLY
+   * thing still rooted here is starting, because the rail's Record button navigates to
+   * `/` first and the consent gate and device pickers are written against that.
+   */
+  const {
+    isRecording,
+    setIsRecording: setIsRecordingState,
+    isRecordingDisabled,
+    handleRecordingStop,
+    setIsStopping,
+  } = useRecordingSession();
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   /**
    * The wrap-up panel outlives the statuses that open it: SAVING flips to COMPLETED
@@ -45,16 +56,9 @@ export default function Home() {
 
   // Hooks
   const { hasMicrophone } = usePermissionCheck();
-  const { setIsMeetingActive, refetchMeetings, currentMeeting } = useSidebar();
+  const { refetchMeetings, currentMeeting } = useSidebar();
   const { modals, messages, showModal, hideModal } = useModalState(transcriptModelConfig);
-  const { isRecordingDisabled, setIsRecordingDisabled } = useRecordingStateSync(isRecording, setIsRecordingState, setIsMeetingActive);
   const { handleRecordingStart } = useRecordingStart(isRecording, setIsRecordingState, showModal);
-
-  // Get handleRecordingStop function and setIsStopping (state comes from global context)
-  const { handleRecordingStop, setIsStopping } = useRecordingStop(
-    setIsRecordingState,
-    setIsRecordingDisabled
-  );
 
   // Recovery hook
   const {

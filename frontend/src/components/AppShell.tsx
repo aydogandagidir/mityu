@@ -46,6 +46,8 @@ import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioF
 import { isTauri } from '@/lib/isTauri'
 import { TourProvider } from '@/components/tour'
 import { CommandPalette } from '@/components/shell/CommandPalette'
+import { RecordingSessionProvider } from '@/contexts/RecordingSessionContext'
+import { ShellSessionDock } from '@/components/shell/ShellSessionDock'
 
 
 // Module-level component — stable reference across RootLayout re-renders.
@@ -285,8 +287,10 @@ export function AppShell({
                                 // (never during setup onboarding). It renders the welcome
                                 // overlay + coach-marks and, post-onboarding, routes to the
                                 // pre-seeded sample meeting. isTauri()-gated internally.
+                                <RecordingSessionProvider>
                                 <TourProvider>
-                                  <div className="flex h-screen overflow-hidden">
+                                  <div className="flex h-screen flex-col overflow-hidden">
+                                  <div className="flex min-h-0 flex-1 overflow-hidden">
                                     <Sidebar />
                                     <MainContent>
                                       {/* One slot for app-wide notices, so the trial chrome
@@ -298,7 +302,13 @@ export function AppShell({
                                       {children}
                                     </MainContent>
                                   </div>
+                                  {/* The shell's own recording indicator and the only Stop
+                                      that exists on every route (ADR-F). It publishes
+                                      --bottom-chrome so toasts and page bodies clear it. */}
+                                  <ShellSessionDock />
+                                  </div>
                                 </TourProvider>
+                                </RecordingSessionProvider>
                               )}
                               {/* Import audio overlay and dialog */}
                               <ImportDropOverlay visible={showDropOverlay} />

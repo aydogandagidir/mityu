@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { useTranscripts } from '@/contexts/TranscriptContext';
@@ -90,6 +90,17 @@ export function useRecordingStop(
   } = useSidebar();
 
   const router = useRouter();
+  /**
+   * ADR-F. This hook used to live only on `/`, so navigating to the report when a save
+   * finished was always a move from the home route. Now that the session is hoisted into
+   * the shell, the same push would yank a user off /settings mid-edit — or out of the
+   * report they were already reading. The pathname is held in a ref because the decision
+   * is made up to sixty-five seconds after Stop, and it is read at that moment, not at
+   * the moment the hook rendered.
+   */
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   // Guard to prevent duplicate/concurrent stop calls (e.g., from UI and tray simultaneously)
   const stopInProgressRef = useRef(false);
@@ -428,9 +439,14 @@ export function useRecordingStop(
           // Keep native new-recording start gated through the existing UX delay
           // so this completed flow cannot clear or navigate over a newer meeting.
           await new Promise(resolve => setTimeout(resolve, 2000));
-          router.push(`/meeting-details?id=${meetingId}&source=recording`);
+          // ADR-F: only the home route is navigated away from automatically. Everywhere
+          // else the toast's "View Meeting" action above is the only way there, and it is
+          // the user's choice. The toast is shown either way.
+          if (pathnameRef.current === '/') {
+            router.push(`/meeting-details?id=${meetingId}&source=recording`);
+            Analytics.trackPageView('meeting_details');
+          }
           clearTranscripts();
-          Analytics.trackPageView('meeting_details');
           setStatus(RecordingStatus.IDLE);
           // Track meeting completion analytics
           try {

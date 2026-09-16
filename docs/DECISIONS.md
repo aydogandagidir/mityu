@@ -1383,3 +1383,35 @@ It was also **suppressing the context menu in production** — `preventDefault()
 **Decision.** Every one of those values becomes `text-caption`, and the panel's remaining palette colours become tokens. 🔒 Nothing else moves: the `AiMarking` note in every insight phase, the AI disclosure region and its acknowledgement key, the refusal copy, the four action labels and their order, the pin controls and their id scheme, the absence of any start/record control, the protection headline taken verbatim from the backend, the drag region, the close label, the footer sentences, and the exact `<li>` text of a transcript line — roughly forty pinned strings and roles across two suites, all green.
 
 **Consequences.** The panel is denser in the sense that matters — 12px text in a 380px column reads; 10px text in the same column is decoration that happens to be legally required. Both copilot files leave the lint quarantine.
+
+## ADR-0065 (design ADR-Q) — The wrap-up is shown, and the status message the app already wrote reaches the screen
+
+**Status:** Accepted · 2026-09-16 · supersedes nothing · relates to ADR-0055 (the shell)
+
+**Context.** Stopping a recording can take a minute: the transcription queue drains, the buffer flushes, the meeting is written. `useRecordingStop` reports its way through all of it by calling `setStatus(status, message)` in four places — "Waiting for transcription…", "Processing N remaining chunks…", "Flushing transcript buffer…", "Saving meeting to database…" — and `RecordingStateContext.statusMessage` was read by **nothing**. What the user saw instead was a small overlay reading "Finalizing transcription..." for as long as it took, and then, without being asked, a report.
+
+**Decision.** `WrapUpPipeline` replaces the two `StatusOverlays` toasts on the home route with the three steps of the wrap-up, the running one marked, and the message attached to the step it belongs to. The developer wording is translated at the boundary: a queue depth is a real thing to report, "chunks" is not a word this audience uses.
+
+On failure the component does **not** draw a red mark next to a step. `ERROR` is set from four different places in `useRecordingStop` and all the component receives is the message, so guessing which step broke would mark work that succeeded as failed. The failed card drops the step list and shows the message — which is also the first time a save error reaches the screen at all, rather than only the log.
+
+**Consequences.** The panel is held open by local state rather than by the status, because SAVING flips to COMPLETED two seconds before the navigation to the report and to ERROR when the save fails; gating on the status alone would tear the panel down at exactly the two moments it has something to say. `StatusOverlays` has no call site left and is inventory for the dead-code package.
+
+## ADR-0066 (design ADR-F) — The recording session moves into the shell, and the auto-navigate becomes conditional
+
+**Status:** Accepted · 2026-09-16 · relates to ADR-0055 (the shell), ADR-0065 (the wrap-up)
+
+**Context.** `useRecordingStop` installs `window.handleRecordingStop` on mount and **deletes it on unmount**, and it mounted in exactly one place: `app/page.tsx`. Navigating to Settings therefore removed the function the Rust tray menu calls through `window.eval` — a rename produces no compile error and neither did the disappearance. It also meant the promised global Stop could not exist: on any route but `/` there was nothing to call. Start a recording, open Settings, and the only way to stop was to navigate back.
+
+**Decision.** A `RecordingSessionProvider` owns the stop lifecycle for the whole shell and a 40px `SessionDock` renders the live session with a Stop that exists on every route. The provider is mounted **inside the main-app branch only**, never during onboarding: the hook reconciles an interrupted save on mount, and a first-run user being asked to recover a meeting they never recorded is not worth shipping.
+
+Starting deliberately stays on `/`. The rail's Record button navigates there first (`sessionStorage.autoStartRecording`), which is what the consent gate, the device pickers and the `start-recording-from-sidebar` listener are written against.
+
+**The behaviour change this ADR exists for:** the unconditional `router.push('/meeting-details?id=…&source=recording')` two seconds after a successful save now fires **only when the user is on `/`**. Everywhere else the success toast's "View Meeting" action is the only navigation, and it is the user's choice. Without this, the hoist would turn a working feature into a bug: stopping a recording from Settings would yank the user off the page mid-edit. The pathname is read from a ref at the moment the decision is made, not at the moment the hook rendered.
+
+🔒 Unchanged: the `invoke` argument shapes and their ordering, the completion-token mailbox lease, the consent gate on all three start paths, the exact name `window.handleRecordingStop`, the duplicate stop path (a tray or keyboard stop arrives via the `recording-stopped` event with the button never clicked), and the success toast's three strings.
+
+**Consequences.** The dock is the shell's indicator; `RecordingStatusBar` stays the in-column marker on the transcript panel and the two never occupy the same 100px. The shell publishes `--bottom-chrome` (0/40px) on `<html>`, which the sonner offset already reads, so a toast cannot land under the dock. The paused state is a **warning square plus the word**, never a second dot: §4.9 removes the pulse under `prefers-reduced-motion`, so shape and hue would otherwise be all that separates paused from recording, and hue alone is not a differentiator. `hooks/useRecordingStateSync.ts` loses its last caller — its polling body was gated on `window.__TAURI__`, undefined in Tauri 2 without `withGlobalTauri`, so only its `useState` ever ran; the provider holds that state directly and the file is inventory for the dead-code package.
+
+The tray tooltip and the window title now read `● Mityu — recording` / `❚❚ Mityu — paused`. A recorder capturing while its window is hidden, and saying so nowhere but inside that window, is a consent problem rather than a polish one.
+
+**Risk accepted.** This is the highest-risk change in the redesign: re-sequencing these handlers can break the completion-token lease and lock recording behind "Previous recording needs recovery". The automated gates (tsc, lint, 278 tests, the `/design/record` fixture shot, `cargo fmt`/`build`/`clippy`) are green; **the manual smoke test required by CLAUDE.md §4 — record → transcript appears, on a macOS and a Windows path, plus a stop from `/settings` and a tray stop — has not been run in this environment and is owed before release.**
