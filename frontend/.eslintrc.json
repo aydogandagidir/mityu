@@ -1,6 +1,154 @@
+// ESLint guardrails for the design system — DESIGN_SYSTEM.md §11.4, landed by WP1.
+//
+// MECHANISM: four `no-restricted-syntax` esquery selectors over the className attribute's
+// literal value. No new npm dependency, and this file stays eslintrc so `next lint` keeps
+// working (flat-config migration is out of scope).
+//
+// THE BLIND SPOT, STATED PLAINLY: a Literal selector can only read a string literal. src/
+// holds ~2342 literal `className="..."` sites, but also ~85 `className={cn(...)}` and ~95
+// template-literal className sites — ~180 compositions these rules CANNOT read, and the
+// ui/ primitives are exactly where cn() is densest. So guardrail 3 does NOT carry SC
+// 2.4.11: the §4.4.6 arithmetic and the theme.ringOffsetColor map do. The compensating
+// control is the dead-class / built-CSS check (§11.4 guardrail 6, WP16), which reads the
+// EMITTED css and therefore sees through cn(). See docs/CONVENTIONS.md.
+//
+// Guardrail 1 is off for src/app/design/**: the fixture routes print the palette itself.
+//
+// The LAST `overrides` entry is a SHRINKING QUARANTINE, not an allow-list. It holds the
+// files that still carry pre-redesign raw-palette / arbitrary-size / outline-none classes
+// and have not reached their own work package yet; turning the four rules on globally in
+// WP1 would have failed the build in 76 files that WP2–WP15 are scheduled to rewrite. Each
+// WP DELETES its own files from that array as it migrates them, which is how the guardrail
+// arrives at full coverage. The array must never gain an entry. When it is empty, delete
+// the entry — and WP16's dead-class check is what covers the cn() sites it never saw.
 {
   "extends": "next/core-web-vitals",
   "rules": {
-    "react/no-unescaped-entities": "warn"
-  }
+    "react/no-unescaped-entities": "warn",
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\b(bg|text|border|ring|from|to|via|divide|placeholder|fill|stroke)-(gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\\d{2,3}\\b|\\b(bg|text)-(white|black)\\b|#[0-9a-fA-F]{3,8}/]",
+        "message": "Guardrail 1 (DESIGN_SYSTEM.md 11.4): raw palette utility or hex literal in className. Use a semantic token from 4.2 (bg-card, text-muted-foreground, bg-ai-surface, text-recording-ink, ...)."
+      },
+      {
+        "selector": "JSXAttribute[name.name='className'] > Literal[value=/text-\\[[\\d.]+(px|rem)\\]/]",
+        "message": "Guardrail 2 (DESIGN_SYSTEM.md 11.4): arbitrary type size. The 4.5 scale is real utilities now: text-display/title-lg/title/title-sm/read/body/label/caption/micro/eyebrow."
+      },
+      {
+        "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b(?![\\s\\S]*ring-offset-)/]",
+        "message": "Guardrail 3 (DESIGN_SYSTEM.md 4.4.6): ring-ring without a ring-offset-* sibling. The ring against a fill is 1.22:1; the 2px offset in the surface colour is what carries SC 2.4.11. Pick from theme.ringOffsetColor."
+      },
+      {
+        "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\boutline-none\\b(?![\\s\\S]*focus-visible:)/]",
+        "message": "Guardrail 4 (DESIGN_SYSTEM.md 8): outline-none without a focus-visible: replacement removes the only keyboard affordance."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/app/design/**"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/text-\\[[\\d.]+(px|rem)\\]/]",
+            "message": "Guardrail 2 (DESIGN_SYSTEM.md 11.4): arbitrary type size. The 4.5 scale is real utilities now: text-display/title-lg/title/title-sm/read/body/label/caption/micro/eyebrow."
+          },
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b(?![\\s\\S]*ring-offset-)/]",
+            "message": "Guardrail 3 (DESIGN_SYSTEM.md 4.4.6): ring-ring without a ring-offset-* sibling. The ring against a fill is 1.22:1; the 2px offset in the surface colour is what carries SC 2.4.11. Pick from theme.ringOffsetColor."
+          },
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\boutline-none\\b(?![\\s\\S]*focus-visible:)/]",
+            "message": "Guardrail 4 (DESIGN_SYSTEM.md 8): outline-none without a focus-visible: replacement removes the only keyboard affordance."
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/app/_components/SettingsModal.tsx",
+        "src/app/actions/page.tsx",
+        "src/app/design/copilot/page.tsx",
+        "src/app/design/report/page.tsx",
+        "src/app/design/speakers/page.tsx",
+        "src/app/meeting-details/page.tsx",
+        "src/app/notes/**",
+        "src/components/AISummary/Block.tsx",
+        "src/components/AISummary/BlockNoteSummaryView.tsx",
+        "src/components/AISummary/DraftSummaryView.tsx",
+        "src/components/AISummary/Section.tsx",
+        "src/components/AISummary/index.tsx",
+        "src/components/About.tsx",
+        "src/components/AnalyticsConsentSwitch.tsx",
+        "src/components/AnalyticsDataModal.tsx",
+        "src/components/AskThisMeeting/AskPanel.tsx",
+        "src/components/AudioBackendSelector.tsx",
+        "src/components/AudioLevelMeter.tsx",
+        "src/components/BetaSettings.tsx",
+        "src/components/BluetoothPlaybackWarning.tsx",
+        "src/components/BuiltInModelManager.tsx",
+        "src/components/ChunkProgressDisplay.tsx",
+        "src/components/ComplianceNotification.tsx",
+        "src/components/ConfirmationModel/confirmation-modal.tsx",
+        "src/components/DatabaseImport/HomebrewDatabaseDetector.tsx",
+        "src/components/DatabaseImport/LegacyDatabaseImport.tsx",
+        "src/components/DeviceSelection.tsx",
+        "src/components/EditableTitle.tsx",
+        "src/components/EmptyStateSummary.tsx",
+        "src/components/ImportAudio/ImportAudioDialog.tsx",
+        "src/components/ImportAudio/ImportDropOverlay.tsx",
+        "src/components/LanguagePickerPopover.tsx",
+        "src/components/LanguageSelection.tsx",
+        "src/components/LearningSettings.tsx",
+        "src/components/Logo.tsx",
+        "src/components/MeetingDetails/RetranscribeDialog.tsx",
+        "src/components/MeetingDetails/SummaryGeneratorButtonGroup.tsx",
+        "src/components/MeetingDetails/TranscriptPanel.tsx",
+        "src/components/ModelDownloadProgress.tsx",
+        "src/components/ModelSettingsModal.tsx",
+        "src/components/ParakeetModelManager.tsx",
+        "src/components/PermissionWarning.tsx",
+        "src/components/RecordingConsentSettings.tsx",
+        "src/components/RecordingControls.tsx",
+        "src/components/RecordingSettings.tsx",
+        "src/components/RedactionSettings.tsx",
+        "src/components/Sidebar/SearchResultsList.tsx",
+        "src/components/Sidebar/index.tsx",
+        "src/components/TranscriptRecovery/TranscriptRecovery.tsx",
+        "src/components/TranscriptSettings.tsx",
+        "src/components/TranscriptView.tsx",
+        "src/components/UpdateDialog.tsx",
+        "src/components/UpdateNotification.tsx",
+        "src/components/VirtualizedTranscriptView.tsx",
+        "src/components/WhisperModelManager.tsx",
+        "src/components/consent/EncryptionStatusBanner.tsx",
+        "src/components/consent/RecordingConsentDialog.tsx",
+        "src/components/copilot/CopilotInsights.tsx",
+        "src/components/copilot/CopilotPanel.tsx",
+        "src/components/copilot/CopilotSettings.tsx",
+        "src/components/copilot/ModesSettings.tsx",
+        "src/components/molecules/form-components/form-input-item.tsx",
+        "src/components/molecules/form-components/form-select-item.tsx",
+        "src/components/onboarding/shared/PermissionRow.tsx",
+        "src/components/onboarding/shared/ProgressIndicator.tsx",
+        "src/components/onboarding/steps/DownloadProgressStep.tsx",
+        "src/components/onboarding/steps/PermissionsStep.tsx",
+        "src/components/report/ReportHeader.tsx",
+        "src/components/report/SpeakerTurns.tsx",
+        "src/components/report/TopicsTimeline.tsx",
+        "src/components/report/primitives.tsx",
+        "src/components/shared/DownloadProgressToast.tsx",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/lib/recordingNotification.tsx"
+      ],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
 }

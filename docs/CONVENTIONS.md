@@ -46,6 +46,49 @@ of nothing:
 Shots land in `target/ui-shots/` (ignored). This does not replace running the
 real app — it catches "renders nothing" early, not "wrong in the app".
 
+A route may carry a query string — `design/hitl?reject=1`, `design/tour?tour=3` — which the
+tool splits off before appending `.html` and strips out of the PNG filename. `--expect` also
+accepts a marker that begins with `-` (`--expect "--ai-surface"`), because half the markers
+DESIGN_SYSTEM.md §11.2 requires *are* token names.
+
+## Styling: semantic tokens, and where the lint cannot see
+
+Colour, type, radius, elevation, motion and layering all come from the tokens in
+`docs/DESIGN_SYSTEM.md` §4, declared in `frontend/src/app/globals.css` (on **both** `:root`
+and `.dark` — a token declared in only one theme renders transparent in the other) and
+mapped to utilities in `frontend/tailwind.config.js`. The working list of what actually
+compiles is `frontend/src/app/design/tokens-reference.md`, rendered at `/design`.
+
+Four ESLint guardrails in `frontend/.eslintrc.json` enforce the floor: no raw palette
+utility or hex in `className`, no arbitrary `text-[Npx]`, no `ring-ring` without a
+`ring-offset-*` sibling, no `outline-none` without a `focus-visible:` replacement.
+
+**Their blind spot, stated plainly so nobody mistakes them for proof.** They are
+`no-restricted-syntax` esquery selectors over the `className` attribute's **literal** value,
+so they can only read a string literal. `frontend/src/` holds ~2342 literal
+`className="…"` sites — but also ~85 `className={cn(…)}` and ~95 template-literal
+`className` sites: about **180 compositions the rules cannot read at all**, and the
+`ui/` primitives, where 13 files use `outline-none`, are exactly where `cn()` is densest.
+
+Three consequences:
+
+1. The guardrails are a cheap first pass over roughly 93 % of call sites, **not** a proof.
+2. The `ring-ring` rule does **not** carry WCAG SC 2.4.11. What carries it is the arithmetic
+   in §4.4.6 (the ring against every offset surface, worst case 5.32:1) and the
+   `ringOffsetColor` map in `tailwind.config.js` that makes `ring-offset-card` compile at
+   all. The rule only stops the most common way of forgetting the offset.
+3. The compensating control is the **dead-class / built-CSS check** (§11.4 guardrail 6): it
+   greps every emitted `className` token against the built stylesheet, so it sees classes
+   however they were composed — including through `cn()` — and it is what catches a
+   `ring-offset-card` that never compiled. Prefer it over trusting the selectors.
+
+Compose focus styling from the shared exported constant rather than hand-writing it at a
+`cn()` site, so the string those 180 compositions carry is one that was reviewed once.
+
+The last `overrides` entry in `.eslintrc.json` is a **shrinking quarantine** of files that
+still carry pre-redesign classes. Delete your files from it when you migrate them; never
+add one.
+
 ## Git / PR
 - Branches: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `refactor/<slug>`.
 - Conventional commits: `feat: …`, `fix: …`, `refactor: …`, `docs: …`, `test: …`, `chore: …`.

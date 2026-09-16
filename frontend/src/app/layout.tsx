@@ -1,20 +1,23 @@
 'use client'
 
 import './globals.css'
-import { DM_Sans } from 'next/font/google'
+import { Inter } from 'next/font/google'
 import { Toaster } from 'sonner'
 import "sonner/dist/styles.css"
 import { usePathname } from 'next/navigation'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AppShell } from '@/components/AppShell'
 
-// Same face as the landing page (closest open-license match to the reference
-// site's Google Sans, which is proprietary). Self-hosted by next/font at build
-// time — no runtime network dependency (local-first).
-const dmSans = DM_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-dm-sans',
+// Inter (DESIGN_SYSTEM.md §4.1, ADR-B). Drawn for 12-16px UI, with the x-height to
+// hold up at the 13px label / 12px caption sizes this density needs, true tabular
+// figures for every timestamp, duration and mm:ss, and latin-ext coverage for Turkish
+// (s-cedilla, g-breve, dotted/dotless i). Self-hosted by next/font at BUILD time — no
+// runtime network dependency, which the Tauri CSP would refuse anyway (local-first).
+const sans = Inter({
+  subsets: ['latin', 'latin-ext'],
+  weight: ['400', '500', '600'],
+  variable: '--font-sans',
+  display: 'swap',
 })
 
 /**
@@ -42,7 +45,7 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${dmSans.variable} font-sans antialiased`}>
+      <body className={`${sans.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {isBareRoute ? children : <AppShell>{children}</AppShell>}
 
