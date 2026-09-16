@@ -93,10 +93,11 @@ jobs:
       # token that does not exist, assembled in a template literal, leaving the copilot's
       # paused dot with no fill.
       #
-      # KNOWN RED: `prose` / `prose-blue` on the legacy `/notes/*` route, which has no
-      # importers, renders fabricated meeting records through dangerouslySetInnerHTML,
-      # and is inventory for the dead-code package. This step goes green when that route
-      # is deleted — which is also when the job as a whole can stop being advisory.
+      # GREEN as of the dead-code package: its last two findings were `prose` /
+      # `prose-blue` on the legacy `/notes/*` route, which had no importers and rendered
+      # fabricated meeting records through dangerouslySetInnerHTML. That route is gone,
+      # so this step is a real gate from its first run — 1555 rules, zero unstyled
+      # classes. Only the screenshot steps above are still on probation.
       - name: every class in the markup has a rule behind it
         run: |
           python3 tools/ui/check-dead-classes.py --self-test

@@ -1434,6 +1434,31 @@ Two things were also never checked at all: **the dark theme** (no shot of it exi
 
 **Consequences.** The checker found its first defect the day it landed: `bg-warning-surface0` in `CopilotPanel.tsx:212` — a token that does not exist, composed inside a template literal where the ESLint rules cannot read it, leaving the copilot panel's **paused indicator with no fill at all**. Fixed here, and made a square rather than a dot, matching the session dock for the reason §4.9 gives.
 
-The remaining two findings are `prose` and `prose-blue` on the legacy `/notes/*` route — a route with no importers that renders fabricated meeting records through `dangerouslySetInnerHTML`, and whose typography plugin is not installed. **The dead-class step is red until that route is deleted**, which is why the whole job ships `continue-on-error: true`. That flag is the rollout, not a permanent state: it flips to `false` once the dead-code package lands and the job has been green for a week.
+Its other two findings were `prose` and `prose-blue` on the legacy `/notes/*` route — a route with no importers that rendered fabricated meeting records through `dangerouslySetInnerHTML`, and whose typography plugin is not installed. ADR-0068 deletes that route, so the dead-class step is **green** — 1555 rules, zero unstyled classes — and is a real gate from its first run. `continue-on-error: true` remains on the job only for the screenshot steps' first week; it is the rollout, not a permanent state.
 
 **No `rust-gates.yml`.** The work package called for one on the premise that "today's pipeline has no Rust step". That premise was stale: `ci.yml`'s `rust` job already runs `cargo fmt --check`, both sidecar builds, the GPL-espeak check, `cargo clippy --all-targets` and `cargo test --all`. A second copy would be two places to keep in step, and one of them would rot.
+
+## ADR-0068 (design ADR-I) — The dead-code inventory, with the two entries the plan got wrong
+
+**Status:** Accepted · 2026-09-16 · depends on ADR-0055 … ADR-0067 (the replacement screens, all landed and screenshotted)
+
+**Context.** Deliberately last. Removing dead code before the replacement screens are proven is how a migration loses its escape hatch. With every screen landed and shot, the surface that inflates every future change comes out.
+
+**Decision — deleted, each preceded by a grep proving zero importers:**
+
+- `src/app/notes/[id]/` — a legacy static demo that rendered **fabricated meeting records** through `dangerouslySetInnerHTML`. In an evidence product, a route that invents meetings is not dead weight, it is a trust violation. The Sidebar routing heuristic that could reach it went with ADR-0055's rewrite.
+- `components/TranscriptView.tsx` — the non-virtualized twin. Its one import in `MeetingDetails/TranscriptPanel.tsx` was **unused** (the file renders `VirtualizedTranscriptView`), and the `vi.mock` of it in `TranscriptPanel.diarization.test.tsx` had to go in the same commit or the suite breaks on module resolution with behaviour intact. That is the one sanctioned test edit.
+- `SettingTabs.tsx` + `CustomDialog.tsx` — a closed pair: the only importer of the first was the second, which nothing renders.
+- `ConsoleToggle.tsx`, `MessageToast.tsx`, `ModelDownloadProgress.tsx`, `BluetoothPlaybackWarning.tsx`, `AudioPlayer.tsx` (0 bytes), `onboarding/shared/StatusIndicator.tsx` (+ its barrel line), `molecules/form-components/*` (3), `DatabaseImport/*` (2 — whose Rust commands are not even registered in `generate_handler!`), `MeetingDetails/SummaryUpdaterButtonGroup.tsx`.
+- `app/_components/StatusOverlays.tsx` — made dead by ADR-0065's wrap-up panel.
+- `hooks/useRecordingStateSync.ts` (made dead by ADR-0066), `hooks/useAudioPlayer.ts`, `hooks/meeting-details/useModelConfiguration.ts`.
+- `app/metadata.ts` and `app/metadata.tsx` — byte-identical duplicates, both unused; `layout.tsx`'s import of them was commented out, and that comment goes too.
+- The `.titlebar` / `.no-drag` rules in `globals.css` — no consumer anywhere in `src/`.
+
+**Two entries the plan got wrong, kept after checking rather than deleted on the strength of the list:**
+
+1. **`AISummary/index.tsx` + `Block.tsx` + `Section.tsx` stay.** The plan called them "the legacy editor, dead". They are reachable: `BlockNoteSummaryView` renders `<AISummary>` for a `legacy`-format summary when `legacyReadOnly` is **false**, and `SummaryPanel` computes that as `!!aiSummary && !structuredEnabled` — so with the structured-summary beta on, an old meeting still opens the legacy editor. Deleting it would have made those summaries silently read-only. `@heroicons/react` therefore also stays in `package.json`; its single import is in that file.
+2. **`EditableTitle.tsx` stays.** "Superseded by PageHeader" was true of two of its three importers (both in the AISummary cluster above); the third, `MeetingDetails/SummaryPanel.tsx`, still renders it. Wiring it into `PageHeader` is its own change, not a deletion.
+
+**Consequences.** The `ui-visual` dead-class check goes green with the `/notes/*` route: 1555 rules, zero classes in the markup without one. `tsc`, lint and 278 tests are unchanged, which is the point — nothing deleted here was doing anything.
+

@@ -280,17 +280,6 @@
     font-feature-settings: 'cv05' 1;
   }
 
-  /* Make the window draggable */
-  .titlebar {
-    -webkit-app-region: drag;
-    app-region: drag;
-  }
-
-  .no-drag {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
-  }
-
   /* Custom scrollbar styles — token-driven so the thumb is visible in both themes
      (it was hex-only, with no dark override at all). */
   .custom-scrollbar::-webkit-scrollbar {

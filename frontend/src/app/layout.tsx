@@ -37,7 +37,6 @@ const sans = Inter({
  */
 const BARE_ROUTES = ['/copilot']
 
-// export { metadata } from './metadata'
 
 export default function RootLayout({
   children,
