@@ -5,7 +5,7 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { HIGHLIGHT_ITEM, focusRing } from "@/components/ui/focus-ring"
+import { HIGHLIGHT_ITEM, focusRing, type FocusSurface } from "@/components/ui/focus-ring"
 
 const Select = SelectPrimitive.Root
 
@@ -20,8 +20,11 @@ const SelectValue = SelectPrimitive.Value
  */
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
+    /** What the trigger SITS ON, for the §4.4.6 focus offset. */
+    surface?: FocusSurface
+  }
+>(({ className, children, surface = "card", ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
@@ -30,7 +33,7 @@ const SelectTrigger = React.forwardRef<
       "data-[placeholder]:text-subtle-foreground",
       "hover:border-input-hover",
       "focus-visible:border-ring",
-      focusRing("card"),
+      focusRing(surface),
       "aria-[invalid=true]:border-destructive",
       "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:hover:border-input",
       "[&>span]:line-clamp-1",

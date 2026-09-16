@@ -12,15 +12,26 @@
 // control is the dead-class / built-CSS check (§11.4 guardrail 6, WP16), which reads the
 // EMITTED css and therefore sees through cn(). See docs/CONVENTIONS.md.
 //
+// ORDER-INDEPENDENCE (guardrails 3 and 4). Both assertions are written as a POSITIVE match
+// plus a `[value!=/…/]` exclusion, never as a lookahead. A lookahead only scans FORWARD from
+// the matched token, so `"ring-offset-2 ring-offset-card ring-2 ring-ring"` — the exact form
+// §4.4.6 prescribes — was reported as a violation purely because the offset was written
+// first, and this repo has no prettier-plugin-tailwindcss to normalise class order. The
+// acceptance proof therefore covers BOTH orderings for both rules.
+//
 // Guardrail 1 is off for src/app/design/**: the fixture routes print the palette itself.
 //
-// The LAST `overrides` entry is a SHRINKING QUARANTINE, not an allow-list. It holds the
-// files that still carry pre-redesign raw-palette / arbitrary-size / outline-none classes
-// and have not reached their own work package yet; turning the four rules on globally in
-// WP1 would have failed the build in 76 files that WP2–WP15 are scheduled to rewrite. Each
-// WP DELETES its own files from that array as it migrates them, which is how the guardrail
-// arrives at full coverage. The array must never gain an entry. When it is empty, delete
-// the entry — and WP16's dead-class check is what covers the cn() sites it never saw.
+// THE QUARANTINE IS PER-RULE, AND SHRINKING. §11.4 authorises dropping rule 1 for files that
+// have not reached their WP; it does not authorise dropping all four. So the quarantine entry
+// re-declares guardrails 2, 3 and 4 — the same shape the design/** entry uses — and only the
+// files that TODAY still trip one of those three get a narrower trailing entry naming exactly
+// which. Everything else in the quarantine is fully policed for 2-4, so a waiting file cannot
+// GAIN an arbitrary type size, a bare `ring-ring` or an unreplaced `outline-none`.
+//
+// Each WP DELETES its own files from these arrays as it migrates them, which is how the
+// guardrail arrives at full coverage. No array may ever gain an entry (WP16 owns the CI check
+// that asserts they only shrink). When an array is empty, delete its entry — and WP16's
+// dead-class check is what covers the cn() sites these rules never saw.
 {
   "extends": "next/core-web-vitals",
   "rules": {
@@ -36,17 +47,18 @@
         "message": "Guardrail 2 (DESIGN_SYSTEM.md 11.4): arbitrary type size. The 4.5 scale is real utilities now: text-display/title-lg/title/title-sm/read/body/label/caption/micro/eyebrow."
       },
       {
-        "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b(?![\\s\\S]*ring-offset-)/]",
+        "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b/][value!=/ring-offset-/]",
         "message": "Guardrail 3 (DESIGN_SYSTEM.md 4.4.6): ring-ring without a ring-offset-* sibling. The ring against a fill is 1.22:1; the 2px offset in the surface colour is what carries SC 2.4.11. Pick from theme.ringOffsetColor."
       },
       {
-        "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\boutline-none\\b(?![\\s\\S]*focus-visible:)/]",
+        "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\boutline-none\\b/][value!=/focus-visible:/]",
         "message": "Guardrail 4 (DESIGN_SYSTEM.md 8): outline-none without a focus-visible: replacement removes the only keyboard affordance."
       }
     ]
   },
   "overrides": [
     {
+      // The fixture routes print the palette itself, so guardrail 1 is off here.
       "files": [
         "src/app/design/**"
       ],
@@ -58,17 +70,20 @@
             "message": "Guardrail 2 (DESIGN_SYSTEM.md 11.4): arbitrary type size. The 4.5 scale is real utilities now: text-display/title-lg/title/title-sm/read/body/label/caption/micro/eyebrow."
           },
           {
-            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b(?![\\s\\S]*ring-offset-)/]",
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b/][value!=/ring-offset-/]",
             "message": "Guardrail 3 (DESIGN_SYSTEM.md 4.4.6): ring-ring without a ring-offset-* sibling. The ring against a fill is 1.22:1; the 2px offset in the surface colour is what carries SC 2.4.11. Pick from theme.ringOffsetColor."
           },
           {
-            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\boutline-none\\b(?![\\s\\S]*focus-visible:)/]",
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\boutline-none\\b/][value!=/focus-visible:/]",
             "message": "Guardrail 4 (DESIGN_SYSTEM.md 8): outline-none without a focus-visible: replacement removes the only keyboard affordance."
           }
         ]
       }
     },
     {
+      // THE QUARANTINE (guardrail 1 only). These files still carry pre-redesign raw-palette
+      // classes; guardrails 2, 3 and 4 stay ON so a waiting file cannot GAIN an arbitrary
+      // type size, a bare ring-ring or an unreplaced outline-none before its WP arrives.
       "files": [
         "src/app/_components/SettingsModal.tsx",
         "src/app/actions/page.tsx",
@@ -142,6 +157,113 @@
         "src/components/report/TopicsTimeline.tsx",
         "src/components/shared/DownloadProgressToast.tsx",
         "src/lib/recordingNotification.tsx"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/text-\\[[\\d.]+(px|rem)\\]/]",
+            "message": "Guardrail 2 (DESIGN_SYSTEM.md 11.4): arbitrary type size. The 4.5 scale is real utilities now: text-display/title-lg/title/title-sm/read/body/label/caption/micro/eyebrow."
+          },
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b/][value!=/ring-offset-/]",
+            "message": "Guardrail 3 (DESIGN_SYSTEM.md 4.4.6): ring-ring without a ring-offset-* sibling. The ring against a fill is 1.22:1; the 2px offset in the surface colour is what carries SC 2.4.11. Pick from theme.ringOffsetColor."
+          },
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\boutline-none\\b/][value!=/focus-visible:/]",
+            "message": "Guardrail 4 (DESIGN_SYSTEM.md 8): outline-none without a focus-visible: replacement removes the only keyboard affordance."
+          }
+        ]
+      }
+    },
+    {
+      // Guardrail 2 exemption — the arbitrary type sizes these files still carry.
+      "files": [
+        "src/app/design/copilot/page.tsx",
+        "src/app/design/report/page.tsx",
+        "src/app/design/speakers/page.tsx",
+        "src/components/Logo.tsx",
+        "src/components/Sidebar/SearchResultsList.tsx",
+        "src/components/VirtualizedTranscriptView.tsx",
+        "src/components/copilot/CopilotInsights.tsx",
+        "src/components/copilot/CopilotPanel.tsx",
+        "src/components/copilot/CopilotSettings.tsx",
+        "src/components/copilot/ModesSettings.tsx",
+        "src/components/report/ReportHeader.tsx",
+        "src/components/report/SpeakerTurns.tsx",
+        "src/components/report/TopicsTimeline.tsx"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b/][value!=/ring-offset-/]",
+            "message": "Guardrail 3 (DESIGN_SYSTEM.md 4.4.6): ring-ring without a ring-offset-* sibling. The ring against a fill is 1.22:1; the 2px offset in the surface colour is what carries SC 2.4.11. Pick from theme.ringOffsetColor."
+          },
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\boutline-none\\b/][value!=/focus-visible:/]",
+            "message": "Guardrail 4 (DESIGN_SYSTEM.md 8): outline-none without a focus-visible: replacement removes the only keyboard affordance."
+          }
+        ]
+      }
+    },
+    {
+      // Guardrail 4 exemption — the outline-none sites these files still carry.
+      "files": [
+        "src/app/_components/SettingsModal.tsx",
+        "src/components/AISummary/DraftSummaryView.tsx",
+        "src/components/AskThisMeeting/AskPanel.tsx",
+        "src/components/EditableTitle.tsx",
+        "src/components/LanguageSelection.tsx"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/text-\\[[\\d.]+(px|rem)\\]/]",
+            "message": "Guardrail 2 (DESIGN_SYSTEM.md 11.4): arbitrary type size. The 4.5 scale is real utilities now: text-display/title-lg/title/title-sm/read/body/label/caption/micro/eyebrow."
+          },
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b/][value!=/ring-offset-/]",
+            "message": "Guardrail 3 (DESIGN_SYSTEM.md 4.4.6): ring-ring without a ring-offset-* sibling. The ring against a fill is 1.22:1; the 2px offset in the surface colour is what carries SC 2.4.11. Pick from theme.ringOffsetColor."
+          }
+        ]
+      }
+    },
+    {
+      // Guardrails 2 + 4.
+      "files": [
+        "src/components/LanguagePickerPopover.tsx"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/\\bring-ring\\b/][value!=/ring-offset-/]",
+            "message": "Guardrail 3 (DESIGN_SYSTEM.md 4.4.6): ring-ring without a ring-offset-* sibling. The ring against a fill is 1.22:1; the 2px offset in the surface colour is what carries SC 2.4.11. Pick from theme.ringOffsetColor."
+          }
+        ]
+      }
+    },
+    {
+      // Guardrails 3 + 4 (one composed focus string).
+      "files": [
+        "src/components/MeetingDetails/TranscriptPanel.tsx"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "JSXAttribute[name.name='className'] > Literal[value=/text-\\[[\\d.]+(px|rem)\\]/]",
+            "message": "Guardrail 2 (DESIGN_SYSTEM.md 11.4): arbitrary type size. The 4.5 scale is real utilities now: text-display/title-lg/title/title-sm/read/body/label/caption/micro/eyebrow."
+          }
+        ]
+      }
+    },
+    {
+      // All four — the rail is the single largest un-migrated surface (WP4).
+      "files": [
+        "src/components/Sidebar/index.tsx"
       ],
       "rules": {
         "no-restricted-syntax": "off"

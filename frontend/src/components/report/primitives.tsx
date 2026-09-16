@@ -54,7 +54,10 @@ const CLOCK = /^\d{1,2}:\d{2}(:\d{2})?$/;
 export interface SourceChipProps {
   /** 🔒 The visible word. §4.1 of the audit register pins it — the timestamp is ADDED to it. */
   label?: string;
-  /** `12:04`. Anything that is not a clock time is dropped (see `CLOCK`). */
+  /**
+   * `12:04`. PURELY ADDITIVE: anything that is not a clock time is dropped (see `CLOCK`)
+   * and the chip reads `Source`. It NEVER decides whether the chip works — see `resolved`.
+   */
   timestamp?: string | null;
   onClick?: () => void;
   /** Native tooltip text. Never the ONLY carrier of a reason (§5 shared rules). */
@@ -63,9 +66,20 @@ export interface SourceChipProps {
   ariaLabel?: string;
   /** The evidence drawer currently shows this segment. */
   active?: boolean;
-  /** False when the item has no transcript link: disabled + a visible sibling sentence. */
+  /**
+   * 🔒 THE ONLY thing that disables the chip. Pass `false` ONLY when the caller knows the
+   * item carries no `source_chunk_id`. Defaults to `true` because the shipped data shape
+   * (`DraftBlock.source_chunk_id`, `DraftActionItem.source_chunk_id`) makes the anchor
+   * REQUIRED — an item with a link but no printable clock time is still fully linkable.
+   */
   resolved?: boolean;
-  /** The id of the evidence drawer this chip opens. */
+  /**
+   * The id of the evidence drawer this chip opens. Emitted as `aria-controls` ONLY when
+   * given: an IDREF pointing at an element that is not mounted is an axe
+   * `aria-valid-attr-value` violation and makes some screen readers announce a
+   * relationship that does not exist. The drawer's owner knows its own id; this file
+   * does not.
+   */
   controls?: string;
   /** What the chip sits on, for the §4.4.6 focus offset. `accent` inside a selected row. */
   surface?: FocusSurface;
@@ -76,21 +90,31 @@ export interface SourceChipProps {
  * SourceChip — the single most important small component in the product: the link from a
  * claim to its proof (§5.9).
  *
- * ANATOMY. `Clock` 12px, then 🔒 the visible word `Source` in `--primary-ink`, then
+ * ANATOMY. `Clock` 12px in `currentColor` (the button carries `--primary-ink`, so that is
+ * what the icon inherits), then 🔒 the visible word `Source` in `--primary-ink`, then
  * `· 12:04` in `font-mono text-micro tabular-nums` in `--subtle-foreground`. The boundary is
  * `--input`, not `--border`: this is a CONTROL, and at 1.25:1 `--border` may never be a
  * control's only boundary (§4.4.5). A chip is never distinguished by colour alone — the word
  * and the icon are always there.
  *
- * THE TIMESTAMP IS VALIDATED, NOT TRUSTED. The worker's UTC `sourceTimestamp` fallback is an
- * absolute date, and printing it where `12:04` belongs would tell the user that a claim came
- * from four minutes into a meeting that it did not. Anything that is not `mm:ss` / `h:mm:ss`
- * is dropped: the chip reads `Source`, with no time, and the item counts as UNRESOLVED.
+ * THE TIMESTAMP IS VALIDATED, NOT TRUSTED, AND IT IS NOT THE LINK. The worker's UTC
+ * `sourceTimestamp` fallback is an absolute date, and printing it where `12:04` belongs
+ * would tell the user that a claim came from four minutes into a meeting that it did not.
+ * Anything that is not `mm:ss` / `h:mm:ss` is dropped and the chip reads plain `Source`.
+ * 🔒 IT STILL CLICKS. The link is the `source_chunk_id`, never the clock: `DraftBlock` and
+ * `DraftActionItem` declare the anchor as REQUIRED and carry no time field at all, and
+ * §5.9 says the click opens the drawer at `onJumpToSource(source_chunk_id)` AND seeks the
+ * playhead *when `audio_start_time` is known* — the jump has to work without a time.
+ * Conflating the two disabled the product's single most important HITL control for every
+ * real summary block and action item, and told the user "This item has no transcript link"
+ * about an item that had one.
  *
- * UNRESOLVED IS DISABLED PLUS A VISIBLE SENTENCE, NEVER A TOOLTIP. A disabled button is not
- * focusable, so a tooltip on it never opens for a keyboard or AT user (§5 shared rules) —
- * the reason has to be on screen, and `aria-describedby` ties it to the control. Export
- * stays 🔒 fail-closed on these items regardless.
+ * UNRESOLVED IS `resolved={false}`, PASSED BY A CALLER THAT KNOWS. It renders as
+ * `aria-disabled` plus a VISIBLE SENTENCE, never a tooltip: a tooltip on an inert control
+ * never opens for a keyboard or AT user (§5 shared rules). `aria-disabled` rather than the
+ * `disabled` ATTRIBUTE for the same reason — a `disabled` button is not focusable, so the
+ * `aria-describedby` that carries the explanation is unreachable by exactly the users it
+ * was written for. Export stays 🔒 fail-closed on these items regardless.
  */
 export function SourceChip({
   label = 'Source',
@@ -100,39 +124,43 @@ export function SourceChip({
   ariaLabel = 'Jump to source transcript segment',
   active = false,
   resolved = true,
-  controls = 'transcript-drawer',
+  controls,
   surface = 'card',
   className,
 }: SourceChipProps) {
   const reasonId = useId();
   const time = timestamp && CLOCK.test(timestamp) ? timestamp : null;
-  const isResolved = resolved && Boolean(time);
+  const isResolved = resolved;
 
   const chip = (
     <button
       type="button"
       onClick={isResolved ? onClick : undefined}
-      disabled={!isResolved}
+      aria-disabled={isResolved ? undefined : true}
       title={title}
       aria-label={ariaLabel}
       aria-expanded={isResolved ? active : undefined}
-      aria-controls={isResolved ? controls : undefined}
+      aria-controls={isResolved && controls ? controls : undefined}
       aria-describedby={isResolved ? undefined : reasonId}
       className={cn(
-        'inline-flex h-6 shrink-0 items-center gap-1 rounded-xs border border-input bg-card px-2',
+        // `text-primary-ink` on the BUTTON, so §5.9's "Clock 12px in currentColor" has a
+        // currentColor worth inheriting; the timestamp span overrides it to --subtle-foreground.
+        'inline-flex h-6 shrink-0 items-center gap-1 rounded-xs border border-input bg-card px-2 text-primary-ink',
         'transition-colors duration-instant ease-out',
         '[&_svg]:pointer-events-none [&_svg]:size-3 [&_svg]:shrink-0',
-        'hover:border-input-hover hover:bg-accent',
-        'active:bg-surface-3',
+        // Interaction affordances belong to a chip that actually links somewhere.
+        // §5.9 states, verbatim: hover is `bg-accent` + `border-primary-ink` (the label stays
+        // --primary-ink at 5.13 light / 4.96 dark on --accent), pressed is `bg-surface-3`.
+        isResolved && 'hover:border-primary-ink hover:bg-accent active:bg-surface-3',
         // The ACTIVE chip is marked by a 2px rule, not by a colour change: the drawer being
         // open is a structural fact and survives greyscale.
         active && 'border-l-2 border-l-primary bg-accent',
-        'disabled:pointer-events-none disabled:opacity-50',
+        'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
         focusRing(surface),
         className
       )}
     >
-      <Clock aria-hidden className="text-subtle-foreground" />
+      <Clock aria-hidden />
       <span className="text-caption text-primary-ink">{time ? `${label} ·` : label}</span>
       {time ? (
         <span className="font-mono text-micro tabular-nums text-subtle-foreground">

@@ -27,7 +27,9 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
     const [hasStoredApiKey, setHasStoredApiKey] = useState<boolean>(Boolean(transcriptModelConfig.hasApiKey));
     const [showApiKey, setShowApiKey] = useState<boolean>(false);
     const [isApiKeyLocked, setIsApiKeyLocked] = useState<boolean>(true);
-    const [isLockButtonVibrating, setIsLockButtonVibrating] = useState<boolean>(false);
+    // See ModelSettingsModal: the `animate-vibrate` shake was deleted as a vestibular
+    // trigger (ADR-H), so this feedback is a sentence rather than colour alone (SC 1.4.1).
+    const [showLockedHint, setShowLockedHint] = useState<boolean>(false);
     const [uiProvider, setUiProvider] = useState<TranscriptModelProps['provider']>(transcriptModelConfig.provider);
 
     // Sync uiProvider when backend config changes (e.g., after model selection or initial load)
@@ -64,8 +66,8 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
 
     const handleInputClick = () => {
         if (isApiKeyLocked) {
-            setIsLockButtonVibrating(true);
-            setTimeout(() => setIsLockButtonVibrating(false), 500);
+            setShowLockedHint(true);
+            setTimeout(() => setShowLockedHint(false), 4000);
         }
     };
 
@@ -216,8 +218,11 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        onClick={() => setIsApiKeyLocked(!isApiKeyLocked)}
-                                        className={`transition-colors duration-200 ${isLockButtonVibrating ? 'animate-vibrate text-red-500' : ''
+                                        onClick={() => {
+                                            setShowLockedHint(false);
+                                            setIsApiKeyLocked(!isApiKeyLocked);
+                                        }}
+                                        className={`transition-colors duration-200 ${showLockedHint ? 'text-destructive-ink' : ''
                                             }`}
                                         title={isApiKeyLocked ? "Unlock to edit" : "Lock to prevent editing"}
                                     >
@@ -233,6 +238,11 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     </Button>
                                 </div>
                             </div>
+                            {showLockedHint && (
+                                <p role="status" className="mt-1 text-caption text-destructive-ink">
+                                    This key is locked. Use the lock button to edit it.
+                                </p>
+                            )}
                         </div>
                     )}
                 </div>

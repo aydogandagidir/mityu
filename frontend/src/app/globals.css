@@ -126,7 +126,7 @@
 
     /* ——— geometry ——— */
     --radius: 0.5rem;       /* 8px base */
-    --gutter: 1.5rem;       /* 24px; 16px below 1000px */
+    --gutter: 1.5rem;       /* 24px; 16px below 1000px — see the @media at the end of this layer */
     --rail-w: 3.5rem;       /* 56px */
     --pane-w: 17.5rem;      /* 280px */
     --header-h: 3.5rem;     /* 56px */
@@ -205,7 +205,11 @@
     --warning-border:        40 61% 18%;
 
     --destructive:           358 62% 45%;   --destructive-foreground: 0 0% 100%;
-    --destructive-hover:     358 62% 50%;   --destructive-active:     358 62% 47%;
+    /* 45 → 50 → 54, monotonic. It shipped as 45 → 50 → 47, so a press moved the fill BACK
+       toward idle and read as a partial un-hover (white contrast 6.02 → 5.09 → 5.63); every
+       other family in both themes is monotonic. 54% rather than 55%: white on 55% measures
+       4.45 and fails AA on a 13px label, 54% measures 4.58. */
+    --destructive-hover:     358 62% 50%;   --destructive-active:     358 62% 54%;
     --destructive-surface:   355 38% 12%;   --destructive-ink:        3 100% 74%;
     --destructive-border:    353 41% 22%;
 
@@ -245,6 +249,18 @@
     --elev-1: inset 0 1px 0 hsl(0 0% 100% / 0.04);
     --elev-2: 0 8px 24px -8px hsl(var(--overlay) / 0.6), inset 0 1px 0 hsl(0 0% 100% / 0.04);
     --elev-3: 0 16px 48px -12px hsl(var(--overlay) / 0.75), inset 0 1px 0 hsl(0 0% 100% / 0.04);
+  }
+
+  /* §4.2: the gutter is the ONE responsive token. It narrows to 16px below 1000px so the
+     narrowest supported window (900×600, §11.2) spends its width on content
+     rather than on chrome. Declared here, next to the token, and NOT inside `.dark` —
+     geometry is theme-independent. `p-gutter`/`px-gutter` therefore pick this up for
+     free at every call site; a component that needs the wide value at every width must
+     say so with a numeric utility. */
+  @media (max-width: 999.98px) {
+    :root {
+      --gutter: 1rem;     /* 16px */
+    }
   }
 }
 
@@ -433,5 +449,21 @@
     animation: none !important;
     opacity: 1;
     transform: none;
+  }
+
+  /* §5.16: an indeterminate Progress becomes a STATIC STRIPED TRACK, not a held-still
+     sweep. The fill is half the track's width, so simply stopping it leaves a bar parked at
+     the left edge that reads as a determinate 50% — an unknown-progress indicator must
+     never be readable as a number. Stripes carry "working, amount unknown" without motion;
+     the call site's required text state ("Preparing…") carries the rest. */
+  [data-slot='progress-indeterminate'] {
+    animation: none !important;
+    width: 100%;
+    transform: none;
+    background-image: repeating-linear-gradient(
+      135deg,
+      hsl(var(--surface-2)) 0 0.375rem,
+      transparent 0.375rem 0.75rem
+    );
   }
 }

@@ -4,7 +4,7 @@ import * as React from "react"
 import { Check } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { focusRing } from "@/components/ui/focus-ring"
+import { focusRing, type FocusSurface } from "@/components/ui/focus-ring"
 
 /**
  * Checkbox — DESIGN_SYSTEM.md §5.5: 16×16, `rounded-xs`, `--input` boundary, `--primary`
@@ -29,10 +29,15 @@ export interface CheckboxProps
   className?: string
   /** Class names for the inline wrapper that positions the mark. */
   wrapperClassName?: string
+  /** What the checkbox SITS ON, for the §4.4.6 focus offset. `popover` inside a dialog. */
+  surface?: FocusSurface
 }
 
 const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
-  ({ className, wrapperClassName, onChange, onCheckedChange, ...props }, ref) => (
+  (
+    { className, wrapperClassName, onChange, onCheckedChange, surface = "card", ...props },
+    ref
+  ) => (
     <span
       className={cn(
         "relative inline-flex h-4 w-4 shrink-0 items-center justify-center",
@@ -51,7 +56,7 @@ const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
           "transition-colors duration-instant ease-out",
           "hover:border-input-hover",
           "checked:border-primary checked:bg-primary",
-          focusRing("card"),
+          focusRing(surface),
           "aria-[invalid=true]:border-destructive",
           "disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-50 disabled:hover:border-input",
           className

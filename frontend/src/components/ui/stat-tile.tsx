@@ -2,7 +2,7 @@ import * as React from "react"
 import { type LucideIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton"
 
 /**
  * StatTile — DESIGN_SYSTEM.md §5.11. A description list, because that is what these are:
@@ -18,7 +18,10 @@ import { Skeleton } from "@/components/ui/skeleton"
  *   value              the number, `text-title-lg tabular-nums` (Inter's true tnum, §4.1,
  *                      so a column of durations does not jitter)
  *   empty              `—`, never `0`
- *   loading            a skeleton in place of the value
+ *   loading            a skeleton in place of the value, inside a `SkeletonRegion` —
+ *                      every `Skeleton` is `aria-hidden`, so a bare one leaves the `<dd>`
+ *                      announced as EMPTY and the label read with no value and no state
+ *                      (§5.19: every skeleton region carries role=status + one sentence)
  *   NOT APPLICABLE     the tile is OMITTED by the call site. Diarization that never ran is
  *                      not "0 speakers" — printing a zero for a thing that was never
  *                      measured is a false statement in a record people rely on.
@@ -50,7 +53,13 @@ export function StatTile({
         <span className="truncate">{label}</span>
       </dt>
       <dd className="mt-1 text-title-lg tabular-nums text-foreground">
-        {loading ? <Skeleton className="h-6 w-16" /> : (value ?? "—")}
+        {loading ? (
+          <SkeletonRegion label={`Loading ${label}`}>
+            <Skeleton className="h-6 w-16" />
+          </SkeletonRegion>
+        ) : (
+          value ?? "—"
+        )}
       </dd>
       {sub ? <dd className="text-caption text-subtle-foreground">{sub}</dd> : null}
     </div>

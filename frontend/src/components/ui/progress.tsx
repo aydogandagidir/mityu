@@ -21,10 +21,22 @@ import { cn } from "@/lib/utils"
  *
  * INDETERMINATE. `indeterminate` drops `value` entirely (Radix then omits `aria-valuenow`,
  * which is exactly the ARIA contract for an unknown-progress bar) and sweeps a half-width
- * fill back and forth over 1.4s. Under `prefers-reduced-motion` globals.css neutralises the
- * animation and the bar parks as a static partial fill — which is why §5.16 requires a TEXT
- * state next to an indeterminate bar ("Preparing…"): with the motion gone, the bar alone no
- * longer says "working".
+ * fill ACROSS THE WHOLE TRACK over 1.4s, via the `progress-indeterminate` keyframe
+ * (`translateX(-100%)` → `translateX(200%)`, i.e. fully off one edge to fully off the
+ * other). The previous composition — `animate-in slide-in-from-left-full` — moved the fill
+ * by its OWN width, so it never entered the right half, and its arbitrary `duration-`
+ * value compiled to NOTHING (that namespace is claimed by BOTH core `transitionDuration`
+ * and tailwindcss-animate's `animationDuration`, so Tailwind reported it ambiguous and
+ * emitted no rule), leaving the sweep at `.animate-in`'s 150ms — 9× too fast. The literal
+ * class is not spelled out anywhere under `content`, because writing it in a comment is
+ * enough to bring the build warning back.
+ *
+ * 🔒 REDUCED MOTION IS NOT "THE SAME BAR, HELD STILL". With the sweep neutralised, a
+ * half-width fill parked at the left edge is indistinguishable from a determinate 50% —
+ * an unknown-progress indicator reading as a precise number is worse than no indicator.
+ * `data-slot="progress-indeterminate"` is what globals.css's reduced-motion block keys on
+ * to turn the bar into a FULL-WIDTH STRIPED track (§5.16), which cannot be read as a
+ * percentage. The call site's required TEXT state ("Preparing…") carries the rest.
  */
 export interface ProgressProps
   extends Omit<
@@ -54,10 +66,10 @@ const Progress = React.forwardRef<
   >
     {indeterminate ? (
       <ProgressPrimitive.Indicator
+        data-slot="progress-indeterminate"
         className={cn(
-          "h-full w-1/2 rounded-full",
-          tone === "destructive" ? "bg-destructive" : "bg-primary",
-          "animate-in slide-in-from-left-full duration-[1400ms] repeat-infinite direction-alternate ease-in-out"
+          "h-full w-1/2 rounded-full animate-progress-indeterminate",
+          tone === "destructive" ? "bg-destructive" : "bg-primary"
         )}
       />
     ) : (

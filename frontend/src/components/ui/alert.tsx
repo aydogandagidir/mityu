@@ -8,13 +8,22 @@ import { cn } from "@/lib/utils"
  * new code; reach for `Notice`, which has the six product tones, the action slot and the
  * structural Art. 50 guard.
  *
- * It stays, restyled onto the tokens, for one reason: six shipped files still import it
- * (`ModelSettingsModal`, `BuiltInModelManager`, `PermissionWarning`,
- * `EncryptionStatusBanner`, `BluetoothPlaybackWarning`, `TranscriptRecovery`), each of them
- * scheduled for its own package. Deleting it here would either break them or force this
- * package to rewrite six screens it has not read — the thing §0 calls a big-bang refactor.
- * Until then they at least inherit the token surface instead of `bg-background` + raw
- * amber/red literals.
+ * It stays, restyled onto the tokens, for one reason: EIGHT shipped files still import it —
+ * `ModelSettingsModal`, `BuiltInModelManager`, `PermissionWarning`,
+ * `EncryptionStatusBanner`, `BluetoothPlaybackWarning`, `TranscriptRecovery`,
+ * `RecordingControls` (the recording-error panel, next to the MUST-PRESERVE recording
+ * indicator) and `app/_components/SettingsModal` — each scheduled for its own package.
+ * Deleting it here would either break them or force this package to rewrite eight screens
+ * it has not read — the thing §0 calls a big-bang refactor. Until then they at least
+ * inherit the token surface instead of `bg-background` + raw amber/red literals.
+ *
+ * 🔒 ALL EIGHT MOVED VISUALLY when this file was restyled, including the two that were
+ * missed on the first pass: base padding `px-4 py-3` → `p-3`, description `text-sm` →
+ * `text-caption` (14px → 12px), and `destructive` from transparent + `text-destructive` to
+ * `bg-destructive-surface` + `text-destructive-ink`. The packages that own
+ * `RecordingControls` and `SettingsModal` inherit an alert box that has already changed;
+ * both sit in the ESLint quarantine, so guardrail 1 does not flag their remaining red
+ * literals for them.
  *
  * `variant="destructive"` is for an ERROR. It was abused as "an important box" across the
  * app, which is how the product ended up with red panels that reported nothing wrong; those

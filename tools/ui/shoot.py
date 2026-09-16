@@ -36,6 +36,18 @@ off before `.html` is appended and stripped out of the PNG filename. Those two r
 are a documented URL API (DESIGN_SYSTEM.md 5.10 / 10.7), so shooting them is a gate,
 not a convenience.
 
+FULL-PAGE: there is none, and there does not need to be. `globals.css` pins
+`body { overflow: hidden }`, so every route is exactly one viewport tall and the
+scrolling happens INSIDE it (`src/app/design/layout.tsx` for the fixtures,
+`h-screen` + `flex-1 overflow-y-auto` on the product routes). A CDP
+`captureBeyondViewport` capture would therefore return the same pixels as a
+viewport capture. The lever is the WINDOW: shoot a tall one.
+
+    python tools/ui/shoot.py --height 3600 design design/primitives
+
+A DESIGN_SYSTEM.md 11.2 panel is several viewports tall, so a default 1280x900
+shot of one shows its header and nothing else -- valid PNG, no evidence.
+
 LIGHT MODE: `--force-prefers-color-scheme=light` does NOT flip this app. The
 theme is a class on `<html>`, not a media query, so the flag changes nothing and
 you get a dark screenshot that looks like the flag was ignored -- it was. To

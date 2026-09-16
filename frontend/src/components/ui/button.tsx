@@ -3,7 +3,7 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
-import { focusRing } from "@/components/ui/focus-ring"
+import { focusRing, type FocusSurface } from "@/components/ui/focus-ring"
 
 /**
  * Button — DESIGN_SYSTEM.md §5.4, with the contrast arithmetic in §4.4.4 / §4.4.5.
@@ -19,6 +19,17 @@ import { focusRing } from "@/components/ui/focus-ring"
  * `outline` is the secondary action in this system). Migration, all seven sites in the
  * commit that deletes the keys: green → `outline` for a row-level Approve, `default` for a
  * neutral primary, `verified` for the single `Approve summary`; red → `destructive`.
+ *
+ * `surface` IS THE FOCUS OFFSET, AND IT IS NOT DECORATION. The 2px offset is what carries
+ * SC 2.4.11 (`--ring` on its own is 1.22:1 against `--primary`), and Tailwind paints it
+ * OUTSIDE the border box, so it must be the colour of the surface the button SITS ON. In
+ * dark, `--card` (#12151C), `--popover` (#181C25), `--background` (#0C0E13) and `--sidebar`
+ * are four different values, so a button hardcoded to `card` inside a Dialog, Sheet or
+ * Popover draws a halo in the wrong colour instead of a gap. The default stays `card`
+ * because that is the commonest ground; a control on a floating layer passes
+ * `surface="popover"`, one on the app ground passes `surface="background"`. The base keeps
+ * `focusRing("card")` so a standalone `buttonVariants()` string is never ringless, and the
+ * per-instance ring is appended after it — `cn()` resolves the offset-colour conflict.
  *
  * EVERY VARIANT DECLARES IDLE, HOVER, ACTIVE AND DISABLED. A variant shipped with an idle
  * fill only forces the next implementer to invent the interaction colour of the product's
@@ -115,14 +126,16 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  /** What the button SITS ON, for the §4.4.6 focus offset. `popover` inside any floating layer. */
+  surface?: FocusSurface
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, surface = "card", asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
     return (
       <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={cn(buttonVariants({ variant, size }), focusRing(surface), className)}
         ref={ref}
         {...props}
       />

@@ -4,7 +4,7 @@ import * as React from "react"
 import * as SwitchPrimitives from "@radix-ui/react-switch"
 
 import { cn } from "@/lib/utils"
-import { focusRing } from "@/components/ui/focus-ring"
+import { focusRing, type FocusSurface } from "@/components/ui/focus-ring"
 
 /**
  * Switch — DESIGN_SYSTEM.md §5.5: 36×20 track, 16px thumb, `--input` off / `--primary` on.
@@ -14,8 +14,11 @@ import { focusRing } from "@/components/ui/focus-ring"
  */
 const Switch = React.forwardRef<
   React.ElementRef<typeof SwitchPrimitives.Root>,
-  React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root> & {
+    /** What the switch SITS ON, for the §4.4.6 focus offset. */
+    surface?: FocusSurface
+  }
+>(({ className, surface = "card", ...props }, ref) => (
   <SwitchPrimitives.Root
     className={cn(
       "peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent",
@@ -23,7 +26,7 @@ const Switch = React.forwardRef<
       "data-[state=unchecked]:bg-input data-[state=checked]:bg-primary",
       "hover:data-[state=unchecked]:bg-input-hover hover:data-[state=checked]:bg-primary-hover",
       "active:data-[state=checked]:bg-primary-active",
-      focusRing("card"),
+      focusRing(surface),
       "disabled:cursor-not-allowed disabled:opacity-50",
       className
     )}

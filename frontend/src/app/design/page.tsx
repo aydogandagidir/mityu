@@ -67,7 +67,7 @@ const FILLS: {
     steps: ['bg-destructive', 'bg-destructive-hover', 'bg-destructive-active'],
     fg: 'text-destructive-foreground',
     light: '4.83 → 5.96 → 7.44',
-    dark: '6.02 → 5.09 → 5.63',
+    dark: '6.02 → 5.09 → 4.58',
   },
   {
     v: '--recording',
@@ -131,8 +131,8 @@ const ZSCALE = [
   ['10', 'sticky header · review bar'],
   ['30', 'rail + Meetings pane'],
   ['40', 'session dock'],
-  ['50', 'popover · dropdown · tooltip'],
-  ['60 / 70', 'dialog overlay / content'],
+  ['60', 'dialog + sheet overlay'],
+  ['70', 'dialog/sheet content · evidence drawer · popover · dropdown · select · tooltip'],
   ['80', 'toasts'],
   ['95 / 96', 'tour spotlight / popover'],
   ['100', 'onboarding shell'],
@@ -352,7 +352,7 @@ function Panel({ theme }: { theme: 'light' | 'dark' }) {
 
 export default function DesignSystemPage() {
   return (
-    <div className="grid w-full grid-cols-1 lg:grid-cols-2">
+    <div className="grid w-full grid-cols-1 md:grid-cols-2">
       <Panel theme="light" />
       <Panel theme="dark" />
     </div>

@@ -131,20 +131,26 @@ const AlertDialogDescription = React.forwardRef<
 ))
 AlertDialogDescription.displayName = "AlertDialogDescription"
 
-/** The confirming action. `destructive` is the default because that is what this is for. */
+/**
+ * The confirming action. `destructive` is the default because that is what this is for.
+ *
+ * `surface="popover"` is not a style choice: the content this sits in is `bg-popover`, and
+ * in dark that is #181C25 against `--card`'s #12151C. A `card` offset here would paint a
+ * 2px halo in the wrong colour where §4.4.6 requires a gap.
+ */
 const AlertDialogAction = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = "destructive", ...props }, ref) => (
+  ({ variant = "destructive", surface = "popover", ...props }, ref) => (
     <DialogPrimitive.Close asChild>
-      <Button ref={ref} variant={variant} {...props} />
+      <Button ref={ref} variant={variant} surface={surface} {...props} />
     </DialogPrimitive.Close>
   )
 )
 AlertDialogAction.displayName = "AlertDialogAction"
 
 const AlertDialogCancel = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = "outline", ...props }, ref) => (
+  ({ variant = "outline", surface = "popover", ...props }, ref) => (
     <DialogPrimitive.Close asChild>
-      <Button ref={ref} variant={variant} {...{ [CANCEL_ATTR]: "" }} {...props} />
+      <Button ref={ref} variant={variant} surface={surface} {...{ [CANCEL_ATTR]: "" }} {...props} />
     </DialogPrimitive.Close>
   )
 )

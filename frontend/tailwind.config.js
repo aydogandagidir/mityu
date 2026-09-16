@@ -235,6 +235,13 @@ module.exports = {
         base: 'var(--dur-base)',
         slow: 'var(--dur-slow)',
       },
+      // `out` and `in-out` deliberately REDEFINE Tailwind's built-in `ease-out` /
+      // `ease-in-out`, so the 31 `ease-out` and 4 `ease-in-out` sites already in the
+      // tree adopt the design curve without being touched — one motion system rather
+      // than two. `--ease-in-out` is byte-identical to Tailwind's default; `--ease-out`
+      // is cubic-bezier(.2,.8,.2,1) against the default's (0,0,.2,1), i.e. it leaves
+      // faster and settles longer. A call site that genuinely needs the CSS keyword
+      // writes `ease-[cubic-bezier(0,0,.2,1)]` and says why.
       transitionTimingFunction: {
         out: 'var(--ease-out)',
         'in-out': 'var(--ease-in-out)',
@@ -268,6 +275,18 @@ module.exports = {
       },
 
       keyframes: {
+        // §5.16. The indeterminate bar is a half-width fill, so a sweep has to travel from
+        // -100% (fully off the left edge) to 200% (fully off the right) to cross the WHOLE
+        // track: `slide-in-from-left-full` only moves it by its OWN width, i.e. half the
+        // track, and left it parked mid-bar. Declared as a real keyframe rather than
+        // composed from tailwindcss-animate utilities because an ARBITRARY `duration-`
+        // value is ambiguous there — both core `transitionDuration` and the plugin's
+        // `animationDuration` claim that namespace, so Tailwind emitted nothing for it and
+        // the sweep silently ran at `.animate-in`'s built-in 150ms.
+        'progress-indeterminate': {
+          from: { transform: 'translateX(-100%)' },
+          to: { transform: 'translateX(200%)' },
+        },
         'accordion-down': {
           from: { height: '0' },
           to: { height: 'var(--radix-accordion-content-height)' },
@@ -278,6 +297,8 @@ module.exports = {
         },
       },
       animation: {
+        'progress-indeterminate':
+          'progress-indeterminate 1.4s var(--ease-in-out) infinite',
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
       },

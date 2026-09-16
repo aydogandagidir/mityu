@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { focusRingWithin } from "@/components/ui/focus-ring"
+import { focusRingWithin, type FieldGroupSurface } from "@/components/ui/focus-ring"
 
 /**
  * InputGroup — a field with leading/trailing adornments (the Meetings-pane search, the
@@ -25,8 +25,11 @@ import { focusRingWithin } from "@/components/ui/focus-ring"
  */
 const InputGroup = React.forwardRef<
   HTMLDivElement,
-  React.ComponentPropsWithoutRef<"div">
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<"div"> & {
+    /** What the composed field SITS ON, for the §4.4.6 focus offset. */
+    surface?: FieldGroupSurface
+  }
+>(({ className, surface = "card", ...props }, ref) => (
   <div
     ref={ref}
     data-slot="input-group"
@@ -42,7 +45,7 @@ const InputGroup = React.forwardRef<
       "has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>[data-align=block-start]]:[&>input]:pb-3",
       "has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-end]]:[&>input]:pt-3",
 
-      focusRingWithin("card"),
+      focusRingWithin(surface),
       "has-[[data-slot=input-group-control]:focus-visible]:border-ring",
 
       // Invalid is a boundary change, never colour alone: the message is the call site's.

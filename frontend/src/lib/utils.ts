@@ -18,6 +18,21 @@ import { extendTailwindMerge } from "tailwind-merge"
  * `duration-instant duration-base` both survived as pairs, leaving stylesheet order — not
  * the call site — to decide which one won.
  */
+/**
+ * §4.11's `theme.extend.spacing` keys, shared by every spacing class group below. ADR-0053's
+ * rule is that this registration is extended whenever `tailwind.config.js` gains a custom key
+ * in an existing Tailwind class group — these are WP1's, and they were the ones left out.
+ */
+const CHROME_SPACING = [
+  "bottom-chrome",
+  "rail",
+  "pane",
+  "header",
+  "dock",
+  "reviewbar",
+  "gutter",
+] as const
+
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
@@ -44,6 +59,40 @@ const twMerge = extendTailwindMerge({
       duration: [{ duration: ["instant", "fast", "base", "slow"] }],
       // §4.11 reading measure
       "max-w": [{ "max-w": ["measure"] }],
+      // §4.9 easing. tailwind-merge's `ease` group knows only `linear|in|out|in-out`, so
+      // `cn('ease-emphasis', 'ease-out')` kept BOTH and left stylesheet order to decide.
+      ease: [{ ease: ["emphasis"] }],
+      // §4.11 the fixed-chrome spacing aliases. tailwind-merge's h/w/p*/m*/gap validators
+      // accept lengths and t-shirt sizes only, so `h-header`, `w-rail`, `p-gutter` and the
+      // rest were classified into NO group at all — `cn('h-header', 'h-9')` emitted both.
+      // WP4 is the package that actually uses them, so they are registered before it lands.
+      h: [{ h: CHROME_SPACING }],
+      w: [{ w: CHROME_SPACING }],
+      "min-w": [{ "min-w": CHROME_SPACING }],
+      "max-h": [{ "max-h": CHROME_SPACING }],
+      "min-h": [{ "min-h": CHROME_SPACING }],
+      p: [{ p: CHROME_SPACING }],
+      px: [{ px: CHROME_SPACING }],
+      py: [{ py: CHROME_SPACING }],
+      pt: [{ pt: CHROME_SPACING }],
+      pr: [{ pr: CHROME_SPACING }],
+      pb: [{ pb: CHROME_SPACING }],
+      pl: [{ pl: CHROME_SPACING }],
+      m: [{ m: CHROME_SPACING }],
+      mx: [{ mx: CHROME_SPACING }],
+      my: [{ my: CHROME_SPACING }],
+      mt: [{ mt: CHROME_SPACING }],
+      mr: [{ mr: CHROME_SPACING }],
+      mb: [{ mb: CHROME_SPACING }],
+      ml: [{ ml: CHROME_SPACING }],
+      gap: [{ gap: CHROME_SPACING }],
+      "gap-x": [{ "gap-x": CHROME_SPACING }],
+      "gap-y": [{ "gap-y": CHROME_SPACING }],
+      inset: [{ inset: CHROME_SPACING }],
+      top: [{ top: CHROME_SPACING }],
+      right: [{ right: CHROME_SPACING }],
+      bottom: [{ bottom: CHROME_SPACING }],
+      left: [{ left: CHROME_SPACING }],
     },
   },
 })

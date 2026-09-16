@@ -15,7 +15,12 @@ import { AppShell } from '@/components/AppShell'
 // runtime network dependency, which the Tauri CSP would refuse anyway (local-first).
 const sans = Inter({
   subsets: ['latin', 'latin-ext'],
-  weight: ['400', '500', '600'],
+  // 400/500/600 carry the §4.5 type scale. 700 is loaded for the 19 `font-bold`
+  // sites still in pre-redesign files: without the real face the browser SYNTHESISES
+  // bold by smearing the 600, which is heavier, wider and blurrier than Inter Bold and
+  // reflows the line. Those sites migrate to 600 with their own work packages; the
+  // weight is dropped again when the last one goes.
+  weight: ['400', '500', '600', '700'],
   variable: '--font-sans',
   display: 'swap',
 })

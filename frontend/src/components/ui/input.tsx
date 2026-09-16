@@ -1,7 +1,7 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
-import { focusRing } from "@/components/ui/focus-ring"
+import { focusRing, type FocusSurface } from "@/components/ui/focus-ring"
 
 /**
  * Input — DESIGN_SYSTEM.md §5.5. Six states, all declared here so no field re-invents them.
@@ -15,8 +15,13 @@ import { focusRing } from "@/components/ui/focus-ring"
  * The placeholder is `--subtle-foreground`, which now clears 4.5:1 on every declared
  * surface; at its previous value it measured 4.34 inside a Well.
  */
-const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, ...props }, ref) => {
+export interface InputProps extends React.ComponentProps<"input"> {
+  /** What the field SITS ON, for the §4.4.6 focus offset. `popover` inside a dialog or sheet. */
+  surface?: FocusSurface
+}
+
+const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className, type, surface = "card", ...props }, ref) => {
     return (
       <input
         type={type}
@@ -29,7 +34,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           // Focus shows the ring AND moves the boundary, so the field is identifiable even
           // where a high-contrast mode drops the box-shadow.
           "focus-visible:border-ring",
-          focusRing("card"),
+          focusRing(surface),
           // Invalid is never colour-only: the call site pairs this with a role="alert"
           // message in --destructive-ink (§5.5).
           "aria-[invalid=true]:border-destructive",
@@ -37,7 +42,16 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           // fading the boundary away with the text.
           "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:hover:border-input",
           // Read-only is inert content, not a broken control: a well, no boundary.
-          "read-only:border-transparent read-only:bg-surface-2 read-only:hover:border-transparent",
+          // 🔒 `:not(:disabled)` is load-bearing, not defensive. Per HTML, `:read-only`
+          // matches ANY non-mutable input, which includes `<input disabled>` — and in
+          // Tailwind's pseudo-class order puts the `read-only` variant AFTER `disabled`, so
+          // an unscoped read-only boundary rule wins at equal specificity and ships a
+          // disabled field with no boundary at all. §5.5 says the opposite: disabled keeps
+          // `border-input`. Reachable today at ModelSettingsModal, CopilotSettings and
+          // LearningSettings, all of which pass `disabled` to a field with no `readOnly`.
+          "[&:read-only:not(:disabled)]:border-transparent",
+          "[&:read-only:not(:disabled)]:bg-surface-2",
+          "[&:read-only:not(:disabled)]:hover:border-transparent",
           className
         )}
         ref={ref}

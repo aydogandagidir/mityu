@@ -524,7 +524,8 @@ fontFamily: {
 
   /* ——— geometry & motion ——— */
   --radius: 0.5rem;       /* 8px base */
-  --gutter: 1.5rem;       /* 24px; 16px below 1000px */
+  --gutter: 1.5rem;       /* 24px; 16px below 1000px — the ONE responsive token, and globals.css
+                             carries the `@media (max-width: 999.98px)` step that implements it */
   --rail-w: 3.5rem;       /* 56px */
   --pane-w: 17.5rem;      /* 280px */
   --header-h: 3.5rem;     /* 56px */
@@ -605,7 +606,7 @@ fontFamily: {
   --warning-border:        40 61% 18%;
 
   --destructive:           358 62% 45%;  --destructive-foreground: 0 0% 100%;
-  --destructive-hover:     358 62% 50%;  --destructive-active:  358 62% 47%;
+  --destructive-hover:     358 62% 50%;  --destructive-active:  358 62% 54%;
   --destructive-surface:   355 38% 12%;  --destructive-ink:     3 100% 74%;
   --destructive-border:    353 41% 22%;
 
@@ -714,7 +715,7 @@ red respectively. The resulting ratio is tabulated for all twelve states rather 
 |---|---|---|---|
 | `default` (**ink**) | `--background` | 17.64 → **14.15** → **11.16** | 16.20 → **13.13** → **10.74** |
 | `verified` / filled brand blue | `--primary-foreground` / `--verified-foreground` #FFF | 5.43 → **6.66** → **8.53** | 4.88 → **5.43** → **5.85** |
-| `destructive` | `--destructive-foreground` #FFF | 4.83 → **5.96** → **7.44** | 6.02 → **5.09** → **5.63** |
+| `destructive` | `--destructive-foreground` #FFF | 4.83 → **5.96** → **7.44** | 6.02 → **5.09** → **4.58** |
 | `record` | `--recording-foreground` | 4.83 → **5.96** → **7.44** | **4.74** → **5.60** → **6.55** |
 
 Two corrections this table forced, both of which were live AA failures:
@@ -728,15 +729,16 @@ Two corrections this table forced, both of which were live AA failures:
    white on #EA473E = **3.84**. There is now a dedicated `--recording-foreground`: white in light
    (4.83), near-black red `4 85% 10%` in dark (4.74).
 
-**The one row that is not monotonic, and why it may not be "fixed".** Dark `destructive` reads
-6.02 → 5.09 → **5.63**: the pressed fill (`358 62% 47%`) sits *between* idle (45%) and hover (50%),
-so the ratio goes down and then back up. That is deliberate. The legal band for this token is
-**45–54% L** — below 45% the fill drops under 3:1 against `--card` (idle is already only 3.04),
-above 54% the white label drops under 4.5:1 (55% = 4.45). Both directions are walled, so hover
-lightens and the press returns *toward* idle; there is no room to continue past hover without
-failing AA on the label of a `Confirm reject` / `Delete` button. An implementer who "corrects" the
-sequence by lightening `--destructive-active` breaks 1.4.3. Every other control has room and moves
-monotonically.
+**The row that nearly was not monotonic, and the band that decides it.** Dark `destructive` was
+first written 45% → 50% → **47%** (6.02 → 5.09 → 5.63): the pressed fill sat *between* idle and
+hover, so a press moved the fill back *toward* idle and read as a partial un-hover rather than a
+press. That was defended here as forced by the band, and it is not. The legal band for this token
+is **45–54% L** — below 45% the fill drops under 3:1 against `--card` (idle is already only 3.04),
+above 54% the white label drops under 4.5:1 (55% = 4.45). `--destructive-active` is therefore
+`358 62% 54%`: the top of its own band, **4.58** on the white label and **3.99** against `--card`,
+both passing, and the sequence 45 → 50 → 54 is monotonic like every other family. The ratio falls
+across the ramp (6.02 → 5.09 → **4.58**) because in dark the label is white and the fill lightens;
+what must not fall is AA, and it does not. Do not push past 54% — that is where 1.4.3 breaks.
 
 **Disabled.** `disabled:opacity-50` is exempt from 1.4.3/1.4.11 (inactive controls), and the meaning
 is carried by the mandatory visible sibling sentence / `aria-describedby` in §5 — never by the
@@ -984,14 +986,22 @@ not fade — it stays for 4s; `animate-spin` becomes a static three-quarter ring
 | 20 | sticky pane toolbars, transcript segment highlight |
 | 30 | app rail + Meetings pane |
 | 40 | session dock (recording strip) |
-| 50 | popover / dropdown / select / tooltip / command palette |
 | 60 | dialog + sheet overlay |
-| 70 | dialog + sheet content, evidence drawer |
+| 70 | dialog + sheet content, evidence drawer, **and every floating layer** — popover / dropdown / select / tooltip / command palette. DOM order is the tiebreaker (see below). |
 | 80 | toasts (sonner) |
 | 90 | full-screen drag-drop import overlay |
 | 95 | 🔒 first-run tour coach-mark + spotlight (`CoachMarkTour` ships `z-[95]` today) |
 | 96 | tour popover |
 | 100 | onboarding full-screen shell (gates everything) |
+
+**Why the floating layers are 70 and not 50 (ADR-0055).** Radix portals every one of them to
+`document.body`, so a `Select`, `DropdownMenu`, `Popover` or `Tooltip` opened *from inside* a dialog
+is a **sibling** of that dialog, not a descendant: at `z-50` it renders behind `z-70` dialog content
+and the picker is unusable. Sharing the band and letting DOM order decide is correct for the common
+case, because a layer opened from a dialog is appended after it. The known cost is the reverse case:
+a **non-modal** floating layer that is already open when a dialog opens paints above the `z-60`
+overlay until it closes. Radix's own dismiss behaviour closes it on the dialog's focus trap in
+practice; a call site that keeps one open across a dialog boundary must close it itself.
 
 Exposed as `theme.extend.zIndex` so no component hand-writes `z-[95]` again.
 
@@ -1175,6 +1185,12 @@ signs.** It also makes P1 a type-level constraint rather than a review conventio
 * The indicator is a CSS `::after` driven by `data-state` + a custom property — **not** a framer-motion
   `layoutId` positioned from `offsetLeft` in `useLayoutEffect` (today's underline misaligns on resize and
   font load, `app/settings/page.tsx:57-65`).
+* 🔒 **The `variant` DEFAULT is `plain` — no track, no height, no `::after`.** A shape is a migration the
+  owning package performs, not something the primitive performs on every consumer at once: while
+  `/settings` still owns its framer-motion bar, an `underline` default paints **two** 2px primary rules
+  on it and collapses a `py-4` trigger to `h-9`, and the call site cannot opt out because
+  `data-[state=active]:after:bg-primary` sits in a modifier group nothing at the call site can merge
+  away. WP12 passes `variant="underline"` in the same change that deletes the framer-motion bar.
 
 ### 5.8 Status pill / badge (`ui/badge.tsx`, `report/StatusPill.tsx`)
 
@@ -1233,9 +1249,17 @@ The single most important small component in the product: the link from a claim 
   pressed (`bg-surface-3`; label 4.82 / 4.67) /
   **active** (the drawer currently shows this segment → `bg-accent` + 2px `--primary` left rule +
   `aria-expanded="true"`; the rule, not a colour change, is what marks it) /
-  **unresolved** (no timestamp → disabled + a visible sibling sentence *"This item has no transcript link"*;
-  export stays 🔒 fail-closed). The UTC `sourceTimestamp` worker fallback is **never printed as if it were a
-  clock time** — the chip reads `Source` with no time and the tooltip explains why.
+  **unresolved** (the item has **no `source_chunk_id`** — `aria-disabled` + a visible sibling
+  sentence *"This item has no transcript link"*; export stays 🔒 fail-closed). 🔒 **A MISSING
+  TIMESTAMP IS NOT AN UNRESOLVED ITEM.** `DraftBlock` / `DraftActionItem` declare `source_chunk_id`
+  as the REQUIRED evidence anchor and carry no time field at all, so a chip keyed on the clock
+  string would be dead for every real block and would claim, falsely, that an item with a perfectly
+  good link has none. The UTC `sourceTimestamp` worker fallback is still **never printed as if it
+  were a clock time** — the chip reads plain `Source`, and it still clicks. `aria-disabled` rather
+  than the `disabled` attribute, because a `disabled` button is not focusable and the
+  `aria-describedby` carrying the explanation would be unreachable for exactly the users it is for.
+  `aria-controls` is emitted only when the caller names a drawer that is actually mounted — a
+  dangling IDREF is an axe `aria-valid-attr-value` violation.
 * **A11y** — 🔒 `aria-label="Jump to source transcript segment"` (blocks) ·
   🔒 `Open the transcript at {timestamp}` with visible text 🔒 `Source · {timestamp}` (Ask claims) ·
   🔒 `Open source in {meeting} at {time}` (Actions). Plus `aria-expanded` + `aria-controls="transcript-drawer"`.

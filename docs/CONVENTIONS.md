@@ -63,6 +63,13 @@ Four ESLint guardrails in `frontend/.eslintrc.json` enforce the floor: no raw pa
 utility or hex in `className`, no arbitrary `text-[Npx]`, no `ring-ring` without a
 `ring-offset-*` sibling, no `outline-none` without a `focus-visible:` replacement.
 
+**Write them order-independently.** Rules 3 and 4 first shipped as a positive match plus a
+forward-only lookahead, which reported an error on the legal form whenever the offset (or
+the `focus-visible:` replacement) was written *before* the token it guards — and nothing in
+this repo normalises Tailwind class order. Both are now a positive match plus a
+`[value!=/…/]` exclusion. A new guardrail that reads more than one token from one class
+string must do the same.
+
 **Their blind spot, stated plainly so nobody mistakes them for proof.** They are
 `no-restricted-syntax` esquery selectors over the `className` attribute's **literal** value,
 so they can only read a string literal. `frontend/src/` holds ~2342 literal
@@ -93,16 +100,21 @@ control takes its *parent* surface, never its own fill, because Tailwind draws t
 outside the border box.
 
 **`cn()` has to be taught every custom key you add to an existing Tailwind class group.**
-`frontend/src/lib/utils.ts` registers the §4.5 type steps, `shadow-elev-*`, `duration-*` and
-`max-w-measure` with `extendTailwindMerge`. Without that, `tailwind-merge` classifies
+`frontend/src/lib/utils.ts` registers the §4.5 type steps, `shadow-elev-*`, `duration-*`,
+`max-w-measure`, `ease-emphasis` and the §4.11 chrome spacing aliases (`h-header`, `w-rail`,
+`p-gutter`, … across every `h`/`w`/`p*`/`m*`/`gap*`/inset group) with `extendTailwindMerge`. Without that, `tailwind-merge` classifies
 `text-label` as a *colour* (anything after `text-` that is not a t-shirt size is), and
 `cn('text-label', 'text-muted-foreground')` silently returns only the colour — the type step
 disappears with no error. A token added to `tailwind.config.js` without a matching entry
 there works everywhere except inside `cn()`, which is the hardest place to notice it.
 
-The last `overrides` entry in `.eslintrc.json` is a **shrinking quarantine** of files that
-still carry pre-redesign classes. Delete your files from it when you migrate them; never
-add one.
+The trailing `overrides` entries in `.eslintrc.json` are a **shrinking, per-rule quarantine**
+of files that still carry pre-redesign classes. The main entry drops guardrail **1 only** and
+re-declares 2, 3 and 4; the narrower entries after it name the handful of files that still
+trip one of those three and say which. So a quarantined file is still policed for everything
+it does not already violate — it cannot *gain* an arbitrary type size, a bare `ring-ring` or
+an unreplaced `outline-none` while it waits. Delete your files from these arrays when you
+migrate them; never add one.
 
 ## Git / PR
 - Branches: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `refactor/<slug>`.
@@ -113,3 +125,9 @@ add one.
 ## Secrets & config
 - LLM keys: OS keychain / Tauri secure store only. Never in SQLite plaintext, source, logs, analytics, or git.
 - No hardcoded paths (use Tauri path APIs) or hardcoded ports as required infra.
+
+**Two config keys deliberately shadow Tailwind's own.** `transitionTimingFunction.out`
+and `.in-out` in `tailwind.config.js` point at `--ease-out` / `--ease-in-out`, so every
+`ease-out` already in the tree adopts the design curve instead of the framework default —
+one motion system, not two. The override is commented at the key. A call site that
+genuinely needs the CSS keyword writes it as an arbitrary value and says why.
