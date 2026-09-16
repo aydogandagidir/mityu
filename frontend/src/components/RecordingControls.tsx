@@ -2,6 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
+import { useAudioLevels } from '@/hooks/useAudioLevels';
 import { appDataDir } from '@tauri-apps/api/path';
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { Play, Pause, Square, Mic, AlertCircle, X } from 'lucide-react';
@@ -14,7 +15,11 @@ import { useRecordingState } from '@/contexts/RecordingStateContext';
 
 interface RecordingControlsProps {
   isRecording: boolean;
-  barHeights: string[];
+  /**
+   * @deprecated Ignored. The bars are driven by the real `audio-levels` stream now; the
+   * prop is kept so the existing call site compiles unchanged.
+   */
+  barHeights?: string[];
   onRecordingStop: (callApi?: boolean) => void;
   onRecordingStart: () => void;
   onTranscriptReceived: (summary: SummaryResponse) => void;
@@ -31,7 +36,7 @@ interface RecordingControlsProps {
 
 export const RecordingControls: React.FC<RecordingControlsProps> = ({
   isRecording,
-  barHeights,
+  barHeights: _barHeights,
   onRecordingStop,
   onRecordingStart,
   onTranscriptReceived,
@@ -45,6 +50,9 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   // Use global recording state context for pause state (syncs with tray operations)
   const recordingState = useRecordingState();
   const isPaused = recordingState.isPaused;
+
+  // The real capture level, subscribed only while recording.
+  const levels = useAudioLevels(isRecording);
 
   const [showPlayback, setShowPlayback] = useState(false);
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
@@ -120,7 +128,8 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
       } else if (errorMsg.includes('system audio') || errorMsg.includes('speaker') || errorMsg.includes('output')) {
         setDeviceError({
           title: 'System Audio Not Available',
-          message: 'Unable to capture system audio. Please check that:\n• A virtual audio device (like BlackHole) is installed\n• The app has screen recording permissions (macOS)\n• System audio is properly configured'
+          // Mityu needs a permission, not a virtual audio device (CLAUDE.md §4).
+          message: 'Mityu could not capture system audio. On macOS, allow Mityu under System Settings → Privacy & Security → Screen & System Audio Recording, then restart the app. On Windows, check that the output device you are listening on is the one selected here. Your microphone is unaffected.'
         });
       } else if (errorMsg.includes('permission')) {
         setDeviceError({
@@ -472,19 +481,40 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                     </>
                   )}
 
-                  <div className="flex items-center space-x-1 mx-4">
-                    {barHeights.map((height, index) => (
-                      <div
-                        key={index}
-                        className={`w-1 rounded-full transition-all duration-200 ${isPaused ? 'bg-orange-500' : 'bg-red-500'
+                  {/* The REAL capture level. These three bars used to be
+                      `Math.random()` on a 300ms interval — drawn exactly like a meter,
+                      beside a live recording, so they answered "is it hearing me?" with
+                      a number that had nothing to do with the microphone. They are
+                      `aria-hidden`: the sibling status line carries the same fact in
+                      words, because a bar chart is not an answer for a screen reader. */}
+                  <div className="mx-4 flex items-center gap-1" aria-hidden="true">
+                    {[0, 1, 2].map((index) => {
+                      // A little log shaping, and a floor so the bar never disappears.
+                      const shaped = levels.rms > 0 ? Math.log10(levels.rms * 9 + 1) : 0;
+                      const scale = [0.75, 1, 0.75][index];
+                      const height = isPaused
+                        ? 4
+                        : Math.max(4, Math.round(shaped * 20 * scale) + 4);
+                      return (
+                        <div
+                          key={index}
+                          className={`w-1 rounded-full transition-[height] duration-fast ease-out motion-reduce:transition-none ${
+                            isPaused ? 'bg-warning' : 'bg-recording'
                           }`}
-                        style={{
-                          height: isRecording && !isPaused ? height : '4px',
-                          opacity: isPaused ? 0.6 : 1,
-                        }}
-                      />
-                    ))}
+                          style={{ height: `${height}px`, opacity: isPaused ? 0.6 : 1 }}
+                        />
+                      );
+                    })}
                   </div>
+                  <span className="sr-only" role="status">
+                    {isPaused
+                      ? 'Recording paused'
+                      : !levels.hasReading
+                        ? 'Recording. No audio level reading yet.'
+                        : levels.active
+                          ? 'Recording. Audio is being captured.'
+                          : 'Recording. No sound is being picked up.'}
+                  </span>
                 </>
               )}
             </>

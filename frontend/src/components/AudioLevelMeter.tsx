@@ -29,11 +29,13 @@ export function AudioLevelMeter({
   const rmsPercent = Math.round(logRms * 100);
   const peakPercent = Math.round(logPeak * 100);
 
-  // Color coding based on level
+  // Level colour, on tokens. The thresholds are unchanged; the three palette values
+  // they returned had no dark variant, so the meter read the same on both themes only
+  // by accident.
   const getLevelColor = (level: number) => {
-    if (level < 0.3) return 'bg-green-500';
-    if (level < 0.7) return 'bg-yellow-500';
-    return 'bg-red-500';
+    if (level < 0.3) return 'bg-success';
+    if (level < 0.7) return 'bg-warning';
+    return 'bg-destructive';
   };
 
   const rmsColor = getLevelColor(logRms);
