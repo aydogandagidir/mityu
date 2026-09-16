@@ -1102,6 +1102,15 @@ One correction to an earlier reading of mine: the `# v4.6.2` label on `upload-ar
 2. **`ci.yml` runs the full Windows release build on every pull request that touches anything native.** A `changes` job classifies the PR's files on the merge commit (`git diff --name-only HEAD^1 HEAD`, so the diff is exactly the PR's effect) and **fails toward building**: only a PR whose every changed file is under `docs/`, `landing/`, `.claude/`, `*.md` or `LICENSE` skips it. The `windows-build` job then calls `build.yml` for `windows-latest` / `x86_64-pc-windows-msvc` with the release profile, signing off and a read-only token, and uploads `mityu-pr-x86_64-pc-windows-msvc` — the `.msi` and NSIS `.exe` — so every PR can be smoke-tested without a local build. A newer push to the same PR cancels the build in flight.
 3. **`pull_request` only.** `release.yml` calls `ci.yml` as its gate; on that path `github.event_name` is never `pull_request`, so both new jobs are skipped and a release still builds Windows once. Push events to feature branches also skip it — the PR event already covers the same commit.
 
+**Caveat, found by using it (2026-09-16).** "Every pull request" is accurate for a push, not for the
+moment of opening. GitHub does not start workflow runs for actions taken with an app or
+`GITHUB_TOKEN` credential, so a PR **opened by an agent** fires no `pull_request` event and both new
+jobs are simply absent until the next git push to the branch (which arrives as `synchronize` and does
+run them). PR #55 was opened that way and got no `pull_request` run at all; a later force-push to the
+same PR started `changes` and `windows-build` normally. Until a push lands, use the manual
+`build-windows.yml` wrapper -- which is now able to start, per the decision above -- rather than an
+empty commit.
+
 **Consequences.** A Windows-only compile or link error is now caught before merge, on the platform the product ships to, and every PR carries an installer its reviewer can run. Each native PR push costs one Windows build — measured at 14m47s (manual dispatch) and 18m16s (the first pull-request run) with a warm Rust cache; Windows runner minutes are billed at 2× — bounded by the path filter and cancellation. This is a compile-and-bundle proof, **not** the manual smoke test CLAUDE.md §4 still requires — a build that links can still fail to record. On a fork PR GitHub withholds secrets and forces a read-only token; the job needs neither. The only secrets `build.yml` reads sit behind `sign-binaries`, which is `false` here, so `secrets: inherit` on a PR-triggered job exposes nothing to a build of PR code that a `sign-binaries: false` step would consume.
 
 ## ADR-0049 — Start the program and look: a runtime startup check, and two defects only it could find

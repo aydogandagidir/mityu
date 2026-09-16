@@ -17,6 +17,10 @@ This document provides a quick overview of all available CI/CD workflows in this
 - `server-isolation` job: fails the build if `server/` exists without a `*cross_tenant*` isolation test (no-op guard until `server/` ships, see CLAUDE.md §5)
 - `workflow-pins` job: `tools/ci/check-action-pins.py --self-test` then the real check — every `uses:` in `.github/` must be pinned to a commit sha and run on Node 24 (composite/docker allowed); composites are opened and their nested `uses:` held to the same rules; `# vX.Y.Z` labels must match a real tag. One documented exception lives in `tools/ci/action-pins-allowlist.json`. Added after the v1.2.0 release run still warned about Node 20 (ADR-0044).
 - `changes` job (pull requests only): classifies the PR's changed files on the merge commit (`git diff --name-only HEAD^1 HEAD`). Fails toward building — only a PR whose every file is under `docs/`, `landing/`, `.claude/`, `*.md` or `LICENSE` skips the Windows build.
+- **A PR opened by an agent fires no `pull_request` event**, because GitHub does not start runs for
+  actions taken with an app or `GITHUB_TOKEN` credential — so `changes` and `windows-build` are absent
+  until the next git push to the branch, which arrives as `synchronize` and runs them normally. Until
+  then, dispatch `build-windows.yml` manually rather than pushing an empty commit (ADR-0048).
 - `windows-build` job (pull requests only, when `changes` says native): calls `build.yml` for `windows-latest` / `x86_64-pc-windows-msvc`, release profile, signing off, read-only token. Uploads artifact **`mityu-pr-x86_64-pc-windows-msvc`** (the `.msi` and the NSIS `.exe`, 30-day retention) — download it from the run's Summary page to smoke-test the PR without building locally. A newer push to the same PR cancels the build in flight. Never runs when `release.yml` calls this file, so a release does not build Windows twice. It is a compile-and-bundle proof, **not** the manual smoke test CLAUDE.md §4 still requires.
 - No signing, no releases
 
