@@ -11,6 +11,9 @@ import RecordingConsentSettings from "./RecordingConsentSettings"
 import RedactionSettings from "./RedactionSettings"
 import LearningSettings from "./LearningSettings"
 import { ThemeToggle } from "./ThemeToggle"
+import { SettingsCard } from "@/components/settings/SettingsCard"
+import { SwitchRow } from "@/components/settings/SwitchRow"
+import { Button } from "@/components/ui/button"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 
 export function PreferenceSettings() {
@@ -154,134 +157,83 @@ export function PreferenceSettings() {
   const notificationsEnabledValue = notificationsEnabled ?? false;
 
   return (
-    <div className="space-y-6">
-      {/* Appearance Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Appearance</h3>
-            <p className="text-sm text-muted-foreground">Follow your system theme, or force light or dark.</p>
-          </div>
-          <ThemeToggle />
-        </div>
-      </div>
+    <div className="space-y-4">
+      <SettingsCard
+        title="Appearance"
+        description="Follow your system theme, or force light or dark."
+        action={<ThemeToggle />}
+      />
 
-      {/* Notifications Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Notifications</h3>
-            <p className="text-sm text-muted-foreground">Enable or disable notifications of start and end of meeting</p>
-          </div>
-          <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
-        </div>
-      </div>
+      <SettingsCard>
+        <SwitchRow
+          label="Meeting start and end notifications"
+          description="A system notification when a recording starts and when it finishes saving. Separate from the participant reminder in Recording."
+          checked={notificationsEnabledValue}
+          onCheckedChange={setNotificationsEnabled}
+        />
+      </SettingsCard>
 
-      {/* Product Tour Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Product tour</h3>
-            <p className="text-sm text-muted-foreground">
-              Replay the guided walkthrough on the sample meeting — transcript, source-linked summary, and your first recording.
-            </p>
-          </div>
-          <button
+      <SettingsCard
+        title="Product tour"
+        description="Replay the guided walkthrough on the sample meeting — transcript, source-linked summary, and your first recording."
+        action={
+          <Button
+            variant="outline"
             onClick={() => {
               void Analytics.trackButtonClick('replay_product_tour', 'settings');
               replayTour();
             }}
-            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
           >
-            <Compass className="w-4 h-4" />
+            <Compass className="size-4" aria-hidden="true" />
             Replay product tour
-          </button>
-        </div>
-      </div>
-
-      {/* Data Storage Locations Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Data Storage Locations</h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          View and access where Mityu stores your data
-        </p>
-
-        <div className="space-y-4">
-          {/* Database Location */}
-          {/* <div className="p-4 border border-border rounded-lg bg-muted">
-            <div className="font-medium mb-2">Database</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.database || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('database')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div> */}
-
-          {/* Models Location */}
-          {/* <div className="p-4 border border-border rounded-lg bg-muted">
-            <div className="font-medium mb-2">Whisper Models</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.models || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('models')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div> */}
-
-          {/* Recordings Location */}
-          <div className="p-4 border border-border rounded-lg bg-muted">
-            <div className="font-medium mb-2 text-foreground">Meeting Recordings</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.recordings || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('recordings')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 p-3 bg-accent rounded-md">
-          <p className="text-xs text-accent-foreground">
-            <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
-          </p>
-          <p className="mt-2 text-xs text-accent-foreground">
-            Meeting deletion covers Mityu-managed database/search, recording, and recovery-cache data. Physical traces or separate copies may remain on SSD wear-leveling, copy-on-write filesystems, snapshots, backups, exports, or WebView/browser storage; Mityu cannot erase those external layers.
-          </p>
-        </div>
-      </div>
-
-      {/* Recording Consent Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <RecordingConsentSettings />
-      </div>
-
-      {/* Redaction Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <RedactionSettings />
-      </div>
-
-      {/* Learning Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <LearningSettings />
-      </div>
-
-      {/* Analytics Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <AnalyticsConsentSwitch />
-      </div>
+          </Button>
+        }
+      />
     </div>
+  )
+}
+
+/**
+ * Where this app keeps things, and what deleting a meeting can and cannot reach.
+ *
+ * 🔒 The erasure disclosure is verbatim. It lives in Privacy now, beside consent and
+ * redaction, rather than in a "General" tab it had nothing to do with — and the
+ * recordings path it used to print is no longer duplicated here: Recording owns the save
+ * location, which is where a person looks for it.
+ */
+export function StorageLocations() {
+  const { storageLocations, isLoadingPreferences, loadPreferences } = useConfig()
+
+  useEffect(() => {
+    void loadPreferences()
+  }, [loadPreferences])
+
+  return (
+    <SettingsCard
+      title="Where your data is stored"
+      description="Everything stays on this device."
+    >
+      <div className="space-y-3">
+        <div className="rounded-md border border-border bg-surface-2 p-3">
+          <div className="text-label text-foreground">Meeting recordings</div>
+          <div className="mt-1 break-all font-mono text-caption text-muted-foreground">
+            {isLoadingPreferences && !storageLocations
+              ? 'Reading…'
+              : storageLocations?.recordings || 'Default folder'}
+          </div>
+          <p className="mt-2 text-caption text-muted-foreground">
+            The database and downloaded models sit together in your application data
+            directory. Change the recordings folder in Recording.
+          </p>
+        </div>
+
+        <p className="text-caption text-muted-foreground">
+          Meeting deletion covers Mityu-managed database/search, recording, and
+          recovery-cache data. Physical traces or separate copies may remain on SSD
+          wear-leveling, copy-on-write filesystems, snapshots, backups, exports, or
+          WebView/browser storage; Mityu cannot erase those external layers.
+        </p>
+      </div>
+    </SettingsCard>
   )
 }
