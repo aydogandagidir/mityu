@@ -113,7 +113,7 @@ evidence navigation — and C owned capture instrumentation. Both are grafted in
 8. **`--ring` byte-identical to `--primary` (today's P0 #1).** Decoupled at the token (§4.2). Note the
    honest limit: `--ring` #0040FF against `--primary` #1F57FF is only **1.22:1**, so the *token change alone
    does not satisfy SC 2.4.11*. What satisfies it is the mandatory `ring-offset-2` in the adjacent surface
-   colour (ring vs surface = **6.61:1** light, **6.41:1** dark; worst case across all eleven declared
+   colour (ring vs surface = **6.61:1** light, **6.41:1** dark; worst case across the twelve distinct
    offset surfaces **5.32:1**, §4.4.6). A bare `ring-ring` with no `ring-offset-*`
    is a **lint error** (§11.4) — and because a lint error needs a legal alternative, §4.7 declares the
    `ringOffsetColor` map that makes `ring-offset-card` / `-background` / `-popover` / … compile, and
@@ -438,7 +438,7 @@ fontFamily: {
   --subtle-foreground:     220 10% 42%;   /* #606876  meta / timestamps — clears 4.5:1 on
                                              card, background, surface-2/muted, surface-3
                                              and accent (min 4.63); the old 46% failed on
-                                             surface-2 (4.34) and surface-3 (4.00) */
+                                             surface-2 (4.34) and surface-3 (4.03) */
 
   /* ——— ink (the `default` button; NOT blue — see P1) ——— */
   --foreground-hover:      218 22% 16%;   /* #202632  ink fill, hover */
@@ -557,7 +557,7 @@ fontFamily: {
   --subtle-foreground:     221 12% 58%;   /* #878FA1 — clears 4.5:1 on card, background,
                                              surface-2/popover, muted, surface-3 and accent
                                              (min 4.67); the old 53% failed on surface-2
-                                             (4.41), muted (4.30) and surface-3 (3.93) */
+                                             (4.42), muted (4.32) and surface-3 (3.93) */
 
   --foreground-hover:      225 22% 85%;   /* #D0D5E1  ink fill, hover */
   --foreground-active:     225 22% 78%;   /* #BBC1D3  ink fill, pressed */
@@ -728,24 +728,45 @@ Two corrections this table forced, both of which were live AA failures:
    white on #EA473E = **3.84**. There is now a dedicated `--recording-foreground`: white in light
    (4.83), near-black red `4 85% 10%` in dark (4.74).
 
+**The one row that is not monotonic, and why it may not be "fixed".** Dark `destructive` reads
+6.02 → 5.09 → **5.63**: the pressed fill (`358 62% 47%`) sits *between* idle (45%) and hover (50%),
+so the ratio goes down and then back up. That is deliberate. The legal band for this token is
+**45–54% L** — below 45% the fill drops under 3:1 against `--card` (idle is already only 3.04),
+above 54% the white label drops under 4.5:1 (55% = 4.45). Both directions are walled, so hover
+lightens and the press returns *toward* idle; there is no room to continue past hover without
+failing AA on the label of a `Confirm reject` / `Delete` button. An implementer who "corrects" the
+sequence by lightening `--destructive-active` breaks 1.4.3. Every other control has room and moves
+monotonically.
+
 **Disabled.** `disabled:opacity-50` is exempt from 1.4.3/1.4.11 (inactive controls), and the meaning
 is carried by the mandatory visible sibling sentence / `aria-describedby` in §5 — never by the
 colour and never by a tooltip.
 
 #### 4.4.5 Non-text: control boundaries and fills (threshold 3.0)
 
-| Token | hex | `--card` | `--background` | `--surface-2` / `--muted` | `--surface-3` | `--accent` | **min** |
-|---|---|---|---|---|---|---|---|
-| **light** `--input` | #768093 | 3.98 | 3.71 | 3.52 | 3.28 | 3.49 | **3.28** |
-| **light** `--input-hover` | #636C7E | 5.28 | 4.93 | 4.68 | 4.35 | 4.64 | **4.35** |
-| **dark** `--input` | #69748C | 3.89 | 4.12 | 3.64 | 3.23 | 3.43 | **3.23** |
-| **dark** `--input-hover` | #858EA3 | 5.56 | 5.88 | 5.19 | 4.61 | 4.90 | **4.61** |
+`--surface-2` and `--muted` are byte-identical in light (`225 20% 95%`) but **not** in dark
+(`222 21% 12%` vs `222 21% 13%`), so they get their own columns rather than a merged one — a merged
+column would quietly report the better of the two.
 
-This is the fix for four boundary pairs that were below 3:1 under the old `--input`
-(light #8790A1: 2.998 on `--background`, 2.85 on `--surface-2`/`--muted`, 2.65 on `--surface-3`;
-dark #5E687D: 2.98 on `--muted`, 2.71 on `--surface-3`). All three were reachable by design:
-the per-row **Approve** button is `outline` with `hover:bg-muted` (§5.4), the Meetings-pane search
-field sits on `bg-background` (§5.2), and §5.6 `Well` (`bg-surface-2`) hosts inputs.
+| Token | hex | `--card` | `--background` | `--surface-2` | `--muted` | `--surface-3` | `--accent` | **min** |
+|---|---|---|---|---|---|---|---|---|
+| **light** `--input` | #768093 | 3.98 | 3.71 | 3.52 | 3.52 | 3.28 | 3.49 | **3.28** |
+| **light** `--input-hover` | #636C7E | 5.28 | 4.93 | 4.68 | 4.68 | 4.35 | 4.64 | **4.35** |
+| **dark** `--input` | #69748C | 3.89 | 4.12 | 3.64 | 3.55 | 3.23 | 3.43 | **3.23** |
+| **dark** `--input-hover` | #858EA3 | 5.56 | 5.88 | 5.19 | 5.07 | 4.61 | 4.90 | **4.61** |
+
+(Dark `--popover` = dark `--surface-2`, so the `--surface-2` column covers it; in light `--popover`
+= `--card`.)
+
+This is the fix for **seven** boundary pairs that were below 3:1 under the old `--input`
+(light #8790A1: **2.998** on `--background`, **2.85** on `--surface-2`/`--muted`, **2.65** on
+`--surface-3`, **2.82** on `--accent`; dark #5E687D: **2.98** on `--muted`, **2.71** on
+`--surface-3`, **2.88** on `--accent`). The old value cleared 3:1 on `--card` only in light, and on
+`--card`/`--background`/`--popover` only in dark. Three of the seven are reachable by design on
+screens this document specifies: the per-row **Approve** button is `outline` with `hover:bg-muted`
+(§5.4), the Meetings-pane search field sits on `bg-background` (§5.2), and §5.6 `Well`
+(`bg-surface-2`) hosts inputs; the `--accent` pairs are reachable through any input or `outline`
+control inside a selected / `aria-current` row (§5.15).
 
 Filled surfaces against the page they sit on (1.4.11, ≥3 where the fill is the identifier):
 
@@ -773,12 +794,17 @@ focused-but-not-yet-focus-visible field's boundary to 1.65:1.
 The one thing that actually carries SC 2.4.11 is the 2px offset in the colour of the surface the
 control sits on (§5 shared rules, §4.7 `ringOffsetColor`). Every declared offset surface is tested:
 
+Two tokens share a row only where they carry the **same value in both themes** (`--background`/
+`--sidebar`, `--accent`/`--verified-surface`, `--destructive-surface`/`--recording-surface`).
+`--surface-2` and `--muted` do not, so they are listed separately.
+
 | Offset surface | `--ring` light #0040FF | `--ring` dark #7094FF |
 |---|---|---|
 | `--background` / `--sidebar` | 6.17 | 6.77 |
 | `--card` | 6.61 | 6.41 |
 | `--popover` | 6.61 | 5.98 |
-| `--surface-2` / `--muted` | 5.86 | 5.85 |
+| `--surface-2` | 5.86 | 5.98 |
+| `--muted` | 5.86 | 5.85 |
 | `--surface-3` | **5.44** | **5.32** |
 | `--accent` / `--verified-surface` | 5.80 | 5.65 |
 | `--success-surface` | 5.99 | 5.68 |
@@ -896,7 +922,9 @@ ringOffsetColor: {
 }
 ```
 
-Eleven distinct surfaces, all eleven certified against `--ring` at ≥5.32:1 in §4.4.6. The list is
+Fifteen entries resolving to **twelve distinct surface values** (some tokens are byte-identical in
+both themes — `--sidebar` = `--background`, `--verified-surface` = `--accent`, `--recording-surface`
+= `--destructive-surface`), all twelve certified against `--ring` at ≥5.32:1 in §4.4.6. The list is
 **surfaces only, never fills**: Tailwind draws the offset as a box-shadow *outside* the border box,
 so the offset must be the colour of whatever the control sits **on**, not the control's own fill. An
 offset in the fill colour would paint a halo, not a gap. The same `theme.extend.colors` block gains
@@ -994,7 +1022,7 @@ focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
 focus-visible:ring-offset-2 focus-visible:ring-offset-{surface}
 ```
 
-**`{surface}` is not a placeholder for the implementer to invent** — it is one of the eleven
+**`{surface}` is not a placeholder for the implementer to invent** — it is one of the fifteen
 `ringOffsetColor` entries declared in §4.7, chosen by **what the control sits on**, and the choice is
 mechanical:
 
@@ -1012,8 +1040,9 @@ mechanical:
 
 A **filled** control (`default`, `verified`, `destructive`, `record`) takes the offset of its
 *parent* surface, never its own fill — the offset is drawn outside the border box, so matching the
-fill would paint a halo instead of a gap. Every one of the eleven surfaces is certified against
-`--ring` at ≥5.32:1 in §4.4.6, so the treatment is uniform and never needs a per-component override.
+fill would paint a halo instead of a gap. Every one of the twelve distinct surface values is
+certified against `--ring` at ≥5.32:1 in §4.4.6, so the treatment is uniform and never needs a
+per-component override.
 This replaces today's five competing treatments and the 16 files that strip `outline-none` with no
 replacement. Icon-only controls always carry an `aria-label` **and** a Radix Tooltip that opens on focus as
 well as hover. **A disabled control always carries a visible sibling sentence or `aria-describedby`** — a
@@ -1966,19 +1995,25 @@ The tool fails if the PNG is `< 25 000` bytes **or** any `--expect` string is mi
 | `design/tour` | `Take a 30-second tour` · `Nothing is final until you approve it` |
 | `design/learning` | `Learn from my corrections` · `Summaries still need your approval either way` |
 
-**Query-string routes need `shoot.py` support, and it lands in WP1.** `tools/ui/shoot.py:232` builds
+**Query-string routes need `shoot.py` support, and it lands in WP1.** `tools/ui/shoot.py:219` builds
 `url = f"http://127.0.0.1:{port}/{route.lstrip('/')}.html"` — it appends `.html` to the raw route and
 has no query handling, so `design/hitl?reject=1` becomes `/design/hitl?reject=1.html`, which the
-static server cannot resolve, and the PNG filename would contain a `?`. The two rows above that use a
-URL API (`design/hitl?reject=1`, `design/tour?tour=N`) are called load-bearing by §5.10 and §10.7, so
-the tool must be able to shoot them **before** the packages that depend on them: `shoot.py` is
-therefore in **WP1's `files[]`**, where it gains
+static server cannot resolve. `:220` then builds the PNG name as `route.replace("/", "-") + ".png"`,
+which leaves the `?` (and any `=`) in the filename. The two rows above that use a URL API
+(`design/hitl?reject=1`, `design/tour?tour=N`) are called load-bearing by §5.10 and §10.7, so the
+tool must be able to shoot them **before** the packages that depend on them: `shoot.py` is therefore
+in **WP1's `files[]`**, where `:219-220` become
 
 ```python
 path, _, query = route.partition("?")
 url = f"http://127.0.0.1:{port}/{path.lstrip('/')}.html" + (f"?{query}" if query else "")
 png = os.path.join(args.out_dir, re.sub(r"[^A-Za-z0-9._-]", "-", route) + ".png")
 ```
+
+`shoot.py` imports `argparse http.server os shutil socket socketserver subprocess sys threading`
+and **not `re`** — WP1 adds the `import re`, or the first query-route shot dies on a `NameError`
+rather than on a missing marker. The module docstring's "Routes are given without the `.html`
+suffix" line gains the query form, so the USAGE block does not contradict the code.
 
 WP1 is the first package and already runs `shoot.py`, so every later package — WP10's `?reject=1`
 gate and WP16's all-routes CI job — can rely on it. WP16 still owns `--theme dark`.
@@ -2025,7 +2060,7 @@ dedupe, backend ordering, `Load more` error path) — a 307-line page with zero 
 ### 11.4 Build-time guardrails (WP1 + WP16)
 
 **Mechanism first.** The plan adds **no npm dependency**, so these are not a custom ESLint plugin
-package. `frontend/.eslintrc.json` is three lines today (`extends: next/core-web-vitals` plus one
+package. `frontend/.eslintrc.json` is six lines today (`extends: next/core-web-vitals` plus one
 rule) and stays eslintrc — flat-config migration is out of scope and `next lint` must keep working.
 Rules 1–4 are expressed as **`no-restricted-syntax` esquery selectors over the `className`
 attribute's literal value**, added in WP1:
