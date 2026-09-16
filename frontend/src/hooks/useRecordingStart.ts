@@ -260,7 +260,9 @@ export function useRecordingStart(
             } else {
               console.error('Failed to auto-start recording:', error);
               setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to auto-start recording');
-              alert('Failed to start recording. Check console for details.');
+              toast.error('Could not start recording', {
+                description: 'Check the microphone and system-audio devices in Settings, then try again.',
+              });
               Analytics.trackButtonClick('start_recording_error', 'sidebar_auto');
             }
           } finally {
@@ -370,7 +372,9 @@ export function useRecordingStart(
         } else {
           console.error('Failed to start recording from sidebar:', error);
           setStatus(RecordingStatus.ERROR, error instanceof Error ? error.message : 'Failed to start recording from sidebar');
-          alert('Failed to start recording. Check console for details.');
+          toast.error('Could not start recording', {
+            description: 'Check the microphone and system-audio devices in Settings, then try again.',
+          });
           Analytics.trackButtonClick('start_recording_error', 'sidebar_direct');
         }
       } finally {

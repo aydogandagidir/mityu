@@ -10,6 +10,7 @@ import { Block } from '@blocknote/core';
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/shadcn';
 import { blocksToMarkdownSafely } from '@/lib/blocknote-markdown';
+import { toast } from 'sonner';
 import "@blocknote/shadcn/style.css";
 
 // Dynamically import BlockNote Editor to avoid SSR issues
@@ -231,7 +232,9 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
       console.log('✅ Save successful');
     } catch {
       console.error('Summary save failed');
-      alert('Failed to save changes. Please try again.');
+      toast.error('Could not save your changes', {
+        description: 'Your edits are still on screen. Try saving again.',
+      });
     } finally {
       setIsSaving(false);
     }

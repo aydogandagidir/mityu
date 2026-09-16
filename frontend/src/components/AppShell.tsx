@@ -244,11 +244,11 @@ export function AppShell({
   }, []);
 
   const handleOnboardingComplete = () => {
-    console.log('[Layout] Onboarding completed, reloading app')
+    // No reload. `OnboardingFlow` refetches what the reload was really for — it runs
+    // inside the provider tree, which this callback does not — and the shell just
+    // switches surfaces. The white flash that used to end setup is gone with it.
     setShowOnboarding(false)
     setOnboardingCompleted(true)
-    // Optionally reload the window to ensure all state is fresh
-    window.location.reload()
   }
 
   return (

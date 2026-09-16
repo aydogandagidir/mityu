@@ -385,6 +385,7 @@ export function MeetingsPane() {
       <ConfirmationModal
         isOpen={deleteState.open}
         title={deleteState.title ? `Delete “${deleteState.title}”?` : undefined}
+        lead="The meeting, its transcript, its recording and its search data are removed from this device. This cannot be undone."
         text={DELETE_DISCLOSURE}
         onConfirm={confirmDelete}
         onCancel={() => {

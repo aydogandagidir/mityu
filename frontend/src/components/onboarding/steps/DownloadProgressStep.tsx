@@ -22,7 +22,7 @@ interface DownloadState {
   error?: string;
 }
 
-export function DownloadProgressStep() {
+export function DownloadProgressStep({ onFinish }: { onFinish: () => void }) {
   const {
     goNext,
     selectedSummaryModel,
@@ -372,11 +372,10 @@ export function DownloadProgressStep() {
       setIsCompleting(true);
       try {
         await completeOnboarding();
-
-        // Small delay to ensure state is saved before reload
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        window.location.reload();
+        // No reload: `onFinish` refetches what the reload was actually for (the
+        // meetings list and the licence anchor, both read before the database existed)
+        // and hands over to the app without a white flash.
+        onFinish();
       } catch (error) {
         console.error('Failed to complete onboarding:', error);
         toast.error('Failed to complete setup', {

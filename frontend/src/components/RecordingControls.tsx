@@ -1,6 +1,7 @@
 'use client';
 
 import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 import { appDataDir } from '@tauri-apps/api/path';
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { Play, Pause, Square, Mic, AlertCircle, X } from 'lucide-react';
@@ -76,8 +77,13 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
         await invoke('is_recording');
         console.log('Tauri recording state check completed');
       } catch {
+        // A blocking native alert on mount froze the whole webview behind an OS dialog
+        // the app cannot style, translate or theme — on the one screen whose entire job
+        // is to start a recording.
         console.error('Tauri initialization error');
-        alert('Failed to initialize recording. Please check the console for details.');
+        toast.error('Recording is unavailable', {
+          description: 'Mityu could not reach the audio engine. Restart the app; if it keeps happening, reinstall.',
+        });
       }
     };
     checkTauri();
@@ -206,7 +212,9 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
       console.log('Recording paused successfully');
     } catch {
       console.error('Failed to pause recording');
-      alert('Failed to pause recording. Please check the console for details.');
+      toast.error('Could not pause the recording', {
+        description: 'The recording is still running. Try again, or stop it to keep what you have.',
+      });
     } finally {
       setIsPausing(false);
     }
@@ -224,7 +232,9 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
       console.log('Recording resumed successfully');
     } catch {
       console.error('Failed to resume recording');
-      alert('Failed to resume recording. Please check the console for details.');
+      toast.error('Could not resume the recording', {
+        description: 'It is still paused. Try again, or stop it to keep what you have.',
+      });
     } finally {
       setIsResuming(false);
     }

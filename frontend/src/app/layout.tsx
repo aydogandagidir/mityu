@@ -54,7 +54,33 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {isBareRoute ? children : <AppShell>{children}</AppShell>}
 
-          <Toaster position="bottom-center" richColors closeButton />
+          {/* 🔒 `position="bottom-center"` and `closeButton` are preserved byte-for-byte
+              — the close control is the ONLY dismiss for an infinite download toast.
+              `richColors` is deliberately dropped (ADR-0060): it paints sonner's own
+              Tailwind palette, which no contrast row in the design system covers and
+              which the palette guardrail forbids everywhere else in this app. Tone now
+              comes from the design tokens, through the classes below. The offset reads
+              the fixed-chrome token so a toast never lands under the record pill. */}
+          <Toaster
+            position="bottom-center"
+            closeButton
+            offset="calc(var(--bottom-chrome) + 16px)"
+            toastOptions={{
+              classNames: {
+                toast:
+                  'border border-border bg-card text-foreground shadow-elev-2 rounded-md',
+                title: 'text-body text-foreground',
+                description: 'text-caption text-muted-foreground',
+                actionButton: 'bg-foreground text-background',
+                cancelButton: 'bg-muted text-muted-foreground',
+                closeButton: 'bg-card border-border text-muted-foreground',
+                success: 'border-l-[3px] border-l-success',
+                error: 'border-l-[3px] border-l-destructive',
+                warning: 'border-l-[3px] border-l-warning',
+                info: 'border-l-[3px] border-l-info',
+              },
+            }}
+          />
         </ThemeProvider>
       </body>
     </html>
