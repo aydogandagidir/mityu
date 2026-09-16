@@ -491,14 +491,21 @@ pub fn run() {
                 })
                 .max_file_size(5_000_000)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::LogDir {
+                // `targets()` REPLACES; `target()` APPENDS to the two the
+                // builder already carries (`DEFAULT_LOG_TARGETS` = Stdout +
+                // LogDir{file_name: None}). Appending gave four targets and two
+                // byte-identical files on disk — `Mityu.log` from the default
+                // and `mityu.log` from ours — with every stdout line written
+                // twice. Observed on a real Linux launch: one PID holding two
+                // write fds, both files 113513 bytes, same md5. It also meant
+                // the 5 MB / KeepOne rotation above was being applied per file
+                // to two files, so the real ceiling was 10 MB.
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
                         file_name: Some("mityu".to_string()),
-                    },
-                ))
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::Stdout,
-                ))
+                    }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
                 .build(),
         )
         .plugin(tauri_plugin_notification::init())

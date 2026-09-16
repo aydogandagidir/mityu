@@ -46,6 +46,48 @@ of nothing:
 Shots land in `target/ui-shots/` (ignored). This does not replace running the
 real app — it catches "renders nothing" early, not "wrong in the app".
 
+### Starting the app, not just building it
+Some defects are invisible to every check above: a plugin declared for the wrong
+platform links nothing and registers nothing, and that is not a compile error,
+not a type error, and not a failing test. v1.2.1 shipped exactly that — no log
+file at all on Windows (ADR-0047). The only way to find it is to start the
+program and look.
+
+```bash
+cargo build -p mityu
+tools/ci/verify-startup.sh          # Linux needs xvfb-run
+```
+
+It launches the binary, waits for the app's own `Application setup complete`
+line, and asserts **exactly one** log file with real content in it. That last
+assertion is not fussiness: `tauri_plugin_log::Builder::target()` *appends* to
+the two targets the builder already carries, so registering two of our own once
+gave four targets, two byte-identical log files and a rotation ceiling twice the
+one in the source (ADR-0049). Use `.targets([...])`, which replaces.
+
+CI runs this in the `rust` job. It runs on ubuntu, so it does **not** prove the
+Windows build logs, and it proves nothing about recording — there is no audio
+device on a runner.
+
+### Running the Rust suite locally
+The ONNX runtime is not on the default library path, and it is needed at two
+different moments:
+
+```bash
+cd frontend/src-tauri
+ORT_LIB_LOCATION=/tmp/ort/lib cargo test --all     # build time
+```
+
+If a test binary is run directly, it also needs `LD_LIBRARY_PATH=/tmp/ort/lib`
+at run time. Omitting it is loud, not silent — the loader fails with
+`libonnxruntime.so.1: cannot open shared object file` and exit code 127 — so it
+cannot be mistaken for a passing run.
+
+**None of this is the smoke test.** CLAUDE.md §4 requires a human
+record→transcript run on macOS and Windows for any change to the audio or
+recording-start paths. No check in CI can stand in for it: no runner has a
+microphone.
+
 ## Git / PR
 - Branches: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `refactor/<slug>`.
 - Conventional commits: `feat: …`, `fix: …`, `refactor: …`, `docs: …`, `test: …`, `chore: …`.
