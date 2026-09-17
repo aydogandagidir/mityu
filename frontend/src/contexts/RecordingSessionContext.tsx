@@ -20,8 +20,11 @@
  * which is the behaviour the consent gate and the device pickers are written against.
  */
 
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { appDataDir } from '@tauri-apps/api/path';
 import { useRecordingStop } from '@/hooks/useRecordingStop';
+import { recordingService } from '@/services/recordingService';
+import Analytics from '@/lib/analytics';
 
 export interface RecordingSessionContextType {
   /** The UI's own recording flag, written by the start/stop hooks. */
@@ -32,6 +35,17 @@ export interface RecordingSessionContextType {
   setIsRecordingDisabled: (value: boolean) => void;
   /** 🔒 Same function `window.handleRecordingStop` forwards to. */
   handleRecordingStop: (callApi: boolean) => Promise<void>;
+  /**
+   * A COMPLETE stop: end the capture natively, then post-process.
+   *
+   * `handleRecordingStop` is only the second half — it waits for completion metadata the
+   * native stop produces and contains no `invoke` at all (its own note at
+   * useRecordingStop.ts:170). Until this existed, the shell dock's Stop called that half
+   * on its own, so off `/` nothing ever ended the capture: the button returned to "Stop"
+   * after the 5s wait and the recording ran on, silently. Every Stop control in the shell
+   * calls THIS.
+   */
+  stopRecordingSession: () => Promise<void>;
   setIsStopping: (value: boolean) => void;
 }
 
@@ -60,6 +74,52 @@ export function RecordingSessionProvider({ children }: { children: React.ReactNo
     setIsRecordingDisabled
   );
 
+  /** Keeps a double-click from firing two native stops before the first returns. */
+  const stopRequestInFlight = useRef(false);
+
+  const stopRecordingSession = useCallback(async () => {
+    if (stopRequestInFlight.current) return;
+    stopRequestInFlight.current = true;
+
+    // Match `/`'s feedback: the label changes on the click, not on the round-trip.
+    // `isStopping` is derived from the shared status machine
+    // (RecordingStateContext.tsx:238), so whoever finishes the stop clears it — this
+    // cannot strand the dock on "Stopping…".
+    setIsStopping(true);
+
+    try {
+      const dataDir = await appDataDir();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const savePath = `${dataDir}/recording-${timestamp}.wav`;
+
+      // The same `{args:{save_path}}` shape RecordingControls uses, through the wrapper
+      // that already had it and had lost its last caller.
+      const completedByThisCall = await recordingService.stopRecording(savePath);
+
+      if (!completedByThisCall) {
+        // Rust's STOP_IN_PROGRESS guard (recording_commands.rs:574) handed ownership to
+        // another caller — the pill on `/`, or the tray, which post-processes through
+        // `recording-stop-complete`. Running it here too would claim the completion
+        // token twice.
+        return;
+      }
+
+      Analytics.trackTranscriptionSuccess();
+      await handleRecordingStop(true);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : String(error);
+      // Rust answers this when the capture already ended; it is not a failure.
+      if (message.includes('No recording in progress')) return;
+      console.error('Failed to stop recording from the shell dock:', error);
+      // `false` takes the tokenless branch, which reports the error and keeps recovery
+      // data rather than waiting on transcripts that will never be claimed.
+      await handleRecordingStop(false);
+    } finally {
+      stopRequestInFlight.current = false;
+    }
+  }, [handleRecordingStop, setIsStopping]);
+
   const value = useMemo(
     () => ({
       isRecording,
@@ -67,9 +127,10 @@ export function RecordingSessionProvider({ children }: { children: React.ReactNo
       isRecordingDisabled,
       setIsRecordingDisabled,
       handleRecordingStop,
+      stopRecordingSession,
       setIsStopping,
     }),
-    [isRecording, isRecordingDisabled, handleRecordingStop, setIsStopping]
+    [isRecording, isRecordingDisabled, handleRecordingStop, stopRecordingSession, setIsStopping]
   );
 
   return (

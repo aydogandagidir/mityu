@@ -18,7 +18,10 @@ import { SessionDock } from '@/components/shell/SessionDock';
 
 export function ShellSessionDock() {
   const { isRecording, isPaused, activeDuration, isStopping } = useRecordingState();
-  const { handleRecordingStop } = useRecordingSession();
+  // `stopRecordingSession`, NOT `handleRecordingStop`: the latter is post-stop processing
+  // only and never ends the capture, which is why this button used to do nothing on every
+  // route but `/`.
+  const { stopRecordingSession } = useRecordingSession();
 
   useEffect(() => {
     const root = document.documentElement;
@@ -34,7 +37,7 @@ export function ShellSessionDock() {
       isPaused={isPaused}
       activeDuration={activeDuration}
       isStopping={isStopping}
-      onStop={() => void handleRecordingStop(true)}
+      onStop={() => void stopRecordingSession()}
     />
   );
 }

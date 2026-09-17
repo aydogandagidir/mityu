@@ -407,6 +407,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                             handleStartRecording();
                           }}
                           disabled={isStarting || isProcessing || isRecordingDisabled || isValidatingModel}
+                          aria-label="Start recording"
                           className={`w-12 h-12 flex items-center justify-center ${isStarting || isProcessing || isValidatingModel ? 'bg-muted' : 'bg-red-500 hover:bg-red-600'
                             } rounded-full text-white transition-colors relative`}
                         >
@@ -437,6 +438,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                               }
                             }}
                             disabled={isPausing || isResuming || isStopping}
+                            aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
                             className={`w-10 h-10 flex items-center justify-center ${isPausing || isResuming || isStopping
                               ? 'bg-secondary border-2 border-border text-muted-foreground'
                               : 'bg-card border-2 border-border text-muted-foreground hover:border-border hover:bg-muted'
@@ -463,6 +465,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                               handleStopRecording();
                             }}
                             disabled={isStopping || isPausing || isResuming}
+                            aria-label="Stop recording"
                             className={`w-10 h-10 flex items-center justify-center ${isStopping || isPausing || isResuming ? 'bg-muted' : 'bg-red-500 hover:bg-red-600'
                               } rounded-full text-white transition-colors relative`}
                           >
