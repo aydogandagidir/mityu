@@ -11,6 +11,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::task::JoinHandle;
 
@@ -50,11 +51,31 @@ struct PendingCompletedRecording {
     reserved: bool,
     persisted: bool,
     meeting_id: Option<String>,
+    /// When the stop that created this entry happened. Only used to decide how
+    /// long it may keep blocking a new recording -- see `PENDING_SAVE_GRACE`.
+    completed_at: Instant,
 }
 
 // The renderer receives only the opaque token. The filesystem path stored here
 // remains the authority and can be reserved by exactly one matching save.
 const MAX_PENDING_COMPLETED_RECORDINGS: usize = 32;
+
+/// How long an unacknowledged save may keep refusing new recordings.
+///
+/// A save that is still running deserves to be waited for: starting a second
+/// capture while the first is being flushed and transcribed competes for the
+/// same CPU. But the renderer acknowledges the save at the END of its success
+/// path, so ANY failure before that -- a transcription that overran its own 60s
+/// wait, a database error, a thrown promise -- left the entry unacknowledged
+/// forever. The guard was `!pending.is_empty()`, so one such entry refused
+/// every start for the rest of the process's life, with "The previous recording
+/// is still being saved" as the only explanation. Nothing the user could do
+/// cleared it: closing the window only hides the app.
+///
+/// Past this window a save is not "still running", it is stuck. The entry stays
+/// in the list -- its folder is still the authority for recovery, and it can
+/// still be claimed -- but it stops holding the record button hostage.
+const PENDING_SAVE_GRACE: Duration = Duration::from_secs(120);
 static PENDING_COMPLETED_RECORDINGS: Mutex<Vec<PendingCompletedRecording>> = Mutex::new(Vec::new());
 
 // Listener ID for proper cleanup - prevents microphone from staying active after recording stops
@@ -624,6 +645,21 @@ pub async fn stop_recording<R: Runtime>(
         global_manager.take()
     };
 
+    // The manager is now OUT of the global — this is the point of no return, so
+    // the flag stops being true here rather than at the end of the happy path.
+    //
+    // It used to be cleared only near the end of this function. Every fallible
+    // step in between could `return Err` first (stopping the streams, most
+    // obviously), leaving IS_RECORDING true with no manager behind it: the tray
+    // and `useRecordingStateSync` then showed a recording in progress that did
+    // not exist, the UI replaced the record button with pause/stop, and every
+    // later start was refused with "Recording already in progress" until the
+    // process was killed. Closing the window does not kill it — CloseRequested
+    // hides the window — so the user could not clear it at all.
+    //
+    // `false` is simply the truth from this line on: nothing is capturing.
+    IS_RECORDING.store(false, Ordering::SeqCst);
+
     let stop_result = if let Some(mut manager) = manager_for_cleanup {
         // Use FORCE FLUSH to immediately process all accumulated audio - eliminates 30s delay!
         info!("🚀 Using FORCE FLUSH to eliminate pipeline accumulation delays");
@@ -1174,6 +1210,7 @@ fn install_pending_completed_recording(
         reserved: false,
         persisted: false,
         meeting_id: None,
+        completed_at: Instant::now(),
     };
     let completion_token = pending.completion_token.clone();
 
@@ -1195,14 +1232,36 @@ fn install_pending_completed_recording(
 }
 
 pub(crate) fn is_recording_post_processing_pending() -> bool {
+    let now = Instant::now();
     PENDING_COMPLETED_RECORDINGS
         .lock()
-        .map(|pending_recordings| pending_recordings_block_start(&pending_recordings))
+        .map(|pending_recordings| {
+            let blocking = pending_recordings_block_start(&pending_recordings, now);
+            if !blocking && !pending_recordings.is_empty() {
+                // Worth a line in the log: the user is being let through while a
+                // save is still outstanding, and that save is the reason their
+                // previous meeting may be sitting in recovery.
+                warn!(
+                    "Allowing a new recording with {} unacknowledged save(s) older than {}s; the previous recording remains in recovery",
+                    pending_recordings.len(),
+                    PENDING_SAVE_GRACE.as_secs()
+                );
+            }
+            blocking
+        })
         .unwrap_or(true)
 }
 
-fn pending_recordings_block_start(pending_recordings: &[PendingCompletedRecording]) -> bool {
-    !pending_recordings.is_empty()
+/// Whether any pending save is recent enough to still be worth waiting for.
+///
+/// Pure and taking `now` so the grace window is testable without sleeping.
+fn pending_recordings_block_start(
+    pending_recordings: &[PendingCompletedRecording],
+    now: Instant,
+) -> bool {
+    pending_recordings.iter().any(|pending_recording| {
+        now.duration_since(pending_recording.completed_at) < PENDING_SAVE_GRACE
+    })
 }
 
 fn reserve_pending_completed_recording(
@@ -1674,7 +1733,17 @@ mod completed_recording_save_tests {
             reserved: false,
             persisted: false,
             meeting_id: None,
+            completed_at: Instant::now(),
         }]
+    }
+
+    /// The same entry, but stamped as having finished `age` ago.
+    fn pending_aged(token: &str, age: Duration) -> Vec<PendingCompletedRecording> {
+        let mut state = pending(token);
+        state[0].completed_at = Instant::now()
+            .checked_sub(age)
+            .expect("test clock should support the requested age");
+        state
     }
 
     fn reserve(
@@ -1691,6 +1760,55 @@ mod completed_recording_save_tests {
         assert!(reserve(&mut state, None).is_none());
         assert_eq!(state.len(), 1);
         assert!(!state[0].reserved);
+    }
+
+    #[test]
+    fn a_save_still_inside_the_grace_window_blocks_a_new_recording() {
+        // The guard exists for a reason: a save that is genuinely running
+        // should not have a second capture started on top of it.
+        let state = pending_aged("completion-token", Duration::from_secs(5));
+        assert!(pending_recordings_block_start(&state, Instant::now()));
+    }
+
+    #[test]
+    fn a_save_that_outlived_the_grace_window_stops_blocking() {
+        // THE BUG. The renderer acknowledges at the end of its success path, so
+        // any failure before that left this entry forever. `!is_empty()` then
+        // refused every start for the life of the process, and closing the
+        // window does not end the process.
+        let state = pending_aged(
+            "completion-token",
+            PENDING_SAVE_GRACE + Duration::from_secs(1),
+        );
+        assert!(!pending_recordings_block_start(&state, Instant::now()));
+    }
+
+    #[test]
+    fn the_stale_entry_survives_so_the_recording_is_still_recoverable() {
+        // Not blocking must not mean discarding: the folder is the authority
+        // for recovery and the token must still be claimable afterwards.
+        let mut state = pending_aged(
+            "completion-token",
+            PENDING_SAVE_GRACE + Duration::from_secs(1),
+        );
+        assert!(!pending_recordings_block_start(&state, Instant::now()));
+        assert_eq!(state.len(), 1);
+
+        let (token, folder) = reserve(&mut state, Some("completion-token")).unwrap();
+        assert_eq!(token, "completion-token");
+        assert_eq!(folder, Some(PathBuf::from("trusted-recording-folder")));
+    }
+
+    #[test]
+    fn one_fresh_save_among_stale_ones_still_blocks() {
+        let mut state = pending_aged("old-token", PENDING_SAVE_GRACE + Duration::from_secs(30));
+        state.extend(pending("fresh-token"));
+        assert!(pending_recordings_block_start(&state, Instant::now()));
+    }
+
+    #[test]
+    fn no_pending_saves_never_blocks() {
+        assert!(!pending_recordings_block_start(&[], Instant::now()));
     }
 
     #[test]
@@ -1722,7 +1840,7 @@ mod completed_recording_save_tests {
             Some("meeting-a")
         );
         assert!(persisted_meeting_id(&state, &token, "workspace-b", "user-a").is_none());
-        assert!(pending_recordings_block_start(&state));
+        assert!(pending_recordings_block_start(&state, Instant::now()));
         assert!(reserve(&mut state, Some("completion-token")).is_none());
 
         assert!(acknowledge_pending_completed_recording(
@@ -1732,7 +1850,7 @@ mod completed_recording_save_tests {
             "user-a"
         ));
         assert!(state.is_empty());
-        assert!(!pending_recordings_block_start(&state));
+        assert!(!pending_recordings_block_start(&state, Instant::now()));
     }
 
     #[test]
@@ -1830,7 +1948,7 @@ mod completed_recording_save_tests {
         let (_, folder) = reserve(&mut state, Some("completion-token")).unwrap();
 
         assert!(folder.is_none());
-        assert!(pending_recordings_block_start(&state));
+        assert!(pending_recordings_block_start(&state, Instant::now()));
     }
 
     #[test]

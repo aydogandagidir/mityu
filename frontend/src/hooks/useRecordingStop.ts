@@ -542,6 +542,15 @@ export function useRecordingStop(
     } finally {
       // Always reset the guard flag when done
       stopInProgressRef.current = false;
+      // And always re-enable the button. This is set true at the top of the
+      // stop, and one path out of here — the early `return` taken when another
+      // hook already owns this completion token — reached neither the success
+      // reset nor the catch one, leaving the record button greyed out with no
+      // message and no way back except restarting the app.
+      //
+      // A `finally` is the only placement that cannot be outrun by a new early
+      // return added later.
+      setIsRecordingDisabled(false);
     }
   }, [
     setIsRecording,

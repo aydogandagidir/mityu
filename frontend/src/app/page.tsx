@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { RecordingControls } from '@/components/RecordingControls';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { usePermissionCheck } from '@/hooks/usePermissionCheck';
+import { NoMicrophoneNotice } from '@/components/NoMicrophoneNotice';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useConfig } from '@/contexts/ConfigContext';
@@ -38,7 +39,7 @@ export default function Home() {
   const { status, isStopping, isProcessing, isSaving } = recordingState;
 
   // Hooks
-  const { hasMicrophone } = usePermissionCheck();
+  const { hasMicrophone, isChecking: isCheckingMicrophone, error: microphoneError, checkPermissions } = usePermissionCheck();
   const { setIsMeetingActive, isCollapsed: sidebarCollapsed, refetchMeetings } = useSidebar();
   const { modals, messages, showModal, hideModal } = useModalState(transcriptModelConfig);
   const { isRecordingDisabled, setIsRecordingDisabled } = useRecordingStateSync(isRecording, setIsRecordingState, setIsMeetingActive);
@@ -229,6 +230,28 @@ export default function Home() {
             showModal={showModal}
           />
         )}
+
+        {/* The recording slot is never empty. Without a microphone this used to
+            render nothing at all — no button and no reason — which is
+            indistinguishable from the app being broken. */}
+        {!hasMicrophone &&
+          !isRecording &&
+          !isCheckingMicrophone &&
+          status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
+          status !== RecordingStatus.SAVING && (
+            <div className="fixed bottom-12 left-0 right-0 z-10">
+              <div
+                className="flex justify-center pl-8 transition-[margin] duration-300"
+                style={{
+                  marginLeft: sidebarCollapsed ? '4rem' : '16rem'
+                }}
+              >
+                <div className="w-2/3 max-w-[750px] flex justify-center">
+                  <NoMicrophoneNotice error={microphoneError} onRetry={checkPermissions} />
+                </div>
+              </div>
+            </div>
+          )}
 
         {/* Recording controls - only show when permissions are granted or already recording and not showing status messages */}
         {(hasMicrophone || isRecording) &&
