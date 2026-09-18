@@ -59,6 +59,7 @@ pub mod context;
 /// posture. No AI, no capture of its own, and OFF by default — with the flag
 /// off nothing here registers a shortcut or creates a window.
 pub mod copilot;
+pub mod cpu;
 pub mod database;
 pub mod diarization;
 pub mod groq;
@@ -523,6 +524,13 @@ pub fn run() {
             tokio::sync::Mutex::new(None),
         )))
         .setup(|_app| {
+            // Before anything else can fail. v1.2.2 executed an AVX-512
+            // instruction on a CPU without AVX-512 and Windows killed the
+            // process mid-log; the file simply stopped, with no [ERROR] line and
+            // nothing naming the machine. One line here would have replaced a
+            // two-minidump disassembly. `verify-startup.sh` greps for the
+            // sentence below, so this goes above it, not in place of it.
+            log::info!("{}", crate::cpu::startup_line());
             log::info!("Application setup complete");
 
             // Initialize system tray

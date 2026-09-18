@@ -1,6 +1,6 @@
 use super::batch_processor::AudioMetricsBatcher;
 use crate::batch_audio_metric;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
@@ -755,7 +755,7 @@ impl AudioPipeline {
         mic_device_kind: super::device_detection::InputDeviceKind,
         system_device_name: String,
         system_device_kind: super::device_detection::InputDeviceKind,
-    ) -> Self {
+    ) -> Result<Self> {
         // Log device characteristics for adaptive buffering
         info!("🎛️ AudioPipeline initializing with device characteristics:");
         info!(
@@ -793,8 +793,13 @@ impl AudioPipeline {
                 processor
             }
             Err(e) => {
+                // This used to `panic!`. A panic here aborts the thread that is
+                // starting a recording the user just asked for, while it holds
+                // their audio — the one thing in this app that cannot be
+                // recreated. `start()` already returns Result; the failure
+                // belongs there, where the user is told and nothing is lost.
                 error!("Failed to create VAD processor: {}", e);
-                panic!("VAD processor creation failed: {}", e);
+                return Err(anyhow!("VAD processor creation failed: {}", e));
             }
         };
 
@@ -805,7 +810,7 @@ impl AudioPipeline {
         // Note: target_chunk_duration_ms is ignored - VAD controls segmentation now
         let _ = target_chunk_duration_ms;
 
-        Self {
+        Ok(Self {
             receiver,
             transcription_sender,
             state,
@@ -821,7 +826,7 @@ impl AudioPipeline {
             ring_buffer,
             mixer,
             recording_sender_for_mixed: None, // Will be set by manager
-        }
+        })
     }
 
     /// Run the VAD-driven audio processing pipeline
@@ -1088,7 +1093,7 @@ impl AudioPipelineManager {
             mic_device_kind,
             system_device_name,
             system_device_kind,
-        );
+        )?;
 
         // CRITICAL FIX: Connect recording sender to receive pre-mixed audio
         // This ensures both mic AND system audio are captured in recordings

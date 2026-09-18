@@ -97,7 +97,24 @@ pub(crate) struct EngineModels {
 
 /// The decision, separated from the I/O so the engine-blindness bug is
 /// expressible as a unit test.
-pub(crate) fn decide_readiness(provider: &str, models: &EngineModels) -> TranscriptionReadiness {
+pub(crate) fn decide_readiness(
+    provider: &str,
+    models: &EngineModels,
+    cpu_refusal: Option<&str>,
+) -> TranscriptionReadiness {
+    // Below the CPU floor nothing else matters: both engines run native code
+    // compiled for a baseline this machine does not have, so an installed model
+    // would not help. Passed in rather than probed here so that a below-floor
+    // machine is expressible in a test on a machine that is above it.
+    if let Some(refusal) = cpu_refusal {
+        return TranscriptionReadiness {
+            ready: false,
+            provider: provider.to_string(),
+            downloading: false,
+            reason: Some(refusal.to_string()),
+        };
+    }
+
     let (available, downloading) = match provider {
         "localWhisper" => (models.whisper_available, models.whisper_downloading),
         "parakeet" => (models.parakeet_available, models.parakeet_downloading),
@@ -191,7 +208,11 @@ async fn read_engine_models() -> EngineModels {
 pub async fn api_transcription_readiness<R: Runtime>(app: AppHandle<R>) -> TranscriptionReadiness {
     let provider = configured_provider(&app).await;
     let models = read_engine_models().await;
-    let readiness = decide_readiness(&provider, &models);
+    let readiness = decide_readiness(
+        &provider,
+        &models,
+        crate::cpu::refusal_sentence().as_deref(),
+    );
     info!(
         "🔍 transcription readiness: provider={} ready={} downloading={}",
         readiness.provider, readiness.ready, readiness.downloading
@@ -222,6 +243,18 @@ async fn configured_provider<R: Runtime>(app: &AppHandle<R>) -> String {
 pub async fn validate_transcription_model_ready<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<(), String> {
+    // The authoritative gate. `decide_readiness` only decides what the UI
+    // offers; a stale frontend, the tray, or a shortcut can still arrive here.
+    // Loading either engine's native model on a below-floor CPU terminates the
+    // process, so this refuses first and says why.
+    if let Some(refusal) = crate::cpu::refusal_sentence() {
+        log::error!(
+            "Refusing to record: CPU is below the build baseline. {}",
+            crate::cpu::startup_line()
+        );
+        return Err(refusal);
+    }
+
     // Check transcript configuration to determine which engine to validate
     let config =
         match crate::api::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
@@ -654,7 +687,7 @@ mod readiness_tests {
     /// record at all — on the core path of the product.
     #[test]
     fn a_whisper_user_is_ready_without_any_parakeet_model() {
-        let r = decide_readiness("localWhisper", &models(true, false));
+        let r = decide_readiness("localWhisper", &models(true, false), None);
         assert!(r.ready, "Whisper is configured and installed: {r:?}");
         assert_eq!(r.provider, "localWhisper");
         assert!(r.reason.is_none());
@@ -663,7 +696,7 @@ mod readiness_tests {
     /// And the mirror image, so the fix cannot be "always say yes".
     #[test]
     fn a_parakeet_user_is_ready_without_any_whisper_model() {
-        let r = decide_readiness("parakeet", &models(false, true));
+        let r = decide_readiness("parakeet", &models(false, true), None);
         assert!(r.ready, "{r:?}");
         assert_eq!(r.provider, "parakeet");
     }
@@ -671,8 +704,8 @@ mod readiness_tests {
     #[test]
     fn each_engine_is_judged_only_by_its_own_models() {
         // Configured engine missing, the OTHER engine installed: still not ready.
-        assert!(!decide_readiness("localWhisper", &models(false, true)).ready);
-        assert!(!decide_readiness("parakeet", &models(true, false)).ready);
+        assert!(!decide_readiness("localWhisper", &models(false, true), None).ready);
+        assert!(!decide_readiness("parakeet", &models(true, false), None).ready);
     }
 
     /// "Wait for the download" and "go and install one" are different
@@ -684,7 +717,7 @@ mod readiness_tests {
             whisper_downloading: true,
             ..Default::default()
         };
-        let r = decide_readiness("localWhisper", &m);
+        let r = decide_readiness("localWhisper", &m, None);
         assert!(!r.ready);
         assert!(r.downloading);
         let reason = r.reason.expect("a reason");
@@ -697,18 +730,77 @@ mod readiness_tests {
 
     #[test]
     fn a_missing_model_names_the_engine_the_user_chose() {
-        let whisper = decide_readiness("localWhisper", &models(false, false));
+        let whisper = decide_readiness("localWhisper", &models(false, false), None);
         assert!(whisper.reason.expect("reason").contains("Local Whisper"));
-        let parakeet = decide_readiness("parakeet", &models(false, false));
+        let parakeet = decide_readiness("parakeet", &models(false, false), None);
         assert!(parakeet.reason.expect("reason").contains("Parakeet"));
     }
 
     /// A cloud provider cannot transcribe locally. The refusal says which one
     /// and what to do, rather than the old generic "model not ready".
     #[test]
+    fn a_cpu_below_the_build_baseline_is_refused_before_anything_else() {
+        // The whole point of passing the refusal in rather than probing inside:
+        // a below-floor machine is now expressible on a machine that is above
+        // one. Without this the guard would ship untested, which is how the
+        // crash it exists to prevent reached users in the first place.
+        const REFUSAL: &str = "This processor does not support AVX2, ...";
+
+        // It outranks an installed, ready model — a model cannot help when the
+        // native code that loads it cannot execute.
+        for provider in ["localWhisper", "parakeet"] {
+            let r = decide_readiness(provider, &models(true, true), Some(REFUSAL));
+            assert!(!r.ready, "{provider} must be refused below the CPU floor");
+            assert_eq!(r.reason.as_deref(), Some(REFUSAL));
+            assert_eq!(
+                r.provider, provider,
+                "the refusal still names the chosen engine"
+            );
+            assert!(
+                !r.downloading,
+                "a download in flight is irrelevant and must not be reported as 'wait'"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unsupported_provider_below_the_floor_is_told_about_the_cpu_first() {
+        // Two refusals compete. The CPU one wins, because changing the engine
+        // in Settings is advice that cannot work on this machine.
+        let r = decide_readiness("openai", &models(false, false), Some("cpu says no"));
+        assert!(!r.ready);
+        assert_eq!(r.reason.as_deref(), Some("cpu says no"));
+    }
+
+    #[test]
+    fn a_cpu_above_the_floor_changes_nothing() {
+        // `None` must mean exactly the pre-guard behaviour, or the new parameter
+        // has quietly become a second way for readiness to be wrong. Asserting
+        // the VALUES, not comparing the call to itself.
+        let ready = decide_readiness("parakeet", &models(false, true), None);
+        assert!(ready.ready);
+        assert_eq!(ready.reason, None);
+        assert_eq!(ready.provider, "parakeet");
+
+        let missing = decide_readiness("localWhisper", &models(false, false), None);
+        assert!(!missing.ready);
+        assert!(missing
+            .reason
+            .unwrap()
+            .contains("No Local Whisper model is installed"));
+
+        let unsupported = decide_readiness("openai", &models(true, true), None);
+        assert!(!unsupported.ready);
+        assert!(unsupported
+            .reason
+            .unwrap()
+            .contains("cannot transcribe on this device"));
+    }
+
+    #[test]
     fn a_non_local_provider_is_refused_by_name() {
         for provider in ["deepgram", "openai", "groq", "elevenLabs", ""] {
-            let r = decide_readiness(provider, &models(true, true));
+            let r = decide_readiness(provider, &models(true, true), None);
             assert!(!r.ready, "{provider} must not be recordable locally");
             assert_eq!(r.provider, provider);
             let reason = r.reason.expect("a reason");
@@ -727,7 +819,7 @@ mod readiness_tests {
             parakeet_available: false,
             parakeet_downloading: true,
         };
-        let r = decide_readiness("localWhisper", &m);
+        let r = decide_readiness("localWhisper", &m, None);
         assert!(r.ready);
         assert!(!r.downloading, "a Parakeet download is not a Whisper wait");
     }

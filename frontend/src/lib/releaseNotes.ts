@@ -43,6 +43,39 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.2.3',
+    date: '2026-09-18',
+    headline: 'Recording no longer closes the app on processors without AVX-512.',
+    changes: [
+      {
+        title: 'The app no longer disappears when you press Record',
+        detail:
+          'On many processors — including most consumer laptops sold in the last few years — pressing Record closed Mityu instantly, with no message and nothing written to the log. The build had been compiled to use an instruction set (AVX-512) that those processors do not have, so the processor refused the instruction and Windows ended the program. Mityu is now built for a processor baseline that every machine from roughly 2013 onwards meets, and that baseline is written down in the project instead of being inherited from whichever machine compiled the release.',
+      },
+      {
+        title: 'If your processor is too old, you are told so instead of losing the app',
+        detail:
+          'Mityu now checks the processor before it starts recording. On a machine below the supported baseline the Record button is refused with a sentence explaining why, rather than the program closing without warning.',
+      },
+      {
+        title: 'The log now says what your processor supports',
+        detail:
+          'One line at startup records the processor features Mityu found. If anything like this ever happens again, that line turns a forensic investigation into a single look at the log.',
+      },
+      {
+        title: 'A voice-detection failure can no longer take the app down with it',
+        detail:
+          'If the voice-activity detector failed to start, the app aborted the thread that was starting your recording — while it was holding audio that cannot be recreated. It now reports the failure and leaves the app running.',
+      },
+    ],
+    caveats: [
+      'This was not new in 1.2.2. The same instruction was in 1.2.1 as well; it never fired because 1.2.1 could not start a recording at all. Do not downgrade — 1.2.1 is worse, not safer.',
+      'Verified on Windows on an AMD Ryzen 7 7435HS, which is one of the affected processors. macOS remains unverified, as does the Vulkan GPU path.',
+      'No automated test runs the built application yet. This release was checked by hand. Adding that gate is the next piece of work, and it is the gate whose absence let this reach users.',
+      'One open question remains: instructions above the new baseline were reported inside the speech-recognition runtime we do not compile ourselves. Nothing confirmed or ruled it out, which is why this release was tested by hand on an affected machine rather than declared safe from the build alone.',
+    ],
+  },
+  {
     version: '1.2.2',
     date: '2026-09-18',
     headline: 'The Stop button outside the home screen now actually stops the recording.',

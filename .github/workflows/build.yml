@@ -156,7 +156,12 @@ jobs:
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: ". -> target"
-          key: ${{ inputs.platform }}-${{ inputs.target }}-vulkan-v2
+          # -v3: the v1.2.2 release restored target/ from this cache and never
+          # recompiled whisper-rs-sys, so its ggml objects came from an earlier
+          # runner. The CPU-baseline toolchain file only takes effect on a
+          # rebuild, so the key has to move with it or the fix ships as a no-op.
+          # Confirm "Compiling whisper-rs-sys" appears in the release build log.
+          key: ${{ inputs.platform }}-${{ inputs.target }}-vulkan-v3
 
       - name: install dependencies (ubuntu 24.04)
         if: contains(inputs.platform, 'ubuntu-24.04')
