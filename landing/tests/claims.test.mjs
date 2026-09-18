@@ -7,7 +7,7 @@ import test from 'node:test';
  *
  * This file replaces `whats-new.test.mjs`, which guarded a per-release
  * changelog that used to sit on the homepage between the product story and
- * pricing. That section is gone (ADR-0049). Release history belongs on a
+ * pricing. That section is gone (ADR-0074). Release history belongs on a
  * destination of its own — the pattern every comparable product follows:
  * Anthropic keeps it on docs and support subdomains, Google Antigravity on
  * `/changelog` and `/releases`, neither on the marketing page. Mityu's is
@@ -88,7 +88,7 @@ test('release history is linked, not reproduced, and the page keeps no changelog
   );
   // The homepage is a product story. A changelog section, a roadmap list, or a
   // column of version badges belongs elsewhere — this is the regression guard
-  // for the section ADR-0049 removed.
+  // for the section ADR-0074 removed.
   assert.doesNotMatch(index, /data-release=/, 'no per-release changelog markup on the homepage');
   assert.doesNotMatch(index, /id="whats-new"/, 'no what-is-new section on the homepage');
   // Narrow on purpose. "macOS in development" is a platform fact a buyer needs
