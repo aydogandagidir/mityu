@@ -23,3 +23,29 @@
 # environment variable that is already set, so CI's explicit value still wins.
 [env]
 SHERPA_ONNX_ARCHIVE_DIR = { value = "target/sherpa-archive", relative = true }
+
+# The CPU instruction-set baseline for every CMake dependency built from source.
+#
+# v1.2.2 shipped an AVX-512 instruction into a build that runs on CPUs without
+# AVX-512, because ggml's GGML_NATIVE default makes CMake probe THE BUILD MACHINE
+# and then apply the answer image-wide with no runtime dispatch. The instruction
+# set of a release was therefore a property of whichever GitHub runner picked up
+# the job. `cmake/mityu-cpu-baseline.cmake` has the full account.
+#
+# It lives at the repo ROOT on purpose: a developer building locally and a CI
+# runner building the release must get the same ISA. They did not, which is why
+# the smoke test passed on the same machine that the release then crashed on.
+#
+# cmake-rs reads CMAKE_TOOLCHAIN_FILE from the environment (cmake-0.1.58
+# src/lib.rs:450) and forwards it as -D. It tries the target-suffixed name first,
+# so this applies ONLY to the Windows MSVC target. That is deliberate: when
+# target != host, cmake-rs SKIPS its own CMAKE_SYSTEM_NAME/PROCESSOR setup if a
+# toolchain file is defined, which would break a macOS cross-build. Windows is
+# the only platform that ships today. Extending this to the Apple targets needs
+# the toolchain file to set CMAKE_SYSTEM_NAME itself — do that when macOS ships,
+# not before, and test a universal build when you do.
+#
+# `relative = true` resolves against this file's parent, i.e. the repo root.
+# Cargo does not override a variable that is already set, so CI can still steer
+# this explicitly if it ever needs to.
+CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc = { value = "cmake/mityu-cpu-baseline.cmake", relative = true }
