@@ -705,7 +705,7 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Is my audio uploaded anywhere?</summary>
-        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize or ask about is sent to that provider — your audio never leaves the machine. The beta live copilot is stricter still: in the current release it works only with a model running on your device, so what it reads never reaches a cloud provider at all.</p>
+        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize or ask about is sent to that provider — your audio never leaves the machine. The beta live copilot ships stricter still: its &ldquo;Allow cloud insights&rdquo; setting is off, so it answers only with a model running on your device and refuses rather than sending anything away. Turning that setting on under Settings &rarr; Beta sends the last few minutes of transcript to the provider you configured, on every action you press.</p>
       </details>
       <details>
         <summary>Does a bot join my meetings?</summary>
@@ -721,11 +721,11 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Which models and API keys can I use?</summary>
-        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Ask this meeting uses that same model choice. The beta live copilot does not: in the current release it works only with a model running on your device.</p>
+        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Ask this meeting uses that same model choice. The beta live copilot ships restricted to a model running on your device, and will use your cloud provider only if you turn on &ldquo;Allow cloud insights&rdquo; under Settings &rarr; Beta.</p>
       </details>
       <details>
         <summary>What is the live copilot, and is it on?</summary>
-        <p class="a">It is off by default, and it is a beta. Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. In the current release it works only with a model running on your device, so the conversation it reads does not reach a cloud provider. It never records on its own, never hides Mityu from you or anyone in the room, and on Windows it can stay out of your screen share. It has not yet been checked against a real model, which is why it is a beta and why we publish no accuracy or latency figure for it.</p>
+        <p class="a">It is off by default, and it is a beta. Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. It ships with &ldquo;Allow cloud insights&rdquo; off, so it answers only with a model running on your device and refuses rather than sending anything away; turning that on sends the last few minutes of the conversation to the provider you configured, on every action you press. It never records on its own, never hides Mityu from you or anyone in the room, and on Windows it can stay out of your screen share. It has not yet been checked against a real model, which is why it is a beta and why we publish no accuracy or latency figure for it.</p>
       </details>
       <details>
         <summary>Can I ask a meeting a question afterwards?</summary>
