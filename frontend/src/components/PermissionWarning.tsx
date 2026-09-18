@@ -120,13 +120,24 @@ export function PermissionWarning({
                     : 'System audio capture is also not available.'}
                 </p>
                 {isMacOS && (
-                  <div className="space-y-2 text-sm mb-4">
+                  <div className="mb-4 space-y-2 text-body">
+                    {/* Mityu captures system audio through ScreenCaptureKit or a Core
+                        Audio tap. It needs a PERMISSION, not a virtual audio device —
+                        this used to tell people to install BlackHole and rewire their
+                        machine in Audio MIDI Setup to fix something that is a checkbox.
+                        See CLAUDE.md §4. */}
                     <p className="font-medium">To enable system audio on macOS:</p>
-                    <ul className="list-disc list-inside ml-2 space-y-1">
-                      <li>Install a virtual audio device (e.g., BlackHole 2ch)</li>
-                      <li>Grant Screen Recording permission to Mityu</li>
-                      <li>Configure your audio routing in Audio MIDI Setup</li>
+                    <ul className="ml-2 list-inside list-disc space-y-1">
+                      <li>
+                        Open System Settings → Privacy &amp; Security → Screen &amp;
+                        System Audio Recording and allow Mityu
+                      </li>
+                      <li>Restart Mityu so it can pick up the permission</li>
                     </ul>
+                    <p className="text-caption">
+                      No virtual audio device is needed. If you already have one
+                      installed it is left alone.
+                    </p>
                   </div>
                 )}
               </>

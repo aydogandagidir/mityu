@@ -1,153 +1,279 @@
 'use client';
 
 /**
- * HomeDashboard — Phase C (docs/DESIGN_READAI.md): the "For You" analogue, shown on
- * the home route while idle (no recording in progress, no live transcript). Recent
- * meetings render as report cards; clicking one opens its meeting report. Purely
- * on-device: it reads the already-loaded meetings list, nothing else.
+ * Home, while idle — DESIGN_SYSTEM.md §6.1.
  *
- * The wire (`api_get_meetings`) carries only { id, title }, so the date meta is
- * best-effort parsed from auto-generated titles ("Meeting YYYY-MM-DD_HH-MM-SS");
- * renamed meetings simply show no date. Deliberately no fabricated metrics.
+ * It was a grid of meeting cards plus a list of open action items. The cards showed a
+ * date parsed with a regular expression out of the auto-generated title, so a renamed
+ * meeting lost its date and a meeting someone called "2026-01-02_notes" gained a wrong
+ * one. The action items — model output no person had approved — shipped with no Art. 50
+ * marking, no link to the segment they came from, and no way to act on them.
+ *
+ * It is now a review queue. What needs a human decision is first and reviewable in
+ * place; the library is a digest below it, and the pane beside it holds the rest.
+ *
+ * DATA HONESTY. `api_get_meetings` carries `{id, title}` and nothing else, so no date is
+ * printed and no metric tile is drawn for a number this app cannot actually produce
+ * today. The regex is deleted rather than kept behind a guard: a date that is right most
+ * of the time is worse than no date, because nothing tells the reader which kind they
+ * are looking at.
+ *
+ * 🔒 `Analytics.trackPageView('home')` stays in `app/page.tsx`, and nothing on this
+ * surface reports anything about the content it shows.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, FileText, ListChecks, Mic, NotebookPen } from 'lucide-react';
+import { ChevronRight, FileText, Mic } from 'lucide-react';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
-import { summaryDraftService, OpenActionItem } from '@/services/summaryDraftService';
+import {
+  summaryDraftService,
+  type OpenActionItem,
+} from '@/services/summaryDraftService';
 import { isTauri } from '@/lib/isTauri';
+import { PageHeader } from '@/components/shell/PageHeader';
+import { ActionItemRow, type ActionItemRowItem } from '@/components/actions/ActionItemRow';
+import { Card } from '@/components/ui/card';
+import { Notice } from '@/components/ui/notice';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { focusRing } from '@/components/ui/focus-ring';
+import { sampleMeetingHref } from '@/lib/tour';
+import { cn } from '@/lib/utils';
 
-function parseTitleDate(title: string): string | null {
-  const m = title.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  const d = new Date(
-    Number(m[1]), Number(m[2]) - 1, Number(m[3]),
-    Number(m[4]), Number(m[5]), Number(m[6]),
-  );
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(undefined, {
-    weekday: 'short', day: 'numeric', month: 'short',
-  }) + ' · ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+/** How many drafts the queue asks for. The backend caps and orders; this only bounds. */
+const QUEUE_LIMIT = 8;
+/** How many meetings the digest shows before deferring to the pane. */
+const DIGEST_LIMIT = 6;
+
+export interface HomeDashboardProps {
+  /**
+   * Injected by `/design/home` so the fixture renders the real screen with fixture data
+   * and adds no mount-time `invoke` — the `LearningSettings` pattern. Product code never
+   * passes it.
+   */
+  service?: Pick<
+    typeof summaryDraftService,
+    'getOpenActionItems' | 'approveActionItem' | 'rejectActionItem' | 'editActionItem'
+  >;
+  /** Fixture-only: skip the Tauri guard so the queue renders in a browser. */
+  forceLoad?: boolean;
 }
 
-export function HomeDashboard() {
+type QueueState =
+  | { phase: 'loading' }
+  | { phase: 'ready'; items: OpenActionItem[] }
+  | { phase: 'error' };
+
+export function HomeDashboard({ service, forceLoad = false }: HomeDashboardProps) {
   const router = useRouter();
   const { meetings, setCurrentMeeting } = useSidebar();
+  const api = service ?? summaryDraftService;
 
-  const recent = meetings.slice(0, 9);
+  const [queue, setQueue] = useState<QueueState>({ phase: 'loading' });
+  const [reloadToken, setReloadToken] = useState(0);
 
-  // Open action items across meetings (api_get_open_action_items). Failure is
-  // silent by design — the dashboard degrades to meetings-only.
-  const [actionItems, setActionItems] = useState<OpenActionItem[]>([]);
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri() && !forceLoad) {
+      setQueue({ phase: 'ready', items: [] });
+      return;
+    }
     let cancelled = false;
-    summaryDraftService
-      .getOpenActionItems(8)
-      .then((items) => { if (!cancelled) setActionItems(items); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [meetings.length]);
+    setQueue({ phase: 'loading' });
+    api
+      .getOpenActionItems(QUEUE_LIMIT)
+      .then((items) => {
+        if (!cancelled) setQueue({ phase: 'ready', items });
+      })
+      .catch(() => {
+        // Never log the item text. A failure here is visible, not silent: this is the
+        // queue of things a person still has to decide on.
+        if (!cancelled) setQueue({ phase: 'error' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, forceLoad, meetings.length, reloadToken]);
 
-  const openMeeting = (id: string, title: string) => {
-    setCurrentMeeting({ id, title });
-    router.push(`/meeting-details?id=${id}`);
-  };
+  const openMeeting = useCallback(
+    (id: string, title: string) => {
+      setCurrentMeeting({ id, title });
+      router.push(`/meeting-details?id=${id}`);
+    },
+    [router, setCurrentMeeting]
+  );
+
+  const jumpToSource = useCallback(
+    (item: ActionItemRowItem) => {
+      setCurrentMeeting({ id: item.meeting_id, title: item.meeting_title });
+      const params = new URLSearchParams({
+        id: item.meeting_id,
+        segment: item.source_chunk_id,
+        source: 'home-queue',
+        jump: `${Date.now()}`,
+      });
+      router.push(`/meeting-details?${params.toString()}`);
+    },
+    [router, setCurrentMeeting]
+  );
+
+  const items = queue.phase === 'ready' ? queue.items : [];
+  const digest = meetings.slice(0, DIGEST_LIMIT);
+  const nothingRecordedYet = meetings.length === 0;
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-4xl px-8 py-10">
-        {/* Hero */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Welcome back
-          </h1>
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Mic className="h-3.5 w-3.5" aria-hidden />
-            Start a recording below, or pick up where you left off.
-          </p>
-        </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <PageHeader
+        eyebrow="Home"
+        title="Needs review"
+        meta={
+          queue.phase === 'ready' && items.length > 0
+            ? `${items.length} action ${items.length === 1 ? 'item' : 'items'} awaiting a decision`
+            : undefined
+        }
+      />
 
-        {recent.length > 0 && (
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <NotebookPen className="h-4 w-4 text-muted-foreground" aria-hidden />
-              <h2 className="text-sm font-semibold text-foreground">Recent meetings</h2>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
-                {meetings.length}
+      <div className="space-y-6 p-gutter">
+        <section aria-labelledby="home-queue-heading" className="space-y-2">
+          <h2 id="home-queue-heading" className="sr-only">
+            Action items awaiting review
+          </h2>
+
+          {queue.phase === 'loading' && (
+            <Card className="p-4">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="mt-3 h-4 w-1/2" />
+              <span className="sr-only" role="status">
+                Loading action items awaiting review
               </span>
-            </div>
+            </Card>
+          )}
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {recent.map((m) => {
-                const date = parseTitleDate(m.title);
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => openMeeting(m.id, m.title)}
-                    className="group flex items-start gap-3 rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
-                  >
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                      <FileText className="h-4 w-4" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-foreground">
-                        {m.title}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {date ?? 'Meeting report'}
-                      </span>
-                    </span>
-                    <ChevronRight
-                      className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 transition-all group-hover:translate-x-0.5 group-hover:text-primary"
-                      aria-hidden
-                    />
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
+          {queue.phase === 'error' && (
+            <Notice
+              tone="destructive"
+              title="Action items could not be loaded"
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReloadToken((n) => n + 1)}
+                >
+                  Retry
+                </Button>
+              }
+            >
+              Your meetings are unaffected. Nothing was approved or rejected.
+            </Notice>
+          )}
 
-        {actionItems.length > 0 && (
-          <section className="mt-8">
-            <div className="mb-3 flex items-center gap-2">
-              <ListChecks className="h-4 w-4 text-muted-foreground" aria-hidden />
-              <h2 className="text-sm font-semibold text-foreground">Open action items</h2>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
-                {actionItems.length}
-              </span>
-            </div>
-            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          {queue.phase === 'ready' && items.length > 0 && (
+            <Card className="overflow-hidden p-0">
               <ul className="divide-y divide-border">
-                {actionItems.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => openMeeting(item.meeting_id, item.meeting_title)}
-                      className="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
-                    >
-                      <span
-                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                          item.status === 'approved' ? 'bg-green-500' : 'bg-primary'
-                        }`}
-                        title={item.status === 'approved' ? 'Approved' : 'Awaiting review'}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-foreground">{item.text}</span>
-                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                          {item.meeting_title}
-                          {item.due ? ` · due ${item.due}` : ''}
-                        </span>
-                      </span>
-                      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 transition-all group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden />
-                    </button>
-                  </li>
+                {items.map((item) => (
+                  <ActionItemRow
+                    key={item.id}
+                    item={item}
+                    onJumpToSource={jumpToSource}
+                    onApprove={(id) => api.approveActionItem(id)}
+                    onReject={(id, reason) => api.rejectActionItem(id, reason)}
+                    onEdit={(id, text) => api.editActionItem(id, { text })}
+                  />
                 ))}
               </ul>
+            </Card>
+          )}
+
+          {queue.phase === 'ready' && items.length === 0 && !nothingRecordedYet && (
+            <Card className="p-0">
+              <EmptyState
+                variant="filtered"
+                icon={FileText}
+                title="Nothing waiting on you"
+                description="Action items appear here as soon as a summary produces them."
+              />
+            </Card>
+          )}
+        </section>
+
+        {nothingRecordedYet ? (
+          <section aria-labelledby="home-firstrun-heading" className="space-y-3">
+            <h2 id="home-firstrun-heading" className="sr-only">
+              Getting started
+            </h2>
+            <Card className="p-0">
+              <EmptyState
+                icon={Mic}
+                title="Nothing recorded yet"
+                description="Everything stays on this device — capture, transcription and the summary."
+                action={
+                  <Button
+                    variant="record"
+                    onClick={() =>
+                      window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'))
+                    }
+                  >
+                    <Mic className="size-4" aria-hidden="true" />
+                    Record your first meeting
+                  </Button>
+                }
+              />
+            </Card>
+            {/* The tour used to navigate here automatically, so the first thing a new
+                user saw was a report of a meeting they had never recorded. It is an
+                offer now. */}
+            <Card className="flex items-center gap-3 p-4">
+              <span className="grid size-9 shrink-0 place-items-center rounded-md bg-accent text-accent-foreground">
+                <FileText className="size-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-title-sm text-foreground">Try the sample report</p>
+                <p className="text-caption text-subtle-foreground">
+                  A short pre-recorded meeting that shows how review and source links work.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => router.push(sampleMeetingHref)}>
+                Open sample
+              </Button>
+            </Card>
+          </section>
+        ) : (
+          <section aria-labelledby="home-digest-heading" className="space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 id="home-digest-heading" className="text-title text-foreground">
+                Recent meetings
+              </h2>
+              <span className="text-caption tabular-nums text-subtle-foreground">
+                {meetings.length} total
+              </span>
             </div>
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {digest.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    onClick={() => openMeeting(m.id, m.title)}
+                    className={cn(
+                      'group flex w-full items-center gap-3 rounded-md border border-border bg-card p-3 text-left',
+                      'transition-colors duration-fast ease-out hover:bg-muted',
+                      focusRing('background')
+                    )}
+                  >
+                    <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-accent text-accent-foreground">
+                      <FileText className="size-4" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-body text-foreground">
+                      {m.title}
+                    </span>
+                    <ChevronRight
+                      className="size-4 shrink-0 text-subtle-foreground"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
       </div>

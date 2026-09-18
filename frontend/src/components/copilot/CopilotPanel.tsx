@@ -33,6 +33,7 @@ import { Eye, EyeOff, Mic, Monitor, Pause, Play, ShieldCheck, ShieldAlert, X } f
 import type { CopilotStatus } from '@/types/copilot';
 import { CopilotInsights, type InsightState } from './CopilotInsights';
 import type { TranscriptUpdate } from '@/types';
+import { cn } from '@/lib/utils';
 
 /** One line in the panel's transcript tail. */
 export interface PanelLine {
@@ -90,7 +91,7 @@ function ProtectionChip({ status }: { status: CopilotStatus }) {
   if (!status.config.contentProtection) {
     return (
       <span
-        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+        className="inline-flex items-center gap-1 text-caption text-muted-foreground"
         title="Hiding the panel from screen shares is switched off. Turn it on in Settings → Beta → Live copilot."
       >
         <Eye className="h-3 w-3 shrink-0" />
@@ -105,12 +106,12 @@ function ProtectionChip({ status }: { status: CopilotStatus }) {
     level === 'enforced'
       ? 'text-emerald-600 dark:text-emerald-400'
       : level === 'bestEffort'
-        ? 'text-amber-600 dark:text-amber-400'
+        ? 'text-warning-ink'
         : 'text-muted-foreground';
 
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[11px] ${tone}`}
+      className={`inline-flex items-center gap-1 text-caption ${tone}`}
       title={status.protection.detail}
     >
       <Icon className="h-3 w-3 shrink-0" />
@@ -207,9 +208,17 @@ export function CopilotPanel({
         {recording ? (
           <>
             <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground">
+              <span className="inline-flex items-center gap-1.5 text-caption font-medium text-foreground">
+                {/* `bg-warning-surface0` used to sit here — a token that does not
+                    exist, assembled inside a template literal where Tailwind's scanner
+                    could not see it, so the paused dot rendered with no fill at all.
+                    Square for paused, round for recording, matching the session dock:
+                    reduced motion removes the pulse, so shape is what is left. */}
                 <span
-                  className={`h-2 w-2 rounded-full ${paused ? 'bg-amber-500' : 'bg-red-500'}`}
+                  className={cn(
+                    'size-2 shrink-0',
+                    paused ? 'bg-warning' : 'rounded-full bg-recording'
+                  )}
                   aria-hidden
                 />
                 {paused ? 'Recording paused' : 'Recording'}
@@ -220,7 +229,7 @@ export function CopilotPanel({
                       <button
                         type="button"
                         onClick={onResume}
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-muted"
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted"
                       >
                         <Play className="h-3 w-3" /> Resume
                       </button>
@@ -229,7 +238,7 @@ export function CopilotPanel({
                       <button
                         type="button"
                         onClick={onPause}
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-muted"
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted"
                       >
                         <Pause className="h-3 w-3" /> Pause
                       </button>
@@ -240,7 +249,7 @@ export function CopilotPanel({
                   <button
                     type="button"
                     onClick={onOpenMainWindow}
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-muted"
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted"
                   >
                     <Monitor className="h-3 w-3" /> Open Mityu
                   </button>
@@ -272,7 +281,7 @@ export function CopilotPanel({
               <button
                 type="button"
                 onClick={onOpenMainWindow}
-                className="mt-1 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-muted"
+                className="mt-1 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted"
               >
                 <Monitor className="h-3 w-3" /> Open Mityu
               </button>
@@ -298,7 +307,7 @@ export function CopilotPanel({
       )}
 
       <footer className="shrink-0 border-t border-border px-3 py-2">
-        <p className="text-[10px] leading-snug text-muted-foreground">
+        <p className="text-caption leading-snug text-muted-foreground">
           <Eye className="mr-1 inline h-3 w-3 align-[-2px]" />
           {/* "Nothing it offers is saved" stopped being true when pinning
               shipped (ADR-0046): a pinned answer is written into the meeting's

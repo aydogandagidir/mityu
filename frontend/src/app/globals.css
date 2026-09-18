@@ -2,34 +2,340 @@
 @tailwind components;
 @tailwind utilities;
 
-@keyframes vibrate {
-  0% {
-    transform: translate(0);
+@layer base {
+  /*
+   * Design tokens — DESIGN_SYSTEM.md §4.2 / §4.3 (ADR-A, ADR-L).
+   *
+   * Bare HSL triplets, consumed as `hsl(var(--x))`, so every `/opacity` modifier
+   * in the codebase (`bg-primary/20`, `ring-ring/50`, `bg-muted/60`) keeps working.
+   * EVERY token is declared on BOTH `:root` and `.dark` — a token missing from one
+   * theme renders transparent there.
+   *
+   * Definitions stay class-scoped (`.dark`), never `@media (prefers-color-scheme)`:
+   * next-themes writes the class, /design wraps a subtree in `.dark` for
+   * side-by-side proof, and tools/ui/shoot.py depends on class-based theming.
+   *
+   * Naming convention for the status / register families:
+   *   x            solid fill          x-foreground  label ON the fill
+   *   x-surface    tint                x-ink         text / icon on the tint or on a card
+   *   x-border     hairline for the tint
+   */
+  :root {
+    /* ——— surfaces ——— */
+    --background:            220 24% 97%;   /* #F6F7F9  app ground, rail, Meetings pane */
+    --foreground:            218 22% 7%;    /* #0E1116  ink */
+    --card:                  0 0% 100%;     /* #FFFFFF  content pane, cards, rows */
+    --card-foreground:       218 22% 7%;
+    --popover:               0 0% 100%;
+    --popover-foreground:    218 22% 7%;
+    --surface-2:             225 20% 95%;   /* #F0F1F5  sunken wells, code, tracks */
+    --surface-3:             225 20% 92%;   /* #E7E9EF  pressed / selected well */
+
+    /* ——— text ——— */
+    --muted:                 225 20% 95%;
+    --muted-foreground:      219 13% 40%;   /* #596273  secondary text */
+    --subtle-foreground:     220 10% 42%;   /* #606876  meta / timestamps (min 4.63) */
+
+    /* ——— ink (the `default` button; NOT blue) ——— */
+    --foreground-hover:      218 22% 16%;   /* #202632 */
+    --foreground-active:     218 22% 23%;   /* #2E3748 */
+
+    /* ——— brand ——— */
+    --primary:               225 100% 56%;  /* #1F57FF  bluedev #1E56FF, solid fills */
+    --primary-foreground:    0 0% 100%;
+    --primary-ink:           225 100% 54%;  /* #144FFF  brand TEXT + icons (4.82 on surface-3) */
+    --primary-hover:         225 79% 49%;   /* #1A4CE0  white label 6.66 */
+    --primary-active:        225 79% 41%;   /* #163FBB  white label 8.53 */
+    --secondary:             225 20% 95%;
+    --secondary-foreground:  218 22% 7%;
+    --accent:                224 100% 96%;  /* #EBF0FF  active nav row, selected list row */
+    --accent-foreground:     224 78% 41%;   /* #1742BA */
+
+    /* ——— verified: "a human decided" ——— */
+    --verified:              225 100% 56%;
+    --verified-foreground:   0 0% 100%;
+    --verified-hover:        225 79% 49%;
+    --verified-active:       225 79% 41%;
+    --verified-surface:      224 100% 96%;
+    --verified-ink:          224 78% 41%;
+    --verified-border:       225 80% 85%;
+
+    /* ——— structure & focus ——— */
+    --border:                225 17% 91%;   /* #E4E6EC  hairline (decorative) */
+    --border-strong:         220 14% 80%;   /* #C5CAD3  DECORATIVE ONLY — never a control's
+                                               sole boundary */
+    --input:                 220 12% 52%;   /* #768093  control boundary, ≥3:1 on every
+                                               declared surface (min 3.28, WCAG 1.4.11) */
+    --input-hover:           220 12% 44%;   /* #636C7E  input / outline hover boundary */
+    --ring:                  225 100% 50%;  /* #0040FF  focus — DECOUPLED from --primary */
+    --overlay:               220 28% 10%;   /* #121721  scrim base, used at /0.55 */
+    --scrollbar-thumb:       220 14% 80%;
+    --scrollbar-thumb-hover: 220 12% 64%;
+
+    /* ——— status ——— */
+    --success:               156 79% 27%;   --success-foreground:     0 0% 100%;
+    --success-surface:       152 45% 94%;   --success-ink:            156 82% 24%;
+    --success-border:        152 44% 80%;
+
+    --warning:               36 100% 27%;   --warning-foreground:     0 0% 100%;
+    --warning-surface:       38 87% 94%;    --warning-ink:            36 100% 26%;
+    --warning-border:        39 72% 79%;
+
+    --destructive:           4 74% 49%;     --destructive-foreground: 0 0% 100%;
+    --destructive-hover:     4 74% 43%;     --destructive-active:     4 74% 37%;
+    --destructive-surface:   7 89% 96%;     --destructive-ink:        4 76% 38%;
+    --destructive-border:    8 72% 86%;
+
+    --info:                  205 86% 32%;   --info-foreground:        0 0% 100%;
+    --info-surface:          207 69% 95%;   --info-ink:               205 86% 30%;
+    --info-border:           205 66% 83%;
+
+    /* ——— AI / draft register — violet: NOT amber, NOT brand blue ——— */
+    --ai:                    256 58% 49%;   --ai-foreground:          0 0% 100%;
+    --ai-surface:            253 88% 97%;   --ai-ink:                 256 58% 49%;
+    --ai-border:             256 73% 90%;
+
+    /* ——— capture ——— */
+    --recording:             4 74% 49%;     /* #D92D20 dot / solid */
+    --recording-foreground:  0 0% 100%;     /* label ON the record/stop fill — 4.83 here.
+                                               NEVER reuse --primary-foreground for this. */
+    --recording-hover:       4 74% 43%;     --recording-active:       4 74% 37%;
+    --recording-ink:         4 76% 36%;     /* #A21F16 pill text */
+    --recording-surface:     7 89% 96%;     /* #FEEEEC */
+    --meter:                 225 100% 56%;  --meter-hot:              36 100% 33%;
+    --meter-clip:            4 74% 49%;     --meter-track:            225 20% 92%;
+
+    /* ——— shell ——— */
+    --sidebar:               220 24% 97%;   --sidebar-foreground:     218 22% 7%;
+    --sidebar-border:        225 17% 91%;   --sidebar-accent:         224 100% 96%;
+    --sidebar-accent-foreground: 224 78% 41%;
+    --sidebar-ring:          225 100% 50%;
+
+    /* ——— descriptive series (speakers; identity, never ranking) ——— */
+    --chart-1: 225 70% 52%;  --chart-2: 174 72% 30%;  --chart-3: 265 60% 55%;
+    --chart-4: 35 85% 30%;   --chart-5: 340 65% 45%;  --chart-6: 198 80% 33%;
+
+    /* ——— elevation (§4.8) — hairline first; elevation is a last resort ——— */
+    /* `0 0 #0000` rather than `none`: the value is composed into Tailwind's box-shadow list
+       alongside the ring shadows, and a list containing the keyword `none` is invalid CSS —
+       the whole declaration would be dropped, taking any ring with it. */
+    --elev-0: 0 0 #0000;
+    --elev-1: 0 1px 2px hsl(var(--overlay) / 0.06), 0 1px 1px hsl(var(--overlay) / 0.04);
+    --elev-2: 0 8px 24px -8px hsl(var(--overlay) / 0.18), 0 1px 2px hsl(var(--overlay) / 0.08);
+    --elev-3: 0 16px 48px -12px hsl(var(--overlay) / 0.28);
+
+    /* ——— geometry ——— */
+    --radius: 0.5rem;       /* 8px base */
+    --gutter: 1.5rem;       /* 24px; 16px below 1000px — see the @media at the end of this layer */
+    --rail-w: 3.5rem;       /* 56px */
+    --pane-w: 17.5rem;      /* 280px */
+    --header-h: 3.5rem;     /* 56px */
+    --dock-h: 2.5rem;       /* 40px; 2rem beside the review bar */
+    --reviewbar-h: 3rem;    /* 48px */
+    --bottom-chrome: 0px;   /* published by the shell: 0 / 40 / 48 / 80 */
+    --measure: 45rem;       /* 720px reading measure */
+
+    /* ——— motion (§4.9) ——— */
+    --dur-instant: 80ms;  --dur-fast: 140ms;  --dur-base: 200ms;  --dur-slow: 320ms;
+    --ease-out: cubic-bezier(.2, .8, .2, 1);
+    --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+    --ease-emphasis: cubic-bezier(.16, 1, .3, 1);
   }
 
-  20% {
-    transform: translate(-2px, 2px);
+  .dark {
+    /* ——— surfaces ——— */
+    --background:            223 24% 6%;    /* #0C0E13 */
+    --foreground:            225 22% 93%;   /* #E9EBF1 */
+    --card:                  222 22% 9%;    /* #12151C */
+    --card-foreground:       225 22% 93%;
+    --popover:               222 21% 12%;   /* #181C25 */
+    --popover-foreground:    225 22% 93%;
+    --surface-2:             222 21% 12%;
+    --surface-3:             222 20% 16%;   /* #212631 */
+
+    /* ——— text ——— */
+    --muted:                 222 21% 13%;
+    --muted-foreground:      219 15% 65%;   /* #98A2B3 */
+    --subtle-foreground:     221 12% 58%;   /* #878FA1 (min 4.67) */
+
+    /* ——— ink ——— */
+    --foreground-hover:      225 22% 85%;   /* #D0D5E1 */
+    --foreground-active:     225 22% 78%;   /* #BBC1D3 */
+
+    /* ——— brand ——— */
+    --primary:               225 100% 59%;  /* #2E62FF  white label 4.88 */
+    --primary-foreground:    0 0% 100%;
+    --primary-ink:           225 100% 69%;  /* #6188FF  brand text/icon (4.67 on surface-3) */
+    --primary-hover:         225 100% 56%;  /* #1F57FF  white label 5.43 — the hover step goes
+                                               DOWN in lightness in dark; the usable band is
+                                               53–60% L. 65% measured 3.82 and FAILED AA under
+                                               `Approve summary`. */
+    --primary-active:        225 100% 54%;  /* #144FFF  white label 5.85, fill vs card 3.12 */
+    --secondary:             222 20% 16%;
+    --secondary-foreground:  225 22% 93%;
+    --accent:                225 43% 16%;   /* #17203A */
+    --accent-foreground:     224 100% 83%;  /* #A8BFFF */
+
+    /* ——— verified ——— */
+    --verified:              225 100% 59%;
+    --verified-foreground:   0 0% 100%;
+    --verified-hover:        225 100% 56%;
+    --verified-active:       225 100% 54%;
+    --verified-surface:      225 43% 16%;
+    --verified-ink:          224 100% 83%;
+    --verified-border:       225 45% 30%;
+
+    /* ——— structure & focus ——— */
+    --border:                223 20% 18%;   /* #252A37 */
+    --border-strong:         222 18% 26%;   /* #363E4E  DECORATIVE ONLY */
+    --input:                 222 14% 48%;   /* #69748C  min 3.23 across every declared surface */
+    --input-hover:           222 14% 58%;   /* #858EA3 */
+    --ring:                  225 100% 72%;  /* #7094FF — DECOUPLED from --primary */
+    --overlay:               223 40% 3%;    /* used at /0.65 */
+    --scrollbar-thumb:       222 18% 26%;
+    --scrollbar-thumb-hover: 222 16% 36%;
+
+    /* ——— status ——— */
+    --success:               151 65% 58%;   --success-foreground:     152 70% 7%;
+    --success-surface:       151 47% 10%;   --success-ink:            151 65% 62%;
+    --success-border:        155 42% 19%;
+
+    --warning:               38 92% 62%;    --warning-foreground:     36 85% 8%;
+    --warning-surface:       38 65% 10%;    --warning-ink:            38 92% 66%;
+    --warning-border:        40 61% 18%;
+
+    --destructive:           358 62% 45%;   --destructive-foreground: 0 0% 100%;
+    /* 45 → 50 → 54, monotonic. It shipped as 45 → 50 → 47, so a press moved the fill BACK
+       toward idle and read as a partial un-hover (white contrast 6.02 → 5.09 → 5.63); every
+       other family in both themes is monotonic. 54% rather than 55%: white on 55% measures
+       4.45 and fails AA on a 13px label, 54% measures 4.58. */
+    --destructive-hover:     358 62% 50%;   --destructive-active:     358 62% 54%;
+    --destructive-surface:   355 38% 12%;   --destructive-ink:        3 100% 74%;
+    --destructive-border:    353 41% 22%;
+
+    --info:                  207 70% 38%;   --info-foreground:        0 0% 100%;
+    --info-surface:          207 56% 12%;   --info-ink:               207 84% 68%;
+    --info-border:           207 46% 22%;
+
+    /* ——— AI / draft register ——— */
+    --ai:                    256 70% 58%;   --ai-foreground:          0 0% 100%;
+    --ai-surface:            252 37% 14%;   --ai-ink:                 256 100% 81%;
+    --ai-border:             252 35% 25%;
+
+    /* ——— capture ——— */
+    --recording:             3 80% 58%;     /* #EA473E — its own dark value */
+    --recording-foreground:  4 85% 10%;     /* #2F0704 — near-black red at 4.74; white on
+                                               #EA473E is 3.84 and FAILS AA. */
+    --recording-hover:       3 80% 64%;     --recording-active:       3 80% 69%;
+    --recording-ink:         3 100% 74%;    /* #FF817A */
+    --recording-surface:     355 38% 12%;
+    --meter:                 225 100% 67%;  --meter-hot:              38 92% 62%;
+    --meter-clip:            3 80% 58%;     --meter-track:            222 20% 16%;
+
+    /* ——— shell ——— */
+    --sidebar:               223 24% 6%;    --sidebar-foreground:     225 22% 93%;
+    --sidebar-border:        223 20% 18%;   --sidebar-accent:         225 43% 16%;
+    --sidebar-accent-foreground: 224 100% 83%;
+    --sidebar-ring:          225 100% 72%;
+
+    /* ——— descriptive series ——— */
+    --chart-1: 225 100% 70%; --chart-2: 174 60% 50%;  --chart-3: 265 85% 74%;
+    --chart-4: 38 90% 60%;   --chart-5: 340 80% 68%;  --chart-6: 198 85% 60%;
+
+    /* ——— elevation ——— black-alpha blur on #0C0E13 reads as mud, so each dark level also
+       gains a 1px inset top highlight; the surface step and the --border-strong hairline are
+       applied by the component (§4.8). ——— */
+    --elev-0: 0 0 #0000;
+    --elev-1: inset 0 1px 0 hsl(0 0% 100% / 0.04);
+    --elev-2: 0 8px 24px -8px hsl(var(--overlay) / 0.6), inset 0 1px 0 hsl(0 0% 100% / 0.04);
+    --elev-3: 0 16px 48px -12px hsl(var(--overlay) / 0.75), inset 0 1px 0 hsl(0 0% 100% / 0.04);
   }
 
-  40% {
-    transform: translate(-2px, -2px);
-  }
-
-  60% {
-    transform: translate(2px, 2px);
-  }
-
-  80% {
-    transform: translate(2px, -2px);
-  }
-
-  100% {
-    transform: translate(0);
+  /* §4.2: the gutter is the ONE responsive token. It narrows to 16px below 1000px so the
+     narrowest supported window (900×600, §11.2) spends its width on content
+     rather than on chrome. Declared here, next to the token, and NOT inside `.dark` —
+     geometry is theme-independent. `p-gutter`/`px-gutter` therefore pick this up for
+     free at every call site; a component that needs the wide value at every width must
+     say so with a numeric utility. */
+  @media (max-width: 999.98px) {
+    :root {
+      --gutter: 1rem;     /* 16px */
+    }
   }
 }
 
-.animate-vibrate {
-  animation: vibrate 0.3s linear;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  /* html, */
+  body {
+    @apply bg-background text-foreground;
+    overflow: hidden;
+    height: 100%;
+    /* Inter's `cv05` (single-storey l with a tail) — the one alternate that matters at the
+       12–13px label sizes this density uses. Tabular figures are opt-in per §4.5 rule 3
+       (`font-mono` / `tabular-nums`), never global. */
+    font-feature-settings: 'cv05' 1;
+  }
+
+  /* Custom scrollbar styles — token-driven so the thumb is visible in both themes
+     (it was hex-only, with no dark override at all). */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--scrollbar-thumb));
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--scrollbar-thumb-hover));
+  }
+
+  /* Firefox scrollbar */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--scrollbar-thumb)) transparent;
+  }
+
+  /* BlockNote Editor - Override fixed dimensions for responsive layout */
+  .bn-container {
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+
+  .bn-editor {
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+
+  /* Disable internal scrolling - let parent handle all scrolling */
+  .ProseMirror {
+    overflow: visible !important;
+  }
+
+  /* Ensure BlockNote content area is responsive */
+  .bn-block-outer {
+    max-width: 100% !important;
+  }
+
+  .bn-default-styles {
+    max-width: none !important;
+  }
+
+  /* Disable scrolling on any BlockNote wrapper elements */
+  [data-node-type] {
+    overflow: visible !important;
+  }
 }
 
 @keyframes fade-in {
@@ -76,151 +382,6 @@
   animation-delay: 150ms;
 }
 
-@layer base {
-  /*
-   * Design tokens — anchored on the bluedev master brand (BRAND-DNA):
-   *   brand-500 #1E56FF = hsl(225 100% 56%)   brand-400 #4B78FF = hsl(225 100% 65%)
-   *   ink #0F172A = hsl(222 47% 11%)          hairline #E4E4E7 = hsl(240 5% 90%)
-   * Every component should consume THESE semantic tokens (bg-primary, text-muted-
-   * foreground, border-border, …) rather than hardcoding bg-white / text-gray-*,
-   * so the whole app inherits the brand and responds to light/dark automatically.
-   */
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 225 100% 56%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
-    --accent: 225 100% 96%;
-    --accent-foreground: 225 70% 40%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 240 5% 90%;
-    --input: 240 5% 90%;
-    --ring: 225 100% 56%;
-    --radius: 0.625rem;
-    --chart-1: 225 100% 56%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 262 60% 55%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 340 75% 55%;
-  }
-
-  .dark {
-    --background: 222 47% 7%;
-    --foreground: 210 40% 98%;
-    --card: 222 40% 11%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 40% 11%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 225 100% 65%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 222 30% 18%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 222 30% 18%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 222 40% 20%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62% 45%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 222 30% 20%;
-    --input: 222 30% 22%;
-    --ring: 225 100% 65%;
-    --chart-1: 225 100% 65%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 262 60% 60%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-  }
-}
-
-@layer base {
-  * {
-    @apply border-border;
-  }
-
-  /* html, */
-  body {
-    @apply bg-background text-foreground;
-    overflow: hidden;
-    height: 100%;
-  }
-
-  /* Make the window draggable */
-  .titlebar {
-    -webkit-app-region: drag;
-    app-region: drag;
-  }
-
-  .no-drag {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
-  }
-
-  /* Custom scrollbar styles */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #d1d5db;
-    border-radius: 3px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
-  }
-
-  /* Firefox scrollbar */
-  .custom-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: #d1d5db transparent;
-  }
-
-  /* BlockNote Editor - Override fixed dimensions for responsive layout */
-  .bn-container {
-    width: 100% !important;
-    max-width: none !important;
-    overflow: visible !important;
-  }
-
-  .bn-editor {
-    width: 100% !important;
-    max-width: none !important;
-    overflow: visible !important;
-  }
-
-  /* Disable internal scrolling - let parent handle all scrolling */
-  .ProseMirror {
-    overflow: visible !important;
-  }
-
-  /* Ensure BlockNote content area is responsive */
-  .bn-block-outer {
-    max-width: 100% !important;
-  }
-
-  .bn-default-styles {
-    max-width: none !important;
-  }
-
-  /* Disable scrolling on any BlockNote wrapper elements */
-  [data-node-type] {
-    overflow: visible !important;
-  }
-}
-
 /* First-run product tour: brief brand-blue ring pulse used to hand the user off
    to the sidebar record button when they finish or skip the welcome/tour. */
 @keyframes mityu-tour-pulse {
@@ -237,4 +398,61 @@
 
 .mityu-tour-pulse {
   animation: mityu-tour-pulse 1.2s ease-out 2;
+}
+
+/*
+ * Reduced motion (§4.9, ADR-H). SC 2.3.3.
+ *
+ * Global neutraliser first — it covers the 111 `animate-*`, the 202 `transition-*` and every
+ * CSS keyframe in one place, including `animate-spin` (which becomes a static three-quarter
+ * ring beside its existing `role="status"` text) and `animate-pulse` skeletons.
+ *
+ * The fallbacks below are SEMANTIC, not merely faster: a state that was carried by movement
+ * has to still be carried by something. The framer-motion half of this policy is
+ * `useReducedMotion()` inside the 11 files that use it, and is landed by their own packages.
+ *
+ * The `vibrate` shake keyframe is deleted outright rather than slowed: it was a vestibular
+ * trigger with no informational content.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* The tour hand-off stops pulsing and becomes a static 2px --ring outline, so the anchor
+     it points at is still identifiable. */
+  .mityu-tour-pulse {
+    animation: none !important;
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Entrance animations resolve to their final frame instead of flashing through it. */
+  .animate-fade-in,
+  .animate-fade-in-up {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* §5.16: an indeterminate Progress becomes a STATIC STRIPED TRACK, not a held-still
+     sweep. The fill is half the track's width, so simply stopping it leaves a bar parked at
+     the left edge that reads as a determinate 50% — an unknown-progress indicator must
+     never be readable as a number. Stripes carry "working, amount unknown" without motion;
+     the call site's required text state ("Preparing…") carries the rest. */
+  [data-slot='progress-indeterminate'] {
+    animation: none !important;
+    width: 100%;
+    transform: none;
+    background-image: repeating-linear-gradient(
+      135deg,
+      hsl(var(--surface-2)) 0 0.375rem,
+      transparent 0.375rem 0.75rem
+    );
+  }
 }

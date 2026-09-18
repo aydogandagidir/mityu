@@ -343,7 +343,9 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
         console.log('✅ MAIN transcript listener setup complete');
       } catch {
         console.error('Failed to set up MAIN transcript listener');
-        alert('Failed to setup transcript listener. Check console for details.');
+        toast.error('Live transcript is unavailable', {
+          description: 'Recording continues and audio is still saved, but text will not appear until you restart the app.',
+        });
       }
     };
 

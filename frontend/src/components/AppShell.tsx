@@ -40,12 +40,14 @@ import { UpdateCheckProvider } from '@/components/UpdateCheckProvider'
 import { RecordingPostProcessingProvider } from '@/contexts/RecordingPostProcessingProvider'
 import { ImportAudioDialog, ImportDropOverlay } from '@/components/ImportAudio'
 import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
-import { EncryptionStatusBanner } from '@/components/consent/EncryptionStatusBanner'
-import { TrialBanner } from '@/components/licensing/TrialBanner'
+import { SystemNotices } from '@/components/shell/SystemNotices'
 import { LicensingProvider } from '@/contexts/LicensingContext'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 import { isTauri } from '@/lib/isTauri'
 import { TourProvider } from '@/components/tour'
+import { CommandPalette } from '@/components/shell/CommandPalette'
+import { RecordingSessionProvider } from '@/contexts/RecordingSessionContext'
+import { ShellSessionDock } from '@/components/shell/ShellSessionDock'
 import { WhatsNew } from '@/components/WhatsNew'
 
 
@@ -121,14 +123,11 @@ export function AppShell({
       })
   }, [])
 
-  // Disable context menu in production
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'production') {
-      const handleContextMenu = (e: MouseEvent) => e.preventDefault();
-      document.addEventListener('contextmenu', handleContextMenu);
-      return () => document.removeEventListener('contextmenu', handleContextMenu);
-    }
-  }, []);
+  // The production build used to `preventDefault()` every context menu, which killed
+  // right-click copy and paste in the BlockNote editor and in the transcript — the two
+  // places in this app where a person most needs them. Whatever it was guarding against
+  // (a developer-tools entry the WebView does not offer in a release build anyway), the
+  // cost was the standard editing menu of the platform.
   useEffect(() => {
     // Listen for tray recording toggle request
     const unlisten = listen('request-recording-toggle', () => {
@@ -278,11 +277,11 @@ export function AppShell({
   }, []);
 
   const handleOnboardingComplete = () => {
-    console.log('[Layout] Onboarding completed, reloading app')
+    // No reload. `OnboardingFlow` refetches what the reload was really for — it runs
+    // inside the provider tree, which this callback does not — and the shell just
+    // switches surfaces. The white flash that used to end setup is gone with it.
     setShowOnboarding(false)
     setOnboardingCompleted(true)
-    // Optionally reload the window to ensure all state is fresh
-    window.location.reload()
   }
 
   return (
@@ -307,6 +306,12 @@ export function AppShell({
                               {/* Download progress toast provider - listens for background downloads */}
                               <DownloadProgressToastProvider />
 
+                              {/* ⌘K, the shortcuts sheet and the global keys. Mounted
+                                  inside the providers it reads, and NOT during
+                                  onboarding — a palette that can navigate away from
+                                  setup is a way to skip it by accident. */}
+                              {!showOnboarding && <CommandPalette />}
+
                               {/* Show onboarding or main app */}
                               {showOnboarding ? (
                                 <OnboardingFlow onComplete={handleOnboardingComplete} />
@@ -315,23 +320,28 @@ export function AppShell({
                                 // (never during setup onboarding). It renders the welcome
                                 // overlay + coach-marks and, post-onboarding, routes to the
                                 // pre-seeded sample meeting. isTauri()-gated internally.
+                                <RecordingSessionProvider>
                                 <TourProvider>
-                                  <div className="flex">
+                                  <div className="flex h-screen flex-col overflow-hidden">
+                                  <div className="flex min-h-0 flex-1 overflow-hidden">
                                     <Sidebar />
                                     <MainContent>
-                                      {/* ADR-0014: warns when the local DB opened UNENCRYPTED at rest.
-                                          Renders nothing in the normal (encrypted) case. Sits above
-                                          every main-app view and the recording indicator; not shown
-                                          during onboarding (DB may not be initialized yet). */}
-                                      <EncryptionStatusBanner />
-                                      {/* ADR-0023: trial/license chrome — quiet chip in the last
-                                          trial week, persistent slim banner once expired/revoked,
-                                          nothing while licensed or early in the trial. */}
-                                      <TrialBanner />
+                                      {/* One slot for app-wide notices, so the trial chrome
+                                          (ADR-0023) and the unencrypted-at-rest warning
+                                          (ADR-0014) cannot each bring their own top gutter.
+                                          Both keep their own visibility rules and render
+                                          nothing in the normal case. */}
+                                      <SystemNotices />
                                       {children}
                                     </MainContent>
                                   </div>
+                                  {/* The shell's own recording indicator and the only Stop
+                                      that exists on every route (ADR-F). It publishes
+                                      --bottom-chrome so toasts and page bodies clear it. */}
+                                  <ShellSessionDock />
+                                  </div>
                                 </TourProvider>
+                                </RecordingSessionProvider>
                               )}
                               {/* What changed in this version (G2). Renders
                                   nothing on a fresh install and nothing when

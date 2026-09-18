@@ -11,8 +11,10 @@ import RecordingConsentSettings from "./RecordingConsentSettings"
 import RedactionSettings from "./RedactionSettings"
 import LearningSettings from "./LearningSettings"
 import { ThemeToggle } from "./ThemeToggle"
+import { SettingsCard } from "@/components/settings/SettingsCard"
+import { SwitchRow } from "@/components/settings/SwitchRow"
+import { Button } from "@/components/ui/button"
 import { WhatsNew } from "./WhatsNew"
-import { SettingCard } from "./ui/setting-card"
 import { APP_VERSION } from "@/lib/appVersion"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 
@@ -159,120 +161,103 @@ export function PreferenceSettings() {
 
   return (
     <div className="space-y-4">
-      {/* Every card here is the same primitive now (G4). Before, each was a
-          hand-rolled div at p-6 with a text-lg heading, so a theme toggle and
-          the storage-and-deletion caveats carried identical weight and the
-          screen read as one wall of text. */}
-      <SettingCard
+      <SettingsCard
         title="Appearance"
         description="Follow your system theme, or force light or dark."
         action={<ThemeToggle />}
       />
 
-      <SettingCard
-        title="Notifications"
-        description="Tell me when a meeting starts and ends."
-        action={
-          <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
-        }
-      />
+      <SettingsCard>
+        <SwitchRow
+          label="Meeting start and end notifications"
+          description="A system notification when a recording starts and when it finishes saving. Separate from the participant reminder in Recording."
+          checked={notificationsEnabledValue}
+          onCheckedChange={setNotificationsEnabled}
+        />
+      </SettingsCard>
 
-      <SettingCard
-        title="Product tour"
-        description="Replay the guided walkthrough on the sample meeting."
-        action={
-          <button
-            onClick={() => {
-              void Analytics.trackButtonClick('replay_product_tour', 'settings');
-              replayTour();
-            }}
-            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-meta font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-          >
-            <Compass className="h-4 w-4" />
-            Replay
-          </button>
-        }
-        details="It walks through a sample meeting: the transcript, the source-linked summary, and starting your first recording."
-        detailsLabel="What the tour covers"
-      />
-
-      {/* What's new (G2). The update dialog shows itself once; this is how a
-          user reads it again after dismissing it. */}
-      <SettingCard
+      {/* Ported from main: the update dialog shows itself once, and this is how a user
+          reads it again after dismissing it. Rebuilt on the SettingsCard primitive so it
+          matches the rest of the column (§6.5) rather than main's hand-rolled button. */}
+      <SettingsCard
         title="What's new"
         description={`What changed in version ${APP_VERSION}, including what is still off by default.`}
         action={
-          <button
+          <Button
+            variant="outline"
             onClick={() => {
               void Analytics.trackButtonClick('open_whats_new', 'settings');
               setWhatsNewOpen(true);
             }}
-            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-meta font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            <Sparkles className="h-4 w-4" />
+            <Sparkles className="size-4" aria-hidden="true" />
             Open
-          </button>
+          </Button>
         }
       />
       <WhatsNew open={whatsNewOpen} onOpenChange={setWhatsNewOpen} />
 
-      <SettingCard
-        title="Where your data is stored"
-        description="Everything stays on this computer."
-        details={
-          <>
-            <p>
-              The database and the transcription models live together in the application data
-              directory.
-            </p>
-            {/* This stays a claim the user can read, not a claim that was cut.
-                Deleting a meeting has limits, and saying so is an honesty
-                obligation — folding it keeps the sentence, it does not remove
-                it (the summary above states the limit in one line). */}
-            <p>
-              Deleting a meeting removes the database, search, recording and recovery-cache data
-              Mityu manages. Copies outside Mityu can survive it: SSD wear-levelling,
-              copy-on-write filesystems, snapshots, backups, exports and browser storage are not
-              something the app can reach.
-            </p>
-          </>
-        }
-        detailsLabel="What deleting a meeting does and does not erase"
-      >
-        <div className="rounded-lg border border-border bg-muted p-4">
-          <div className="text-meta font-medium text-foreground">Meeting recordings</div>
-          <div className="mt-1 break-all font-mono text-caption text-muted-foreground">
-            {storageLocations?.recordings || 'Loading...'}
-          </div>
-          <button
-            onClick={() => handleOpenFolder('recordings')}
-            className="mt-3 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-meta transition-colors hover:bg-background"
+      <SettingsCard
+        title="Product tour"
+        description="Replay the guided walkthrough on the sample meeting — transcript, source-linked summary, and your first recording."
+        action={
+          <Button
+            variant="outline"
+            onClick={() => {
+              void Analytics.trackButtonClick('replay_product_tour', 'settings');
+              replayTour();
+            }}
           >
-            <FolderOpen className="h-4 w-4" />
-            Open folder
-          </button>
-        </div>
-      </SettingCard>
-
-      {/* Recording Consent Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <RecordingConsentSettings />
-      </div>
-
-      {/* Redaction Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <RedactionSettings />
-      </div>
-
-      {/* Learning Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <LearningSettings />
-      </div>
-
-      {/* Analytics Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <AnalyticsConsentSwitch />
-      </div>
+            <Compass className="size-4" aria-hidden="true" />
+            Replay product tour
+          </Button>
+        }
+      />
     </div>
+  )
+}
+
+/**
+ * Where this app keeps things, and what deleting a meeting can and cannot reach.
+ *
+ * 🔒 The erasure disclosure is verbatim. It lives in Privacy now, beside consent and
+ * redaction, rather than in a "General" tab it had nothing to do with — and the
+ * recordings path it used to print is no longer duplicated here: Recording owns the save
+ * location, which is where a person looks for it.
+ */
+export function StorageLocations() {
+  const { storageLocations, isLoadingPreferences, loadPreferences } = useConfig()
+
+  useEffect(() => {
+    void loadPreferences()
+  }, [loadPreferences])
+
+  return (
+    <SettingsCard
+      title="Where your data is stored"
+      description="Everything stays on this device."
+    >
+      <div className="space-y-3">
+        <div className="rounded-md border border-border bg-surface-2 p-3">
+          <div className="text-label text-foreground">Meeting recordings</div>
+          <div className="mt-1 break-all font-mono text-caption text-muted-foreground">
+            {isLoadingPreferences && !storageLocations
+              ? 'Reading…'
+              : storageLocations?.recordings || 'Default folder'}
+          </div>
+          <p className="mt-2 text-caption text-muted-foreground">
+            The database and downloaded models sit together in your application data
+            directory. Change the recordings folder in Recording.
+          </p>
+        </div>
+
+        <p className="text-caption text-muted-foreground">
+          Meeting deletion covers Mityu-managed database/search, recording, and
+          recovery-cache data. Physical traces or separate copies may remain on SSD
+          wear-leveling, copy-on-write filesystems, snapshots, backups, exports, or
+          WebView/browser storage; Mityu cannot erase those external layers.
+        </p>
+      </div>
+    </SettingsCard>
   )
 }

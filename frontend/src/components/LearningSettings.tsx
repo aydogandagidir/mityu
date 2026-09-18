@@ -269,7 +269,7 @@ function RuleRow({
         <div className="flex-shrink-0 flex items-center gap-1">
           {isEditing ? (
             <>
-              <Button variant="green" size="sm" onClick={saveEdit} disabled={isSaving}>
+              <Button variant="default" size="sm" onClick={saveEdit} disabled={isSaving}>
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               </Button>
               <Button
@@ -288,7 +288,7 @@ function RuleRow({
           ) : (
             <>
               {rule.status === 'proposed' && (
-                <Button variant="green" size="sm" onClick={onActivate} disabled={isBusy}>
+                <Button variant="outline" size="sm" onClick={onActivate} disabled={isBusy}>
                   Use it
                 </Button>
               )}

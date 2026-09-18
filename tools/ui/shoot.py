@@ -28,8 +28,25 @@ USAGE
     python tools/ui/shoot.py design/report design/hitl
     python tools/ui/shoot.py --build design/report --expect "Speaker" --expect "talk time"
     python tools/ui/shoot.py --out-dir shots design/report
+    python tools/ui/shoot.py --build design --expect "--ai-surface" --expect "Focus ring"
 
-Routes are given without the `.html` suffix, relative to the export root.
+Routes are given without the `.html` suffix, relative to the export root. A route may
+carry a query string -- `design/hitl?reject=1`, `design/tour?tour=3` -- which is split
+off before `.html` is appended and stripped out of the PNG filename. Those two routes
+are a documented URL API (DESIGN_SYSTEM.md 5.10 / 10.7), so shooting them is a gate,
+not a convenience.
+
+FULL-PAGE: there is none, and there does not need to be. `globals.css` pins
+`body { overflow: hidden }`, so every route is exactly one viewport tall and the
+scrolling happens INSIDE it (`src/app/design/layout.tsx` for the fixtures,
+`h-screen` + `flex-1 overflow-y-auto` on the product routes). A CDP
+`captureBeyondViewport` capture would therefore return the same pixels as a
+viewport capture. The lever is the WINDOW: shoot a tall one.
+
+    python tools/ui/shoot.py --height 3600 design design/primitives
+
+A DESIGN_SYSTEM.md 11.2 panel is several viewports tall, so a default 1280x900
+shot of one shows its header and nothing else -- valid PNG, no evidence.
 
 LIGHT MODE: `--force-prefers-color-scheme=light` does NOT flip this app. The
 theme is a class on `<html>`, not a media query, so the flag changes nothing and
@@ -42,7 +59,9 @@ check light mode, set the class first and read the computed colours:
 
 import argparse
 import http.server
+import io
 import os
+import re
 import shutil
 import socket
 import socketserver
@@ -111,13 +130,54 @@ def build() -> None:
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
+    """The export, served quietly, with the theme forced when asked.
+
+    THEME IS A CLASS, NOT A MEDIA QUERY. `--force-prefers-color-scheme=dark` does not
+    flip this app: `next-themes` writes `class="dark"` on <html> and the stylesheet keys
+    off that class. Headless Chrome's CLI has no hook to run script before first paint,
+    so the class is injected HERE, in the bytes that go over the wire -- on <html> so the
+    first paint is already correct, and into localStorage so `next-themes` agrees on
+    hydration instead of overwriting it a frame later.
+    """
+
+    theme = None  # set by serve(); None means "leave the app's own default alone"
+
     def log_message(self, *_args):
         pass
 
+    def send_head(self):
+        if not self.theme or not self.path.split("?")[0].endswith(".html"):
+            return super().send_head()
 
-def serve(directory: str):
+        path = self.translate_path(self.path)
+        try:
+            with open(path, "rb") as f:
+                body = f.read()
+        except OSError:
+            return super().send_head()
+
+        boot = (
+            f"<script>try{{localStorage.setItem('theme','{self.theme}')}}"
+            "catch(e){}</script>"
+        ).encode()
+        body = body.replace(b"<html", b'<html class="' + self.theme.encode() + b'"', 1)
+        body = body.replace(b"<head>", b"<head>" + boot, 1)
+
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        return io.BytesIO(body)
+
+
+def serve(directory: str, theme=None):
     """Serve the export on an ephemeral port, in a background thread."""
-    handler = lambda *a, **k: Quiet(*a, directory=directory, **k)  # noqa: E731
+
+    class Themed(Quiet):
+        pass
+
+    Themed.theme = theme
+    handler = lambda *a, **k: Themed(*a, directory=directory, **k)  # noqa: E731
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -126,16 +186,26 @@ def serve(directory: str):
     return httpd, port
 
 
-# Chrome refuses to start as root without this, and exits 1 having rendered
-# nothing: "Running as root without --no-sandbox is not supported."
-# Every container this repo builds and tests in runs as root, so without the
-# flag the screenshot gate could not run in CI or in an agent sandbox at all --
-# a verification tool that is itself unrunnable verifies nothing. The sandbox is
-# a defence against hostile page content; these pages are our own static export,
-# served from localhost by this same script.
-# `os.geteuid` is Unix-only, so ask for it rather than assuming it: this script
-# also runs on the Windows dev machines listed in CHROME_CANDIDATES.
-SANDBOX_FLAGS = ["--no-sandbox"] if getattr(os, "geteuid", lambda: 1)() == 0 else []
+def chrome_flags() -> list:
+    """Flags every Chrome invocation needs on this machine.
+
+    Chrome refuses to start as root without --no-sandbox and exits 1 having
+    rendered nothing: "Running as root without --no-sandbox is not supported."
+    Every container this repo builds and tests in runs as root, so without the
+    flag the screenshot gate could not run in CI or in an agent sandbox at all --
+    a verification tool that is itself unrunnable verifies nothing. The sandbox is
+    a defence against hostile page content; these pages are our own static export,
+    served from localhost by this same script.
+
+    `os.geteuid` is Unix-only, so ask for it rather than assuming it: this script
+    also runs on the Windows dev machines listed in CHROME_CANDIDATES.
+    MITYU_CHROME_FLAGS (space-separated) appends anything else a machine needs.
+    """
+    flags = []
+    if getattr(os, "geteuid", lambda: 1)() == 0:
+        flags.append("--no-sandbox")
+    flags.extend(os.environ.get("MITYU_CHROME_FLAGS", "").split())
+    return flags
 
 
 def shoot(chrome: str, url: str, png: str, width: int, height: int) -> int:
@@ -148,8 +218,8 @@ def shoot(chrome: str, url: str, png: str, width: int, height: int) -> int:
     r = subprocess.run(
         [
             chrome,
+            *chrome_flags(),
             "--headless",
-            *SANDBOX_FLAGS,
             "--disable-gpu",
             "--hide-scrollbars",
             f"--window-size={width},{height}",
@@ -168,8 +238,8 @@ def dump_dom(chrome: str, url: str) -> str:
     r = subprocess.run(
         [
             chrome,
+            *chrome_flags(),
             "--headless",
-            *SANDBOX_FLAGS,
             "--disable-gpu",
             "--virtual-time-budget=6000",
             "--dump-dom",
@@ -182,9 +252,33 @@ def dump_dom(chrome: str, url: str) -> str:
     return r.stdout
 
 
+def glue_expect(argv: list) -> list:
+    """Let `--expect` take a value that itself starts with `-`.
+
+    Half the markers DESIGN_SYSTEM.md 11.2 requires for the /design route ARE token
+    names: `--ai-surface`, `--verified`. argparse reads any value beginning with `-` as
+    the next option and dies with "expected one argument", so the documented invocation
+    would fail on the very markers the spec names. Rewrite `--expect X` to `--expect=X`,
+    which argparse takes verbatim.
+    """
+    out, i = [], 0
+    while i < len(argv):
+        if argv[i] == "--expect" and i + 1 < len(argv):
+            out.append(f"--expect={argv[i + 1]}")
+            i += 2
+            continue
+        out.append(argv[i])
+        i += 1
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("routes", nargs="+", help="routes without .html, e.g. design/report")
+    ap.add_argument(
+        "routes",
+        nargs="+",
+        help="routes without .html, e.g. design/report or design/hitl?reject=1",
+    )
     ap.add_argument("--build", action="store_true", help="run `next build` first")
     ap.add_argument("--out-dir", default=os.path.join(REPO, "target", "ui-shots"))
     ap.add_argument("--width", type=int, default=1280)
@@ -197,7 +291,13 @@ def main() -> int:
         "the only check is that the page is not blank.",
     )
     ap.add_argument("--min-bytes", type=int, default=MIN_PNG_BYTES)
-    args = ap.parse_args()
+    ap.add_argument(
+        "--theme",
+        choices=("light", "dark"),
+        help="force the theme by injecting the class on <html> at serve time "
+        "(--force-prefers-color-scheme does NOT flip this app -- the theme is a class)",
+    )
+    args = ap.parse_args(glue_expect(sys.argv[1:]))
 
     if args.build:
         build()
@@ -208,12 +308,23 @@ def main() -> int:
 
     chrome = find_chrome()
     os.makedirs(args.out_dir, exist_ok=True)
-    httpd, port = serve(EXPORT)
+    httpd, port = serve(EXPORT, theme=args.theme)
     failures = []
     try:
         for route in args.routes:
-            url = f"http://127.0.0.1:{port}/{route.lstrip('/')}.html"
-            png = os.path.join(args.out_dir, route.replace("/", "-") + ".png")
+            # `.html` goes on the PATH, not on the whole route: `design/hitl?reject=1`
+            # must request `/design/hitl.html?reject=1`, or the static server is asked
+            # for a file literally named `hitl?reject=1.html` and answers 404. The PNG
+            # name is sanitised for the same reason -- `?` and `=` are not portable in
+            # filenames (and are illegal on Windows).
+            path, _, query = route.partition("?")
+            url = f"http://127.0.0.1:{port}/{path.lstrip('/')}.html" + (
+                f"?{query}" if query else ""
+            )
+            suffix = f"-{args.theme}" if args.theme else ""
+            png = os.path.join(
+                args.out_dir, re.sub(r"[^A-Za-z0-9._-]", "-", route) + suffix + ".png"
+            )
             code = shoot(chrome, url, png, args.width, args.height)
 
             if code != 0:

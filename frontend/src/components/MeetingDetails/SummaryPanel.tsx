@@ -11,8 +11,9 @@ import { SummaryGeneratorButtonGroup } from './SummaryGeneratorButtonGroup';
 import Analytics from '@/lib/analytics';
 import { useEffect, useRef, useState, RefObject } from 'react';
 import { toast } from 'sonner';
-import { Languages, ChevronDown, PanelRightClose } from 'lucide-react';
+import { Languages, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Notice } from '@/components/ui/notice';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { LanguagePickerPopover } from '@/components/LanguagePickerPopover';
 import { useRecentLanguages } from '@/hooks/useRecentLanguages';
@@ -70,13 +71,6 @@ interface SummaryPanelProps {
   onJumpToSource?: (sourceChunkId: string) => void;
   /** Notified when the whole summary is approved. */
   onSummaryApproved?: () => void;
-
-  // Layout affordances (owned by page-content). Additive; default off so the
-  // panel renders exactly as before when the parent does not opt in.
-  /** Show the desktop "collapse summary" chevron in the header. */
-  showCollapseButton?: boolean;
-  /** Collapse the summary panel (desktop) so the transcript reclaims the width. */
-  onCollapse?: () => void;
 }
 
 export function SummaryPanel({
@@ -114,8 +108,6 @@ export function SummaryPanel({
   draftError = null,
   onJumpToSource,
   onSummaryApproved,
-  showCollapseButton = false,
-  onCollapse,
 }: SummaryPanelProps) {
   const [summaryLang, setSummaryLang] = useState<string | null>(null);
   const [summaryLangStorage, setSummaryLangStorage] = useState<SummaryLanguageStorage>('metadata');
@@ -283,26 +275,17 @@ export function SummaryPanel({
     // border, and responsive show/hide (mobile tab + desktop collapse).
     // Subtle brand tint marks this whole panel as the AI zone (the identity label
     // was dropped from the toolbar to de-crowd it); cards render on top in bg-card.
-    <div spellCheck={false} className="flex w-full h-full min-w-0 flex-col bg-accent/25 dark:bg-accent/10 overflow-hidden">
+    // 🔒 spellCheck={false} on the AI-zone root stays: a red squiggle under a model's
+    // wording reads as a correction the app is making to evidence.
+    <div spellCheck={false} className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-background">
       {/* Panel toolbar — single row, same height/axis as the transcript panel's
           toolbar (py-2.5, border-b). Collapse sits on the leading edge (the panel
           folds away to the right); actions keep the right side. The generator
           group renders in EVERY state so the toolbar never jumps. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-accent/50 dark:bg-accent/25 px-2.5 py-2.5">
-        {showCollapseButton && onCollapse ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden shrink-0 md:inline-flex text-muted-foreground hover:text-foreground"
-            onClick={onCollapse}
-            title="Collapse summary panel"
-            aria-label="Collapse summary panel"
-          >
-            <PanelRightClose size={18} />
-          </Button>
-        ) : (
-          <span aria-hidden />
-        )}
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-gutter py-2">
+        {/* The summary no longer folds away: it IS the report. The control that used
+            to collapse it is gone with the split pane. */}
+        <span aria-hidden />
 
         {/* Action cluster. min-w-0 lets it shrink inside justify-between;
             overflow-x-auto is the no-clip backstop: below ~340px of panel the
@@ -333,24 +316,6 @@ export function SummaryPanel({
 
         </div>
       </div>
-
-      {/* Ask This Meeting (PI slice 3) sits OUTSIDE the structured-draft branch
-          on purpose. `structuredEnabled` is `hasSummaryDraft`, so nesting it
-          there would hide Ask from every meeting that was never summarised —
-          exactly the meetings where "what did we decide?" is worth asking. It
-          needs a transcript, nothing else. */}
-      {transcripts?.length > 0 ? (
-        <div className="border-b border-border px-6 py-4">
-          <div className="w-full max-w-3xl mx-auto">
-            <AskPanel
-              meetingId={meeting.id}
-              modelProvider={modelConfig.provider}
-              modelName={modelConfig.model}
-              onJumpToSource={onJumpToSource}
-            />
-          </div>
-        </div>
-      ) : null}
 
       {structuredEnabled ? (
         // BACKLOG C1.6 — source-linked structured draft review (HITL). Renders
@@ -470,15 +435,47 @@ export function SummaryPanel({
             />
           </div>
           {summaryStatus !== 'idle' && (
-            <div className={`mt-4 p-4 rounded-lg ${summaryStatus === 'error' ? 'bg-red-100 text-red-700 dark:text-red-300' :
-              summaryStatus === 'completed' ? 'bg-green-100 text-green-700 dark:text-green-400' :
-                'bg-accent text-primary'
-              }`}>
-              <p className="text-sm font-medium">{getSummaryStatusMessage(summaryStatus)}</p>
+            <div className="mt-4">
+              <Notice
+                as="status"
+                aria-live="polite"
+                tone={
+                  summaryStatus === 'error'
+                    ? 'destructive'
+                    : summaryStatus === 'completed'
+                      ? 'success'
+                      : 'info'
+                }
+                title={getSummaryStatusMessage(summaryStatus)}
+              />
             </div>
           )}
         </div>
       )}
+      {/* Ask This Meeting sits BELOW the summary, not above it.
+          🔒 Its own `role="note"` marking is unconditional and stays exactly where it
+          is — directly above its input. What changed is the ORDER: rendering Ask first
+          put its marking and the draft's review-required banner back to back, so the
+          reader met two amber disclosures before the first sentence of the summary.
+          One banner belongs above the first summary block; Ask is a different tool and
+          carries its own where it is used.
+
+          🔒 It also stays OUTSIDE the structured-draft branch: `structuredEnabled` is
+          `hasSummaryDraft`, so nesting it there would hide Ask from every meeting that
+          was never summarised — exactly the meetings where "what did we decide?" is
+          worth asking. It needs a transcript, nothing else. */}
+      {transcripts?.length > 0 ? (
+        <div className="shrink-0 border-t border-border px-6 py-4">
+          <div className="mx-auto w-full max-w-measure">
+            <AskPanel
+              meetingId={meeting.id}
+              modelProvider={modelConfig.provider}
+              modelName={modelConfig.model}
+              onJumpToSource={onJumpToSource}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

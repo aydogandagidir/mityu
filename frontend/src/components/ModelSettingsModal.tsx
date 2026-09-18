@@ -124,7 +124,11 @@ export function ModelSettingsModal({
   const [hasStoredApiKey, setHasStoredApiKey] = useState<boolean>(Boolean(modelConfig.hasApiKey));
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [isApiKeyLocked, setIsApiKeyLocked] = useState<boolean>(!!modelConfig.apiKey?.trim());
-  const [isLockButtonVibrating, setIsLockButtonVibrating] = useState<boolean>(false);
+  // Clicking a LOCKED key field used to shake the lock button (`animate-vibrate`) and turn
+  // it red. The shake keyframe was deleted as a vestibular trigger (ADR-H), which left the
+  // feedback carried by colour alone — WCAG 2.1 SC 1.4.1. It is a sentence now: text works
+  // with reduced motion, in greyscale, and for a screen reader.
+  const [showLockedHint, setShowLockedHint] = useState<boolean>(false);
   const { serverAddress } = useSidebar();
   const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
   const [openRouterError, setOpenRouterError] = useState<string>('');
@@ -675,8 +679,9 @@ export function ModelSettingsModal({
 
   const handleInputClick = () => {
     if (isApiKeyLocked) {
-      setIsLockButtonVibrating(true);
-      setTimeout(() => setIsLockButtonVibrating(false), 500);
+      setShowLockedHint(true);
+      // 500ms was a shake's length; a sentence needs long enough to be read.
+      setTimeout(() => setShowLockedHint(false), 4000);
     }
   };
 
@@ -1073,8 +1078,11 @@ export function ModelSettingsModal({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => setIsApiKeyLocked(!isApiKeyLocked)}
-                    className={isLockButtonVibrating ? 'animate-vibrate text-red-500' : ''}
+                    onClick={() => {
+                      setShowLockedHint(false);
+                      setIsApiKeyLocked(!isApiKeyLocked);
+                    }}
+                    className={showLockedHint ? 'text-destructive-ink' : ''}
                     title={isApiKeyLocked ? 'Unlock to edit' : 'Lock to prevent editing'}
                   >
                     {isApiKeyLocked ? <Lock /> : <Unlock />}
@@ -1090,6 +1098,11 @@ export function ModelSettingsModal({
                 </Button>
               </div>
             </div>
+            {showLockedHint && (
+              <p role="status" className="mt-1 text-caption text-destructive-ink">
+                This key is locked. Use the lock button to edit it.
+              </p>
+            )}
           </div>
         )}
 

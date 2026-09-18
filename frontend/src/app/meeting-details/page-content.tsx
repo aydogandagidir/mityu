@@ -9,10 +9,12 @@ import { toast } from 'sonner';
 import { TranscriptPanel } from '@/components/MeetingDetails/TranscriptPanel';
 import { SummaryPanel } from '@/components/MeetingDetails/SummaryPanel';
 import { ModelConfig } from '@/components/ModelSettingsModal';
-import { FileText, Sparkles, PanelRightOpen } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { ReportHeader } from '@/components/report/ReportHeader';
 import { TopicsTimeline } from '@/components/report/TopicsTimeline';
 import { PlaybackBar, PlaybackBarHandle } from '@/components/report/PlaybackBar';
+import { EvidenceDrawer } from '@/components/report/EvidenceDrawer';
+import { Button } from '@/components/ui/button';
 
 // Custom hooks
 import { useMeetingData } from '@/hooks/meeting-details/useMeetingData';
@@ -75,16 +77,17 @@ export default function PageContent({
   const [scrollToSegmentId, setScrollToSegmentId] = useState<string | null>(null);
   const [scrollNonce, setScrollNonce] = useState(0);
 
-  // Meeting-details split layout (frontend-only rebalance):
-  //  - Desktop (md+): transcript (primary) grows to fill; summary is capped and
-  //    can be COLLAPSED so the transcript reclaims the full width.
-  //  - Narrow (< md): the two panels are switched via an in-page tab bar so the
-  //    transcript (primary content) is always reachable — it used to be hidden.
-  // Both panels stay mounted at all times (CSS show/hide, never unmount) so the
-  // BlockNote editor / draft-review state and the transcript scroll position
-  // survive collapsing and tab switches.
-  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false);
-  const [mobileTab, setMobileTab] = useState<'transcript' | 'summary'>('transcript');
+  // The report is ONE document (docs/DESIGN_READAI.md:45-50) and the transcript is
+  // evidence you open beside a claim. What used to be a transcript-primary split pane
+  // with a collapsible, capped summary — plus a tab bar on narrow windows that hid one
+  // of them outright — is now a single column with a drawer.
+  //
+  // 🔒 Both panes stay MOUNTED at all times, exactly as before: unmounting the
+  // transcript loses its scroll position and breaks jump-to-source, which retries its
+  // scroll after pagination brings the segment in. The drawer hides by width, never by
+  // unmounting.
+  const [isEvidenceOpen, setIsEvidenceOpen] = useState(false);
+  const evidenceToggleRef = useRef<HTMLButtonElement>(null);
 
   // Product-tour step 2 points at a source-linked summary block. Reveal the
   // summary before the coach-mark looks for it: expand it if collapsed and, on
@@ -92,13 +95,10 @@ export default function PageContent({
   // display:hidden, and the step would land centered instead of on it.
   const { activeAnchor } = useTour();
   useEffect(() => {
-    if (activeAnchor === TOUR_ANCHORS.summaryApproveBlock) {
-      setIsSummaryCollapsed(false);
-      setMobileTab('summary');
-    } else if (activeAnchor === TOUR_ANCHORS.transcriptPanel) {
-      // On narrow windows the two panes are tabbed; make sure the transcript is
-      // the visible one for step 1 so Back from step 2 lands on it, not centered.
-      setMobileTab('transcript');
+    if (activeAnchor === TOUR_ANCHORS.transcriptPanel) {
+      // The coach-mark needs its anchor VISIBLE, not merely mounted: the transcript
+      // lives in the drawer now, so step 1 opens it.
+      setIsEvidenceOpen(true);
     }
   }, [activeAnchor]);
 
@@ -109,7 +109,8 @@ export default function PageContent({
   useEffect(() => {
     setScrollToSegmentId(initialSegmentId ?? null);
     if (initialSegmentId) {
-      setMobileTab('transcript');
+      // A deep link from search, the Action Center or Home names a segment: show it.
+      setIsEvidenceOpen(true);
       setScrollNonce((nonce) => nonce + 1);
     }
   }, [initialSegmentId, initialJumpId, meeting.id]);
@@ -156,11 +157,9 @@ export default function PageContent({
   const handleJumpToSource = (sourceChunkId: string) => {
     setScrollToSegmentId(sourceChunkId);
     setScrollNonce((n) => n + 1);
-    // On the narrow layout the transcript pane is mounted but hidden, so
-    // scrolling it would happen out of sight: opening a source has to reveal
-    // the transcript too, or the source control silently does nothing. No-op
-    // on desktop, where both panes are visible.
-    setMobileTab('transcript');
+    // Scrolling a hidden pane happens out of sight, so opening a source opens the
+    // evidence beside the claim. Without this the control silently does nothing.
+    setIsEvidenceOpen(true);
   };
 
   // The target segment isn't in the loaded page: pull the next page so the
@@ -253,7 +252,7 @@ export default function PageContent({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="flex flex-col h-screen bg-background"
+      className="flex h-full flex-col bg-background"
     >
       {/* read.ai-style report header: title, date/duration meta, and an on-device
           overview-metrics strip computed from the local transcript. */}
@@ -275,153 +274,102 @@ export default function PageContent({
       />
 
       {/* Local audio playback (asset protocol); transcript timestamps + chapters seek into it. */}
-      <PlaybackBar ref={playbackRef} folderPath={meeting.folder_path} />
-
-      {/* Narrow-screen (< md) tab bar: switches which panel is visible so the
-          transcript (primary content) is reachable on mobile/tablet. Hidden on
-          md+ where both panels sit side by side. */}
-      <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-border bg-card">
-        <button
-          type="button"
-          onClick={() => setMobileTab('transcript')}
-          aria-pressed={mobileTab === 'transcript'}
-          className={`flex-1 inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-            mobileTab === 'transcript'
-              ? 'bg-accent text-primary border border-primary/20'
-              : 'text-muted-foreground hover:bg-muted border border-transparent'
-          }`}
+      <div className="flex items-center gap-2 border-b border-border bg-card px-gutter py-1.5">
+        <div className="min-w-0 flex-1">
+          {/* Local audio playback (asset protocol); transcript timestamps + chapters
+              seek into it. Renders nothing when there is no recording to play. */}
+          <PlaybackBar ref={playbackRef} folderPath={meeting.folder_path} />
+        </div>
+        <Button
+          ref={evidenceToggleRef}
+          variant="outline"
+          size="sm"
+          onClick={() => setIsEvidenceOpen((open) => !open)}
+          aria-expanded={isEvidenceOpen}
+          aria-controls="evidence-drawer"
         >
-          <FileText size={16} />
+          <FileText className="size-4" aria-hidden="true" />
           Transcript
-        </button>
-        <button
-          type="button"
-          onClick={() => setMobileTab('summary')}
-          aria-pressed={mobileTab === 'summary'}
-          className={`flex-1 inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-            mobileTab === 'summary'
-              ? 'bg-accent text-primary border border-primary/20'
-              : 'text-muted-foreground hover:bg-muted border border-transparent'
-          }`}
-        >
-          <Sparkles size={16} />
-          Summary
-        </button>
+        </Button>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Transcript wrapper — PRIMARY content.
-            - Mobile: full width, visible only when its tab is active.
-            - md+: always visible and grows to fill (flex-1), so it is never the
-              cramped panel and it reclaims space when the summary collapses.
-            The right border only shows on md+ when the summary is visible. */}
-        <div
-          className={`${
-            mobileTab === 'transcript' ? 'flex' : 'hidden'
-          } w-full min-w-0 md:flex md:flex-1 md:min-w-0 ${
-            isSummaryCollapsed ? '' : 'md:border-r md:border-border'
-          }`}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* THE REPORT — one scrolling document at a reading measure, not a pane in a
+            split. The summary panel owns its own toolbar and body; this wrapper only
+            gives it the column. */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <SummaryPanel
+            meeting={meeting}
+            meetingTitle={meetingData.meetingTitle}
+            onTitleChange={meetingData.handleTitleChange}
+            isEditingTitle={meetingData.isEditingTitle}
+            onStartEditTitle={() => meetingData.setIsEditingTitle(true)}
+            onFinishEditTitle={() => meetingData.setIsEditingTitle(false)}
+            summaryRef={meetingData.blockNoteSummaryRef}
+            aiSummary={meetingData.aiSummary}
+            summaryStatus={summaryGeneration.summaryStatus}
+            transcripts={meetingData.transcripts}
+            modelConfig={modelConfig}
+            setModelConfig={setModelConfig}
+            onSaveModelConfig={handleSaveModelConfig}
+            onGenerateSummary={summaryGeneration.handleGenerateSummary}
+            onStopGeneration={summaryGeneration.handleStopGeneration}
+            customPrompt={customPrompt}
+            summaryResponse={summaryResponse}
+            onSaveSummary={meetingData.handleSaveSummary}
+            onSummaryChange={meetingData.handleSummaryChange}
+            onDirtyChange={meetingData.setIsSummaryDirty}
+            summaryError={summaryGeneration.summaryError}
+            onRegenerateSummary={summaryGeneration.handleRegenerateSummary}
+            getSummaryStatusMessage={summaryGeneration.getSummaryStatusMessage}
+            availableTemplates={templates.availableTemplates}
+            selectedTemplate={templates.selectedTemplate}
+            onTemplateSelect={templates.handleTemplateSelection}
+            isModelConfigLoading={false}
+            onOpenModelSettings={handleRegisterModalOpen}
+            // Source-linked structured draft review (C1.6)
+            structuredEnabled={structuredEnabled}
+            draftResponse={meetingData.draftResponse}
+            isDraftLoading={meetingData.isDraftLoading}
+            draftError={meetingData.draftError}
+            onJumpToSource={handleJumpToSource}
+            onSummaryApproved={meetingData.refetchDraft}
+          />
+        </div>
+
+        {/* THE EVIDENCE — always mounted, opened beside the claim. */}
+        <EvidenceDrawer
+          open={isEvidenceOpen}
+          onClose={() => setIsEvidenceOpen(false)}
+          returnFocusTo={evidenceToggleRef}
         >
           <TranscriptPanel
-          transcripts={meetingData.transcripts}
-          customPrompt={customPrompt}
-          onPromptChange={setCustomPrompt}
-          onCopyTranscript={copyOperations.handleCopyTranscript}
-          onOpenMeetingFolder={meetingOperations.handleOpenMeetingFolder}
-          isRecording={isRecording}
-          disableAutoScroll={true}
-          // Pagination props for efficient loading
-          usePagination={true}
-          segments={segments}
-          hasMore={hasMore}
-          isLoadingMore={isLoadingMore}
-          totalCount={totalCount}
-          loadedCount={loadedCount}
-          onLoadMore={onLoadMore}
-          // Retranscription props
-          meetingId={meeting.id}
-          meetingFolderPath={meeting.folder_path}
-          onRefetchTranscripts={onRefetchTranscripts}
-          // Jump-to-source (C1.6)
-          scrollToSegmentId={scrollToSegmentId}
-          scrollNonce={scrollNonce}
-          onRequestSegment={handleRequestSegment}
-          onSeekToTime={handleSeekToTime}
+            transcripts={meetingData.transcripts}
+            customPrompt={customPrompt}
+            onPromptChange={setCustomPrompt}
+            onCopyTranscript={copyOperations.handleCopyTranscript}
+            onOpenMeetingFolder={meetingOperations.handleOpenMeetingFolder}
+            isRecording={isRecording}
+            disableAutoScroll={true}
+            // Pagination props for efficient loading
+            usePagination={true}
+            segments={segments}
+            hasMore={hasMore}
+            isLoadingMore={isLoadingMore}
+            totalCount={totalCount}
+            loadedCount={loadedCount}
+            onLoadMore={onLoadMore}
+            // Retranscription props
+            meetingId={meeting.id}
+            meetingFolderPath={meeting.folder_path}
+            onRefetchTranscripts={onRefetchTranscripts}
+            // Jump-to-source (C1.6)
+            scrollToSegmentId={scrollToSegmentId}
+            scrollNonce={scrollNonce}
+            onRequestSegment={handleRequestSegment}
+            onSeekToTime={handleSeekToTime}
           />
-        </div>
-
-        {/* Summary wrapper — the CAPPED / SHRINKING panel (no longer dominant).
-            - Mobile: full width, visible only when its tab is active.
-            - md+: capped to ~half the width (max 640px) and does not grow, so
-              the transcript keeps comfortable room. Hidden when collapsed.
-            - min-w-[340px]: the floor at which the panel toolbar still fits
-              fully icon-only (~338px measured) without scrolling; below md the
-              tab switcher takes over, so the transcript (min-w-0) absorbs the
-              remaining squeeze. */}
-        <div
-          className={`${
-            mobileTab === 'summary' ? 'flex' : 'hidden'
-          } w-full min-w-0 md:w-1/2 md:min-w-[340px] md:max-w-[640px] md:shrink-0 ${
-            isSummaryCollapsed ? 'md:hidden' : 'md:flex'
-          }`}
-        >
-          <SummaryPanel
-          meeting={meeting}
-          meetingTitle={meetingData.meetingTitle}
-          onTitleChange={meetingData.handleTitleChange}
-          isEditingTitle={meetingData.isEditingTitle}
-          onStartEditTitle={() => meetingData.setIsEditingTitle(true)}
-          onFinishEditTitle={() => meetingData.setIsEditingTitle(false)}
-          summaryRef={meetingData.blockNoteSummaryRef}
-          aiSummary={meetingData.aiSummary}
-          summaryStatus={summaryGeneration.summaryStatus}
-          transcripts={meetingData.transcripts}
-          modelConfig={modelConfig}
-          setModelConfig={setModelConfig}
-          onSaveModelConfig={handleSaveModelConfig}
-          onGenerateSummary={summaryGeneration.handleGenerateSummary}
-          onStopGeneration={summaryGeneration.handleStopGeneration}
-          customPrompt={customPrompt}
-          summaryResponse={summaryResponse}
-          onSaveSummary={meetingData.handleSaveSummary}
-          onSummaryChange={meetingData.handleSummaryChange}
-          onDirtyChange={meetingData.setIsSummaryDirty}
-          summaryError={summaryGeneration.summaryError}
-          onRegenerateSummary={summaryGeneration.handleRegenerateSummary}
-          getSummaryStatusMessage={summaryGeneration.getSummaryStatusMessage}
-          availableTemplates={templates.availableTemplates}
-          selectedTemplate={templates.selectedTemplate}
-          onTemplateSelect={templates.handleTemplateSelection}
-          isModelConfigLoading={false}
-          onOpenModelSettings={handleRegisterModalOpen}
-          // Source-linked structured draft review (C1.6)
-          structuredEnabled={structuredEnabled}
-          draftResponse={meetingData.draftResponse}
-          isDraftLoading={meetingData.isDraftLoading}
-          draftError={meetingData.draftError}
-          onJumpToSource={handleJumpToSource}
-          onSummaryApproved={meetingData.refetchDraft}
-          // Desktop collapse control (chevron lives in the summary header).
-          showCollapseButton
-          onCollapse={() => setIsSummaryCollapsed(true)}
-          />
-        </div>
-
-        {/* Collapsed-state expand rail (md+ only): a slim edge affordance to bring
-            the summary panel back after it has been collapsed. */}
-        {isSummaryCollapsed && (
-          <div className="hidden md:flex flex-col items-center border-l border-border bg-card shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsSummaryCollapsed(false)}
-              title="Show summary panel"
-              aria-label="Show summary panel"
-              className="p-2 m-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <PanelRightOpen size={18} />
-            </button>
-          </div>
-        )}
+        </EvidenceDrawer>
       </div>
     </motion.div>
   );

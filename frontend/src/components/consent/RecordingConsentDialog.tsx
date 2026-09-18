@@ -11,6 +11,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 
 /**
  * RecordingConsentDialog (BACKLOG C5).
@@ -63,7 +64,7 @@ export function RecordingConsentDialog({ open, onConfirm, onCancel }: RecordingC
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <Mic className="h-5 w-5 text-red-500" aria-hidden="true" />
+            <Mic className="size-5 text-recording" aria-hidden="true" />
             <DialogTitle>Before you record</DialogTitle>
           </div>
           <DialogDescription className="pt-1">
@@ -73,11 +74,14 @@ export function RecordingConsentDialog({ open, onConfirm, onCancel }: RecordingC
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
-          <Users className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" aria-hidden="true" />
-          <div className="text-sm text-amber-900">
+        {/* 🔒 The heading and the paragraph are frozen; the palette is not. These were
+            three hardcoded amber values with no dark variant, so in dark mode the box
+            painted near-black text on near-white inside a near-black dialog. */}
+        <div className="flex items-start gap-3 rounded-md border border-warning-border bg-warning-surface p-3 text-warning-ink">
+          <Users className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+          <div className="text-body">
             <p className="font-semibold">You are responsible for participant consent</p>
-            <p className="mt-1 text-amber-800">
+            <p className="mt-1">
               Recording laws vary by jurisdiction and many require that every
               participant is informed or gives consent before recording. By
               continuing, you confirm that all participants in this
@@ -87,12 +91,10 @@ export function RecordingConsentDialog({ open, onConfirm, onCancel }: RecordingC
           </div>
         </div>
 
-        <label className="mt-1 flex cursor-pointer items-center gap-2 text-sm text-gray-700 select-none">
-          <input
-            type="checkbox"
+        <label className="mt-1 flex cursor-pointer select-none items-center gap-2 text-body text-foreground">
+          <Checkbox
             checked={dontShowAgain}
-            onChange={(e) => setDontShowAgain(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+            onCheckedChange={(checked) => setDontShowAgain(checked === true)}
           />
           Don&apos;t show this again on this device
         </label>
@@ -101,10 +103,12 @@ export function RecordingConsentDialog({ open, onConfirm, onCancel }: RecordingC
           <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button
-            className="bg-red-600 text-white hover:bg-red-700"
-            onClick={() => onConfirm(dontShowAgain)}
-          >
+          {/* 🔒 The string is frozen. The COLOUR is not, and red was wrong here: red is
+              the indicator that a recording is running, not the semantics of a person
+              confirming something. This is the one filled blue action in the dialog —
+              "a human decided" — and its hover/active come from the same family, whose
+              white label clears AA under exactly this sentence. */}
+          <Button variant="verified" onClick={() => onConfirm(dontShowAgain)}>
             I confirm participants are informed — start recording
           </Button>
         </DialogFooter>

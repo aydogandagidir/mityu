@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { LockOpen } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Notice } from '@/components/ui/notice';
 import { getDbEncryptionStatus } from '@/services/dbService';
 
 /**
@@ -74,24 +74,21 @@ export function EncryptionStatusBanner() {
     return null;
   }
 
+  // 🔒 Non-dismissable, `aria-live="polite"`, and only ever rendered in the confirmed
+  // -unencrypted case. What changed is the palette: it was three hardcoded amber classes
+  // with no dark variant, so in dark mode it painted near-black text on near-white.
   return (
-    <div className="px-4 pt-4">
-      <Alert
-        variant="destructive"
-        className="border-amber-400 bg-amber-50"
-        aria-live="polite"
-      >
-        <LockOpen className="h-5 w-5 text-amber-600" />
-        <AlertTitle className="text-amber-900 font-semibold">
-          Local data is currently stored unencrypted
-        </AlertTitle>
-        <AlertDescription className="text-amber-800 mt-1">
-          The encryption key is unavailable, so Mityu saved your local data
-          without at-rest encryption. Mityu will re-encrypt it automatically on
-          the next launch once your OS keychain is available.
-        </AlertDescription>
-      </Alert>
-    </div>
+    <Notice
+      tone="warning"
+      as="status"
+      aria-live="polite"
+      icon={LockOpen}
+      title="Local data is currently stored unencrypted"
+    >
+      The encryption key is unavailable, so Mityu saved your local data without at-rest
+      encryption. Mityu will re-encrypt it automatically on the next launch once your OS
+      keychain is available.
+    </Notice>
   );
 }
 

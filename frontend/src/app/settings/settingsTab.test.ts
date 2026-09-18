@@ -29,28 +29,46 @@ describe('resolveTabFromSearch', () => {
 });
 
 describe('the settings page hydrates identically on both sides', () => {
-  // This app ships as a static export (next.config.ts `output: 'export'`), so
-  // the prerendered HTML can only ever be the default tab. A `useState`
-  // initialiser that read `window.location.search` made the client's first
-  // render disagree with it, and React threw "Hydration failed because the
-  // server rendered HTML didn't match the client" and rebuilt the tree. The tab
-  // still ended up correct, which is exactly why it survived review — it was
-  // caught by reading the browser console, not by any test.
+  // This app ships as a static export (next.config.ts `output: 'export'`), so the
+  // prerendered HTML can only ever be the default section. Reading the URL while
+  // rendering made the client's first render disagree with it, and React threw
+  // "Hydration failed because the server rendered HTML didn't match the client" and
+  // rebuilt the tree. The section still ended up correct, which is exactly why it
+  // survived review — it was caught by reading the browser console, not by any test.
   //
-  // A jsdom render cannot see this: it never performs the server render to
-  // disagree with. So the guard is structural — no state initialiser may read
-  // the URL. Keep the read in an effect, which runs only after hydration.
+  // A jsdom render cannot see this: it never performs the server render to disagree
+  // with. So the guard is structural.
+  //
+  // WHY THESE TWO ASSERTIONS CHANGED SHAPE (they were not weakened): the page no
+  // longer holds the active pane in `useState`. The redesign made each pane a URL —
+  // `/settings?section=privacy` — so the value is derived from `useSearchParams()`
+  // inside the page's Suspense boundary, which is how Next is meant to read a query
+  // string in a static export. The old assertions grepped for
+  // `useState<string>('general')` and for a non-empty list of `useState` initialisers;
+  // against an implementation with no `useState` at all, both would pass or fail for
+  // reasons unrelated to hydration. What the pair actually guarded is preserved below:
+  // nothing reads the URL during render, and the default is the value the prerender
+  // emits.
   const source = readFileSync(join(__dirname, 'page.tsx'), 'utf8');
 
-  it('never reads window inside a useState initialiser', () => {
+  it('never reads the URL during render — only inside an effect', () => {
+    // `?tab=` is translated to `?section=` for the tray's link, and that read is the
+    // one direct `window.location` access in the file. It must sit inside an effect,
+    // so it runs after hydration rather than during the first render.
+    const firstEffect = source.indexOf('useEffect(');
+    expect(firstEffect).toBeGreaterThan(-1);
+    const beforeAnyEffect = source.slice(0, firstEffect);
+    expect(beforeAnyEffect).not.toMatch(/window\./);
+
     const initialisers = source.match(/useState\([\s\S]*?\)\s*;/g) ?? [];
-    expect(initialisers.length).toBeGreaterThan(0);
     for (const initialiser of initialisers) {
       expect(initialiser).not.toMatch(/window\./);
     }
   });
 
-  it('starts the tab at the value the prerender emits', () => {
-    expect(source).toMatch(/useState<string>\('general'\)/);
+  it('starts at the section the prerender emits', () => {
+    // The prerender has no query string, so the derivation must fall back to General
+    // rather than to whatever the first entry of SECTIONS happens to be.
+    expect(source).toMatch(/:\s*'general';/);
   });
 });

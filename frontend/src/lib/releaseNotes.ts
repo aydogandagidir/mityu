@@ -43,6 +43,43 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.2.2',
+    date: '2026-09-18',
+    headline: 'The Stop button outside the home screen now actually stops the recording.',
+    changes: [
+      {
+        title: 'Stop works on every screen, not just Home',
+        detail:
+          'The Stop in the bar at the bottom of the window ended the on-screen session but never told the recorder to stop. On Settings, Actions or a meeting report it looked like it worked — the label changed to "Stopping…" — and then it went back to "Stop" with the recording still running and nothing saved. It now ends the recording and saves the meeting from wherever you are.',
+      },
+      {
+        title: 'Search results are readable in dark mode',
+        detail:
+          'A result in the meetings search painted itself as a white card inside the dark window. It follows the theme now.',
+      },
+      {
+        title: 'A summary opened in dark mode is no longer a white sheet',
+        detail:
+          'The summary editor was pinned to the light theme, so opening one in dark mode lit up the whole pane.',
+      },
+      {
+        title: 'Nothing is cut off at the bottom while you record',
+        detail:
+          'With a recording running, the last 40 pixels of every scrollable screen were hidden behind the session bar.',
+      },
+      {
+        title: 'The recording controls have names a screen reader can read',
+        detail:
+          'Record, Pause and Stop announced themselves only as "button". They now say which is which.',
+      },
+    ],
+    caveats: [
+      'This release was verified on Windows. The macOS path was not exercised for 1.2.2.',
+      'Transcription accuracy is still not benchmarked, and Turkish in particular has a known open problem. Review anything important against the audio.',
+      'The fixes above were found by running the app by hand. The screenshot checks that run automatically never rendered the affected states, which is why they passed while the bugs shipped.',
+    ],
+  },
+  {
     version: '1.2.1',
     date: '2026-09-14',
     headline: 'Recording starts with the engine you actually chose, and the live copilot is reachable.',

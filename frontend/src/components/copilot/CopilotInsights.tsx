@@ -100,7 +100,7 @@ export function AiDisclosure() {
       className="flex items-start gap-2 border-b border-border bg-muted/50 px-3 py-2"
     >
       <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
-      <p className="flex-1 text-[11px] leading-snug text-muted-foreground">
+      <p className="flex-1 text-caption leading-snug text-muted-foreground">
         You are interacting with an AI assistant. Everything it offers is a draft built from this
         conversation&apos;s transcript — check it before you rely on it.
       </p>
@@ -131,7 +131,7 @@ export function AiMarking() {
     <p
       role="note"
       aria-label="AI-generated content notice"
-      className="flex items-center gap-1 px-3 pb-1 pt-2 text-[10px] leading-snug text-muted-foreground"
+      className="flex items-center gap-1 px-3 pb-1 pt-2 text-caption leading-snug text-muted-foreground"
     >
       <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
       AI-generated · verify before you rely on it
@@ -166,7 +166,7 @@ function failureCopy(failure: InsightFailure): { text: string; hint?: string } {
 
 function Refusal({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-3 py-2 text-[11px] leading-snug text-muted-foreground">{children}</p>
+    <p className="px-3 py-2 text-caption leading-snug text-muted-foreground">{children}</p>
   );
 }
 
@@ -206,7 +206,7 @@ function Claims({
             className="rounded-md border border-border px-2 py-1.5 text-[12px] leading-snug text-foreground"
           >
             {claim.text}
-            <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="mt-1 flex items-center gap-1 text-caption text-muted-foreground">
               <Quote className="h-2.5 w-2.5 shrink-0" aria-hidden />
               {/* The stamp comes from the cited segment, never from the model. */}
               said at {claim.timestamp}
@@ -215,7 +215,7 @@ function Claims({
                 onClick={() => (pinned ? onUnpin(pinId) : onPin(claim, outcome.action))}
                 aria-pressed={pinned}
                 aria-label={pinned ? `Unpin: ${claim.text}` : `Pin to notes: ${claim.text}`}
-                className="ml-auto inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] transition-colors hover:bg-muted"
+                className="ml-auto inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-caption transition-colors hover:bg-muted"
               >
                 {pinned ? (
                   <>
@@ -234,13 +234,13 @@ function Claims({
       </ol>
       {/* Filtering is stated, not hidden: a shortened answer looks complete. */}
       {outcome.dropped.length > 0 && (
-        <p className="px-3 pb-1 text-[10px] text-muted-foreground">
+        <p className="px-3 pb-1 text-caption text-muted-foreground">
           {outcome.dropped.length} {outcome.dropped.length === 1 ? 'suggestion' : 'suggestions'} was
           dropped for citing something that was not said in this window.
         </p>
       )}
       {outcome.turnsOmitted > 0 && (
-        <p className="px-3 pb-1 text-[10px] text-muted-foreground">
+        <p className="px-3 pb-1 text-caption text-muted-foreground">
           Built from the most recent {outcome.turnsConsidered} segments; {outcome.turnsOmitted}{' '}
           older ones in the window were left out.
         </p>
@@ -302,7 +302,7 @@ export function CopilotInsights({
       <AiDisclosure />
 
       {modeName && (
-        <p className="flex items-center gap-1 px-3 pt-2 text-[10px] text-muted-foreground">
+        <p className="flex items-center gap-1 px-3 pt-2 text-caption text-muted-foreground">
           <SquarePen className="h-2.5 w-2.5 shrink-0" aria-hidden />
           Answering as <span className="font-medium text-foreground">{modeName}</span>
         </p>
@@ -315,7 +315,7 @@ export function CopilotInsights({
             type="button"
             onClick={() => onRequest(action)}
             disabled={disabled || busy}
-            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
           >
             {ACTION_LABELS[action]}
           </button>
@@ -331,14 +331,14 @@ export function CopilotInsights({
           out of I3b (ADR-0041); telling the user their note is safe before
           that would be the same false promise in the UI. */}
       {pendingPins > 0 && (
-        <p className="flex items-center gap-1 px-3 pb-1 text-[10px] text-muted-foreground">
+        <p className="flex items-center gap-1 px-3 pb-1 text-caption text-muted-foreground">
           <Pin className="h-2.5 w-2.5 shrink-0" aria-hidden />
           {pendingPins} {pendingPins === 1 ? 'note' : 'notes'} pinned. They are written into the
           meeting&apos;s summary when you save it, each as a draft you review.
         </p>
       )}
       {pinError && (
-        <p className="flex items-start gap-1 px-3 pb-1 text-[10px] text-muted-foreground">
+        <p className="flex items-start gap-1 px-3 pb-1 text-caption text-muted-foreground">
           <AlertTriangle className="mt-0.5 h-2.5 w-2.5 shrink-0" aria-hidden />
           {pinError}
         </p>
@@ -356,13 +356,13 @@ export function CopilotInsights({
         {state.phase === 'loading' && (
           <div className="flex items-center gap-2 px-3 py-2">
             <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" aria-hidden />
-            <span className="flex-1 text-[11px] text-muted-foreground">
+            <span className="flex-1 text-caption text-muted-foreground">
               Reading the last few minutes for “{ACTION_LABELS[state.action]}”…
             </span>
             <button
               type="button"
               onClick={onCancel}
-              className="rounded-md border border-border px-2 py-0.5 text-[11px] transition-colors hover:bg-muted"
+              className="rounded-md border border-border px-2 py-0.5 text-caption transition-colors hover:bg-muted"
             >
               Cancel
             </button>
@@ -400,11 +400,11 @@ export function CopilotInsights({
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
             )}
             <div className="flex-1">
-              <p className="text-[11px] leading-snug text-foreground">
+              <p className="text-caption leading-snug text-foreground">
                 {failureCopy(state.failure).text}
               </p>
               {failureCopy(state.failure).hint && (
-                <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                <p className="mt-0.5 text-caption leading-snug text-muted-foreground">
                   {failureCopy(state.failure).hint}
                 </p>
               )}

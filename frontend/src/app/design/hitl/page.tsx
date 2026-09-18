@@ -121,6 +121,7 @@ export default function HitlPreviewPage() {
 
       <div className="border border-border rounded-lg p-4">
         <DraftSummaryView
+            onJumpToSource={() => {}}
           meetingId={MEETING_ID}
           draftResponse={FIXTURE}
           meetingTitle="Site visit"

@@ -46,6 +46,102 @@ of nothing:
 Shots land in `target/ui-shots/` (ignored). This does not replace running the
 real app — it catches "renders nothing" early, not "wrong in the app".
 
+**A fixture renders the REAL component, or it proves nothing.** Every product route
+`invoke()`s on mount, so a fixture cannot mount the containers — but it must not
+re-implement them either: a fixture that draws its own lookalike of a card proves the
+lookalike. Two patterns, in order of preference:
+
+1. **Inject the data source.** Give the screen an optional prop for its service or
+   loader (`HomeDashboard`'s `service`, `ActionCenter`'s `loadPage`) that product code
+   never passes. The fixture and the test then exercise the same screen the user gets.
+   Where Next refuses — a route component's props are validated against its own
+   `PageProps` — move the screen into `components/` and leave the route a thin shell.
+2. **Provide the contexts as literal values.** `SidebarContext`, `RecordingStateContext`,
+   `ConfigContext` and `ImportDialogContext` are exported for exactly this. Product code
+   still uses the hooks, whose throw is what stops a consumer rendering outside its
+   provider.
+
+A modal portals to the body and covers the page, so a fixture shows **one at a time**,
+selected by a query parameter (`/design/dialogs?dialog=consent`) — two open at once
+screenshots whichever won, over a dimmed copy of everything else.
+
+A route may carry a query string — `design/hitl?reject=1`, `design/tour?tour=3` — which the
+tool splits off before appending `.html` and strips out of the PNG filename. `--expect` also
+accepts a marker that begins with `-` (`--expect "--ai-surface"`), because half the markers
+DESIGN_SYSTEM.md §11.2 requires *are* token names.
+
+## Styling: semantic tokens, and where the lint cannot see
+
+Colour, type, radius, elevation, motion and layering all come from the tokens in
+`docs/DESIGN_SYSTEM.md` §4, declared in `frontend/src/app/globals.css` (on **both** `:root`
+and `.dark` — a token declared in only one theme renders transparent in the other) and
+mapped to utilities in `frontend/tailwind.config.js`. The working list of what actually
+compiles is `frontend/src/app/design/tokens-reference.md`, rendered at `/design`.
+
+Four ESLint guardrails in `frontend/.eslintrc.json` enforce the floor: no raw palette
+utility or hex in `className`, no arbitrary `text-[Npx]`, no `ring-ring` without a
+`ring-offset-*` sibling, no `outline-none` without a `focus-visible:` replacement.
+
+**Write them order-independently.** Rules 3 and 4 first shipped as a positive match plus a
+forward-only lookahead, which reported an error on the legal form whenever the offset (or
+the `focus-visible:` replacement) was written *before* the token it guards — and nothing in
+this repo normalises Tailwind class order. Both are now a positive match plus a
+`[value!=/…/]` exclusion. A new guardrail that reads more than one token from one class
+string must do the same.
+
+**Their blind spot, stated plainly so nobody mistakes them for proof.** They are
+`no-restricted-syntax` esquery selectors over the `className` attribute's **literal** value,
+so they can only read a string literal. `frontend/src/` holds ~2342 literal
+`className="…"` sites — but also ~85 `className={cn(…)}` and ~95 template-literal
+`className` sites: about **180 compositions the rules cannot read at all**, and the
+`ui/` primitives, where 13 files use `outline-none`, are exactly where `cn()` is densest.
+
+Three consequences:
+
+1. The guardrails are a cheap first pass over roughly 93 % of call sites, **not** a proof.
+2. The `ring-ring` rule does **not** carry WCAG SC 2.4.11. What carries it is the arithmetic
+   in §4.4.6 (the ring against every offset surface, worst case 5.32:1) and the
+   `ringOffsetColor` map in `tailwind.config.js` that makes `ring-offset-card` compile at
+   all. The rule only stops the most common way of forgetting the offset.
+3. The compensating control is the **dead-class / built-CSS check** (§11.4 guardrail 6),
+   and it now exists: **`tools/ui/check-dead-classes.py`**, run by the `ui-visual`
+   workflow after `next build`. It reads every `class` token that actually reached the
+   exported HTML and checks it against the rules that actually reached the built CSS, so
+   it sees classes however they were composed — including through `cn()` and template
+   literals — and it is what catches a `ring-offset-card` that never compiled. Run
+   `--self-test` first; a detector nobody has seen fail is indistinguishable from one
+   that cannot. It found its first defect on the day it landed: `bg-warning-surface0` in
+   `CopilotPanel.tsx`, a token that does not exist, composed inside a template literal,
+   leaving the copilot's paused indicator with no fill at all. Prefer it over trusting
+   the selectors.
+
+Compose focus styling from the shared exported constant rather than hand-writing it at a
+`cn()` site, so the string those 180 compositions carry is one that was reviewed once. That
+constant is **`frontend/src/components/ui/focus-ring.ts`**: `focusRing(surface)` for a
+control, `focusRingWithin(surface)` for a composed field whose ring belongs to the group,
+and `HIGHLIGHT_ITEM` for a Radix roving-focus menu item, where the `--accent` highlight is
+the replacement for the stripped outline and a ring would double-draw. `surface` is chosen
+mechanically from DESIGN_SYSTEM.md §5's table by **what the control sits on** — a filled
+control takes its *parent* surface, never its own fill, because Tailwind draws the offset
+outside the border box.
+
+**`cn()` has to be taught every custom key you add to an existing Tailwind class group.**
+`frontend/src/lib/utils.ts` registers the §4.5 type steps, `shadow-elev-*`, `duration-*`,
+`max-w-measure`, `ease-emphasis` and the §4.11 chrome spacing aliases (`h-header`, `w-rail`,
+`p-gutter`, … across every `h`/`w`/`p*`/`m*`/`gap*`/inset group) with `extendTailwindMerge`. Without that, `tailwind-merge` classifies
+`text-label` as a *colour* (anything after `text-` that is not a t-shirt size is), and
+`cn('text-label', 'text-muted-foreground')` silently returns only the colour — the type step
+disappears with no error. A token added to `tailwind.config.js` without a matching entry
+there works everywhere except inside `cn()`, which is the hardest place to notice it.
+
+The trailing `overrides` entries in `.eslintrc.json` are a **shrinking, per-rule quarantine**
+of files that still carry pre-redesign classes. The main entry drops guardrail **1 only** and
+re-declares 2, 3 and 4; the narrower entries after it name the handful of files that still
+trip one of those three and say which. So a quarantined file is still policed for everything
+it does not already violate — it cannot *gain* an arbitrary type size, a bare `ring-ring` or
+an unreplaced `outline-none` while it waits. Delete your files from these arrays when you
+migrate them; never add one.
+
 ### Starting the app, not just building it
 Some defects are invisible to every check above: a plugin declared for the wrong
 platform links nothing and registers nothing, and that is not a compile error,
@@ -97,3 +193,9 @@ microphone.
 ## Secrets & config
 - LLM keys: OS keychain / Tauri secure store only. Never in SQLite plaintext, source, logs, analytics, or git.
 - No hardcoded paths (use Tauri path APIs) or hardcoded ports as required infra.
+
+**Two config keys deliberately shadow Tailwind's own.** `transitionTimingFunction.out`
+and `.in-out` in `tailwind.config.js` point at `--ease-out` / `--ease-in-out`, so every
+`ease-out` already in the tree adopts the design curve instead of the framework default —
+one motion system, not two. The override is commented at the key. A call site that
+genuinely needs the CSS keyword writes it as an arbitrary value and says why.

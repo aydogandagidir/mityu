@@ -1,14 +1,20 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 import { Mic, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OnboardingContainer } from '../OnboardingContainer';
 import { PermissionRow } from '../shared';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 
-export function PermissionsStep() {
+export function PermissionsStep({ onFinish }: { onFinish: () => void }) {
   const { setPermissionStatus, setPermissionsSkipped, permissions, completeOnboarding } = useOnboarding();
-  const [isPending, setIsPending] = useState(false);
+  // One flag used to disable BOTH rows: pressing Enable on the microphone put the
+  // system-audio row into "Checking..." as well, and blocked it.
+  const [pending, setPending] = useState<{ microphone: boolean; systemAudio: boolean }>({
+    microphone: false,
+    systemAudio: false,
+  });
 
   // Check permissions - only logs current state, doesn't auto-authorize
   // Actual permission checks are done via explicit user actions (clicking Enable)
@@ -32,12 +38,16 @@ export function PermissionsStep() {
       try {
         await invoke('open_system_settings');
       } catch {
-        alert('Please enable microphone access in System Preferences > Security & Privacy > Microphone');
+        toast.error('Could not open system settings', {
+          description:
+            'Open System Settings → Privacy & Security → Microphone and allow Mityu, then choose Re-check.',
+          duration: 12000,
+        });
       }
       return;
     }
 
-    setIsPending(true);
+    setPending((p) => ({ ...p, microphone: true }));
     try {
       console.log('[PermissionsStep] Triggering microphone permission...');
       const granted = await invoke<boolean>('trigger_microphone_permission');
@@ -53,7 +63,7 @@ export function PermissionsStep() {
       console.error('[PermissionsStep] Failed to request microphone permission:', err);
       setPermissionStatus('microphone', 'denied');
     } finally {
-      setIsPending(false);
+      setPending((p) => ({ ...p, microphone: false }));
     }
   };
 
@@ -64,12 +74,16 @@ export function PermissionsStep() {
       try {
         await invoke('open_system_settings');
       } catch {
-        alert('Please enable Audio Capture in System Settings → Privacy & Security → Audio Capture');
+        toast.error('Could not open system settings', {
+          description:
+            'Open System Settings → Privacy & Security → Audio Capture and allow Mityu, then choose Re-check.',
+          duration: 12000,
+        });
       }
       return;
     }
 
-    setIsPending(true);
+    setPending((p) => ({ ...p, systemAudio: true }));
     try {
       console.log('[PermissionsStep] Triggering Audio Capture permission...');
       // Backend creates Core Audio tap, captures audio, and verifies it's not silence
@@ -89,16 +103,22 @@ export function PermissionsStep() {
       console.error('[PermissionsStep] Failed to request system audio permission:', err);
       setPermissionStatus('systemAudio', 'denied');
     } finally {
-      setIsPending(false);
+      setPending((p) => ({ ...p, systemAudio: false }));
     }
   };
 
   const handleFinish = async () => {
     try {
       await completeOnboarding();
-      window.location.reload();
+      // The reload that used to live here threw away every in-memory state — and the
+      // white flash it caused was the last thing a new user saw of setup. `onFinish`
+      // refetches what the reload was really there for and hands over to the app.
+      onFinish();
     } catch (error) {
       console.error('Failed to complete onboarding:', error);
+      toast.error('Could not finish setup', {
+        description: 'Your downloads and permissions are kept. Try again.',
+      });
     }
   };
 
@@ -129,7 +149,7 @@ export function PermissionsStep() {
             title="Microphone"
             description="Required to capture your voice during meetings"
             status={permissions.microphone}
-            isPending={isPending}
+            isPending={pending.microphone}
             onAction={handleMicrophoneAction}
           />
 
@@ -139,7 +159,7 @@ export function PermissionsStep() {
             title="System Audio"
             description="Click Enable to grant Audio Capture permission"
             status={permissions.systemAudio}
-            isPending={isPending}
+            isPending={pending.systemAudio}
             onAction={handleSystemAudioAction}
           />
         </div>

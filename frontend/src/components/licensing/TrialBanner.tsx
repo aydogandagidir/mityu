@@ -31,12 +31,15 @@ export function TrialBanner() {
     return null;
   }
 
+  // The outer gutters are gone: `shell/SystemNotices` owns the spacing now, so the two
+  // system banners cannot each contribute a top margin and leave a gap whose size
+  // depends on which of them happens to be live.
   if (variant === 'chip') {
     return (
-      <div className="flex justify-end px-4 pt-3">
+      <div className="flex justify-end">
         <div
           role="status"
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-accent px-3 py-1 text-xs text-accent-foreground"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-accent px-3 py-1 text-caption text-accent-foreground"
         >
           <span>{trialChipLabel(status.daysLeft ?? 0)}</span>
           <span aria-hidden="true">·</span>
@@ -59,26 +62,20 @@ export function TrialBanner() {
       : 'Your free trial has ended. Your existing meetings stay fully accessible — a license is needed to record or import new audio.';
 
   return (
-    <div className="px-4 pt-4">
-      <div
-        role="status"
-        aria-live="polite"
-        className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-accent px-4 py-2.5"
-      >
-        <KeyRound className="h-4 w-4 shrink-0 text-accent-foreground" aria-hidden="true" />
-        <p className="min-w-0 flex-1 text-sm text-accent-foreground">{message}</p>
-        <div className="flex shrink-0 items-center gap-3">
-          <Button size="sm" onClick={() => openActivateDialog()}>
-            Activate license
-          </Button>
-          <button
-            type="button"
-            onClick={() => openCheckout()}
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            Buy Mityu Pro
-          </button>
-        </div>
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-border bg-accent px-4 py-2.5"
+    >
+      <KeyRound className="size-4 shrink-0 text-accent-foreground" aria-hidden="true" />
+      <p className="min-w-0 flex-1 text-body text-accent-foreground">{message}</p>
+      <div className="flex shrink-0 items-center gap-3">
+        <Button size="sm" onClick={() => openActivateDialog()}>
+          Activate license
+        </Button>
+        <Button variant="link" size="sm" onClick={() => openCheckout()}>
+          Buy Mityu Pro
+        </Button>
       </div>
     </div>
   );

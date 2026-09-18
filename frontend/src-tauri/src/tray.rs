@@ -347,6 +347,8 @@ pub async fn update_tray_menu_async<R: Runtime>(app: &AppHandle<R>) {
     let can_record = check_can_record(app).await;
     log::info!("Tray: can_record: {}", can_record);
 
+    set_recording_chrome(app, &recording_state);
+
     if let Ok(menu) = build_menu(app, recording_state, can_record) {
         if let Some(tray) = app.tray_by_id("main-tray") {
             let result = tray.set_menu(Some(menu));
@@ -356,6 +358,37 @@ pub async fn update_tray_menu_async<R: Runtime>(app: &AppHandle<R>) {
         }
     } else {
         log::error!("Tray: Failed to build menu");
+    }
+}
+
+/// The tray tooltip and the window title say whether a recording is live.
+///
+/// A meeting recorder that is capturing while its window is hidden and says so nowhere
+/// but inside that window is a consent problem, not a polish one: the tray icon is often
+/// the only part of the app on screen. The glyphs match the in-app dock — a round mark
+/// for recording, a square for paused — so the two never disagree.
+fn set_recording_chrome<R: Runtime>(app: &AppHandle<R>, state: &RecordingState) {
+    let label = match state {
+        RecordingState::Recording | RecordingState::Starting | RecordingState::Resuming => {
+            "\u{25cf} Mityu \u{2014} recording"
+        }
+        RecordingState::Paused | RecordingState::Pausing => {
+            "\u{275a}\u{275a} Mityu \u{2014} paused"
+        }
+        RecordingState::Stopping => "Mityu \u{2014} finishing up",
+        RecordingState::Stopped => "Mityu",
+    };
+
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        if let Err(e) = tray.set_tooltip(Some(label)) {
+            log::warn!("Tray: could not set tooltip: {}", e);
+        }
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(e) = window.set_title(label) {
+            log::warn!("Tray: could not set window title: {}", e);
+        }
     }
 }
 

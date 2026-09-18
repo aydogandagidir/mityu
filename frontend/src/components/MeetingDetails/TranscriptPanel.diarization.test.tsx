@@ -24,7 +24,6 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...
 vi.mock('@/components/VirtualizedTranscriptView', () => ({
   VirtualizedTranscriptView: () => null,
 }));
-vi.mock('@/components/TranscriptView', () => ({ TranscriptView: () => null }));
 vi.mock('./TranscriptButtonGroup', () => ({ TranscriptButtonGroup: () => null }));
 
 const { TranscriptPanel } = await import('./TranscriptPanel');

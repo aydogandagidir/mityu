@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, CheckCircle2, Clock, FileText, Trash2, XCircle } from 'lucide-react';
 import {
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MeetingMetadata, StoredTranscript } from '@/services/indexedDBService';
+import { ConfirmationModal } from '@/components/ConfirmationModel/confirmation-modal';
 import { cn } from '@/lib/utils';
 
 interface TranscriptRecoveryProps {
@@ -44,6 +46,7 @@ export function TranscriptRecovery({
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Reset selection when dialog opens
   useEffect(() => {
@@ -86,7 +89,9 @@ export function TranscriptRecovery({
       onClose();
     } catch (error) {
       console.error('Recovery failed:', error);
-      alert('Failed to recover meeting. Please try again.');
+      toast.error('Could not recover this meeting', {
+        description: 'Nothing was lost — the recovery copy is still here. Try again.',
+      });
     } finally {
       setIsRecovering(false);
     }
@@ -94,11 +99,14 @@ export function TranscriptRecovery({
 
   const handleDelete = async () => {
     if (!selectedMeetingId) return;
+    // A native confirm() cannot say WHICH meeting, cannot be themed or translated, and
+    // blocks the whole webview — on a destructive action against unrecovered data.
+    setConfirmDelete(true);
+  };
 
-    if (!confirm('Are you sure you want to delete this meeting? This cannot be undone.')) {
-      return;
-    }
-
+  const performDelete = async () => {
+    if (!selectedMeetingId) return;
+    setConfirmDelete(false);
     setIsDeleting(true);
     try {
       await onDelete(selectedMeetingId);
@@ -106,7 +114,9 @@ export function TranscriptRecovery({
       setPreviewTranscripts([]);
     } catch (error) {
       console.error('Delete failed:', error);
-      alert('Failed to delete meeting. Please try again.');
+      toast.error('Could not delete this recovery copy', {
+        description: 'It is still here. Try again.',
+      });
     } finally {
       setIsDeleting(false);
     }
@@ -115,6 +125,7 @@ export function TranscriptRecovery({
   const selectedMeeting = recoverableMeetings.find(m => m.meetingId === selectedMeetingId);
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0">
         <DialogHeader className="px-6 pt-6">
@@ -155,11 +166,11 @@ export function TranscriptRecovery({
                       </div>
                       {meeting.folderPath ? (
                         <span title="Audio available">
-                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                          <CheckCircle2 className="size-4 shrink-0 text-success-ink" />
                         </span>
                       ) : (
                         <span title="No audio">
-                          <AlertCircle className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+                          <AlertCircle className="size-4 shrink-0 text-warning-ink" />
                         </span>
                       )}
                     </div>
@@ -187,13 +198,13 @@ export function TranscriptRecovery({
                         {selectedMeeting.transcriptCount} transcripts
                       </span>
                       {selectedMeeting.folderPath ? (
-                        <span className="flex items-center gap-1 text-green-600">
+                        <span className="flex items-center gap-1 text-success-ink">
                           <CheckCircle2 className="w-4 h-4" />
                           Audio available
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 text-yellow-600">
-                          <AlertCircle className="w-4 h-4" />
+                        <span className="flex items-center gap-1 text-warning-ink">
+                          <AlertCircle className="size-4" />
                           No audio
                         </span>
                       )}
@@ -308,5 +319,21 @@ export function TranscriptRecovery({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+      {/* The destructive confirmation names the meeting and says exactly what goes. */}
+      <ConfirmationModal
+        isOpen={confirmDelete}
+        title={
+          selectedMeeting
+            ? `Delete the recovery copy of “${selectedMeeting.title}”?`
+            : 'Delete this recovery copy?'
+        }
+        lead="This transcript was never saved to your library. Deleting the recovery copy discards it. This cannot be undone."
+        text="The recovery copy is written to browser storage while a meeting is being recorded, so that an interrupted session is not lost. It holds the transcript segments captured before the interruption and nothing else — no audio, and no entry in your meeting library."
+        onConfirm={() => void performDelete()}
+        onCancel={() => setConfirmDelete(false)}
+        isBusy={isDeleting}
+      />
+    </>
   );
 }

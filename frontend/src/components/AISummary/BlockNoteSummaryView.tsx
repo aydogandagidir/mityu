@@ -9,7 +9,9 @@ import { SummaryDraftResponse } from '@/services/summaryDraftService';
 import { Block } from '@blocknote/core';
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/shadcn';
+import { useTheme } from 'next-themes';
 import { blocksToMarkdownSafely } from '@/lib/blocknote-markdown';
+import { toast } from 'sonner';
 import "@blocknote/shadcn/style.css";
 
 // Dynamically import BlockNote Editor to avoid SSR issues
@@ -147,6 +149,12 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
   legacyReadOnly = false,
 }, ref) => {
   const { format, data } = detectSummaryFormat(summaryData, structuredEnabled);
+  // The markdown path below used to pass a literal theme="light", so in dark mode a summary
+  // opened as a white sheet inside a near-black page. The sibling BlockNoteEditor/Editor.tsx
+  // was fixed for exactly this and its comment says so; this one was missed. `next-themes`
+  // resolves `system` to the actual value, which is what BlockNote needs — passing "system"
+  // through would leave it light.
+  const { resolvedTheme } = useTheme();
   const [isDirty, setIsDirty] = useState(false);
   const [currentBlocks, setCurrentBlocks] = useState<Block[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -231,7 +239,9 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
       console.log('✅ Save successful');
     } catch {
       console.error('Summary save failed');
-      alert('Failed to save changes. Please try again.');
+      toast.error('Could not save your changes', {
+        description: 'Your edits are still on screen. Try saving again.',
+      });
     } finally {
       setIsSaving(false);
     }
@@ -387,7 +397,7 @@ export const BlockNoteSummaryView = forwardRef<BlockNoteSummaryViewRef, BlockNot
                 handleEditorChange(editor.document);
               }
             }}
-            theme="light"
+            theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
           />
         </div>
       </div>

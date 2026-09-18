@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { RecordingControls } from '@/components/RecordingControls';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
@@ -9,15 +9,14 @@ import { NoMicrophoneNotice } from '@/components/NoMicrophoneNotice';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useConfig } from '@/contexts/ConfigContext';
-import { StatusOverlays } from '@/app/_components/StatusOverlays';
+import { WrapUpPipeline } from '@/app/_components/WrapUpPipeline';
 import Analytics from '@/lib/analytics';
 import { SettingsModals } from './_components/SettingsModal';
 import { TranscriptPanel } from './_components/TranscriptPanel';
 import { HomeDashboard } from './_components/HomeDashboard';
 import { useModalState } from '@/hooks/useModalState';
-import { useRecordingStateSync } from '@/hooks/useRecordingStateSync';
 import { useRecordingStart } from '@/hooks/useRecordingStart';
-import { useRecordingStop } from '@/hooks/useRecordingStop';
+import { useRecordingSession } from '@/contexts/RecordingSessionContext';
 import { useTranscriptRecovery } from '@/hooks/useTranscriptRecovery';
 import { TranscriptRecovery } from '@/components/TranscriptRecovery';
 import { indexedDBService } from '@/services/indexedDBService';
@@ -25,10 +24,28 @@ import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
 export default function Home() {
-  // Local page state (not moved to contexts)
-  const [isRecording, setIsRecordingState] = useState(false);
-  const [barHeights, setBarHeights] = useState(['58%', '76%', '58%']);
+  /**
+   * The recording session now lives in the shell (ADR-F): `window.handleRecordingStop`
+   * has to survive navigation, and the dock's Stop has to exist on every route. This
+   * page reads that session instead of mounting the lifecycle hooks itself — the ONLY
+   * thing still rooted here is starting, because the rail's Record button navigates to
+   * `/` first and the consent gate and device pickers are written against that.
+   */
+  const {
+    isRecording,
+    setIsRecording: setIsRecordingState,
+    isRecordingDisabled,
+    handleRecordingStop,
+    setIsStopping,
+  } = useRecordingSession();
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
+  /**
+   * The wrap-up panel outlives the statuses that open it: SAVING flips to COMPLETED
+   * two seconds before `useRecordingStop` navigates to the report, and to ERROR when
+   * the save fails. Gating on the status alone would tear the panel down at exactly
+   * the two moments it finally has something to say.
+   */
+  const [showWrapUp, setShowWrapUp] = useState(false);
 
   // Use contexts for state management
   const { meetingTitle, transcripts } = useTranscripts();
@@ -36,20 +53,13 @@ export default function Home() {
   const recordingState = useRecordingState();
 
   // Extract status from global state
-  const { status, isStopping, isProcessing, isSaving } = recordingState;
+  const { status, statusMessage, isStopping, isProcessing } = recordingState;
 
   // Hooks
   const { hasMicrophone, isChecking: isCheckingMicrophone, error: microphoneError, checkPermissions } = usePermissionCheck();
-  const { setIsMeetingActive, isCollapsed: sidebarCollapsed, refetchMeetings } = useSidebar();
+  const { refetchMeetings, currentMeeting } = useSidebar();
   const { modals, messages, showModal, hideModal } = useModalState(transcriptModelConfig);
-  const { isRecordingDisabled, setIsRecordingDisabled } = useRecordingStateSync(isRecording, setIsRecordingState, setIsMeetingActive);
   const { handleRecordingStart } = useRecordingStart(isRecording, setIsRecordingState, showModal);
-
-  // Get handleRecordingStop function and setIsStopping (state comes from global context)
-  const { handleRecordingStop, setIsStopping } = useRecordingStop(
-    setIsRecordingState,
-    setIsRecordingDisabled
-  );
 
   // Recovery hook
   const {
@@ -173,31 +183,30 @@ export default function Home() {
     }
   };
 
-  useEffect(() => {
-    if (recordingState.isRecording) {
-      const interval = setInterval(() => {
-        setBarHeights(prev => {
-          const newHeights = [...prev];
-          newHeights[0] = Math.random() * 20 + 10 + 'px';
-          newHeights[1] = Math.random() * 20 + 10 + 'px';
-          newHeights[2] = Math.random() * 20 + 10 + 'px';
-          return newHeights;
-        });
-      }, 300);
-
-      return () => clearInterval(interval);
-    }
-  }, [recordingState.isRecording]);
-
   // Computed values using global status
   const isProcessingStop = status === RecordingStatus.PROCESSING_TRANSCRIPTS || isProcessing;
+
+  useEffect(() => {
+    if (status === RecordingStatus.PROCESSING_TRANSCRIPTS || status === RecordingStatus.SAVING) {
+      setShowWrapUp(true);
+    } else if (status === RecordingStatus.IDLE || recordingState.isRecording) {
+      setShowWrapUp(false);
+    }
+  }, [status, recordingState.isRecording]);
+
+  const dismissWrapUp = useCallback(() => setShowWrapUp(false), []);
+  const openLastReport = useCallback(() => {
+    if (currentMeeting?.id) {
+      router.push(`/meeting-details?id=${currentMeeting.id}`);
+    }
+  }, [currentMeeting?.id, router]);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="flex flex-col h-screen bg-muted"
+      className="flex h-full flex-col bg-muted"
     >
       {/* All Modals supported*/}
       <SettingsModals
@@ -215,7 +224,10 @@ export default function Home() {
         onDelete={deleteRecoverableMeeting}
         onLoadPreview={loadMeetingTranscripts}
       />
-      <div className="flex flex-1 overflow-hidden">
+      {/* `relative` is the containing block for the record pill and the status
+          overlays, which are absolute inside the content pane rather than fixed to the
+          window — that is what removed their copies of the sidebar width. */}
+      <div className="relative flex flex-1 overflow-hidden">
         {/* Phase C: while idle (nothing recorded yet this session), the home route
             is a dashboard of recent meeting reports; the live transcript panel
             takes over the moment a recording starts. */}
@@ -239,16 +251,9 @@ export default function Home() {
           !isCheckingMicrophone &&
           status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
           status !== RecordingStatus.SAVING && (
-            <div className="fixed bottom-12 left-0 right-0 z-10">
-              <div
-                className="flex justify-center pl-8 transition-[margin] duration-300"
-                style={{
-                  marginLeft: sidebarCollapsed ? '4rem' : '16rem'
-                }}
-              >
-                <div className="w-2/3 max-w-[750px] flex justify-center">
-                  <NoMicrophoneNotice error={microphoneError} onRetry={checkPermissions} />
-                </div>
+            <div className="absolute inset-x-0 bottom-12 z-10 flex justify-center px-gutter">
+              <div className="flex w-2/3 max-w-[750px] justify-center">
+                <NoMicrophoneNotice error={microphoneError} onRetry={checkPermissions} />
               </div>
             </div>
           )}
@@ -257,22 +262,16 @@ export default function Home() {
         {(hasMicrophone || isRecording) &&
           status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
           status !== RecordingStatus.SAVING && (
-            <div className="fixed bottom-12 left-0 right-0 z-10">
-              <div
-                className="flex justify-center pl-8 transition-[margin] duration-300"
-                style={{
-                  marginLeft: sidebarCollapsed ? '4rem' : '16rem'
-                }}
-              >
-                <div className="w-2/3 max-w-[750px] flex justify-center">
-                  <div className="bg-card rounded-full shadow-lg flex items-center">
+            <div className="absolute inset-x-0 bottom-12 z-10 flex justify-center px-gutter">
+              <div className="flex justify-center">
+                <div className="flex items-center rounded-full border border-border bg-card shadow-elev-2">
+                  <div className="flex items-center">
                     <RecordingControls
                       isRecording={recordingState.isRecording}
                       onRecordingStop={(callApi = true) => handleRecordingStop(callApi)}
                       onRecordingStart={handleRecordingStart}
                       onTranscriptReceived={() => { }} // Not actually used by RecordingControls
                       onStopInitiated={() => setIsStopping(true)}
-                      barHeights={barHeights}
                       onTranscriptionError={(message) => {
                         showModal('errorAlert', message);
                       }}
@@ -287,12 +286,20 @@ export default function Home() {
             </div>
           )}
 
-        {/* Status Overlays - Processing and Saving */}
-        <StatusOverlays
-          isProcessing={status === RecordingStatus.PROCESSING_TRANSCRIPTS && !recordingState.isRecording}
-          isSaving={status === RecordingStatus.SAVING}
-          sidebarCollapsed={sidebarCollapsed}
-        />
+        {/* What happens after Stop: the status message the app has always written and
+            never shown, with the steps around it (DESIGN_SYSTEM.md §6.2). */}
+        {showWrapUp && !recordingState.isRecording && (
+          <div className="absolute inset-0 z-20 grid place-items-center overflow-y-auto bg-background/80 backdrop-blur-sm">
+            <WrapUpPipeline
+              status={status}
+              statusMessage={statusMessage}
+              segmentCount={transcripts.length}
+              meetingId={currentMeeting?.id}
+              onOpenReport={openLastReport}
+              onRecordAnother={dismissWrapUp}
+            />
+          </div>
+        )}
       </div>
     </motion.div>
   );

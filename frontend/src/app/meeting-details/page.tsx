@@ -3,6 +3,8 @@ import { useSidebar } from "@/components/Sidebar/SidebarProvider";
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { Transcript, Summary } from "@/types";
 import PageContent from "./page-content";
+import { Notice } from '@/components/ui/notice';
+import { Button } from '@/components/ui/button';
 import { useRouter, useSearchParams } from "next/navigation";
 import Analytics from "@/lib/analytics";
 import { invoke } from "@tauri-apps/api/core";
@@ -95,23 +97,20 @@ function MeetingDetailsContent() {
         return;
       }
 
-      // DB is empty - check if gemma3:1b exists as fallback
+      // DB is empty — is there a local model we can auto-generate with?
       const hasGemma = await checkForGemmaModel();
 
       if (hasGemma) {
-        console.log('💾 DB empty, using gemma3:1b as initial default');
-
-        await invoke('api_save_model_config', {
-          provider: 'ollama',
-          model: '',
-          whisperModel: 'large-v3',
-          apiKey: null,
-          ollamaEndpoint: null,
-        });
-
+        // It used to WRITE a model configuration here, as a side effect of a user
+        // opening a report. Viewing is not configuring: a read-only act quietly
+        // changed a stored setting the user had never been asked about, and the
+        // written record ("provider ollama, model empty") was not even the
+        // configuration it then generated with. Auto-generation proceeds on the
+        // in-memory default; choosing a model stays in Settings, where the user can
+        // see what they are choosing.
         setShouldAutoGenerate(true);
       } else {
-        console.log('⚠️ No model configured and gemma3:1b not found');
+        console.log('No model configured and no local fallback found');
       }
     } catch (error) {
       console.error('Failed to set up auto-generation');
@@ -341,15 +340,19 @@ function MeetingDetailsContent() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <p className="text-red-500 mb-4">{error}</p>
-          <button
-            onClick={() => router.push('/')}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      <div className="flex h-full items-center justify-center p-gutter">
+        <div className="w-full max-w-md">
+          <Notice
+            tone="destructive"
+            title="This meeting could not be opened"
+            action={
+              <Button variant="outline" size="sm" onClick={() => router.push('/')}>
+                Back to Home
+              </Button>
+            }
           >
-            Go Back
-          </button>
+            {error}
+          </Notice>
         </div>
       </div>
     );

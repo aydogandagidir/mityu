@@ -12,6 +12,9 @@ import {
 } from '@/services/search';
 
 
+/** §3.2 — the meetings pane is a user preference, not a per-launch accident. */
+const MEETINGS_PANE_STORAGE_KEY = 'mityu.ui.meetingsPane';
+
 interface SidebarItem {
   id: string;
   title: string;
@@ -28,7 +31,7 @@ export interface CurrentMeeting {
 // '@/services/search' (re-exported here for consumers of this provider).
 export type { TranscriptSearchResult };
 
-interface SidebarContextType {
+export interface SidebarContextType {
   currentMeeting: CurrentMeeting | null;
   setCurrentMeeting: (meeting: CurrentMeeting | null) => void;
   sidebarItems: SidebarItem[];
@@ -39,6 +42,13 @@ interface SidebarContextType {
   isMeetingActive: boolean;
   setIsMeetingActive: (active: boolean) => void;
   handleRecordingToggle: () => void;
+  /**
+   * True once first-launch initialisation has run. It replaces `serverAddress` as the
+   * gate on the meeting fetch: that string was a leftover from the archived Python
+   * backend, and gating data loading on "is a localhost URL set" made the timing of the
+   * first DB read an accident of an unrelated legacy field.
+   */
+  ready: boolean;
   searchTranscripts: (query: string) => void;
   searchResults: TranscriptSearchResult[];
   isSearching: boolean;
@@ -56,7 +66,8 @@ interface SidebarContextType {
 
 }
 
-const SidebarContext = createContext<SidebarContextType | null>(null);
+/** Exported for the `/design/*` fixtures only — see RecordingStateContext. */
+export const SidebarContext = createContext<SidebarContextType | null>(null);
 
 export const useSidebar = () => {
   const context = useContext(SidebarContext);
@@ -68,7 +79,11 @@ export const useSidebar = () => {
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [currentMeeting, setCurrentMeeting] = useState<CurrentMeeting | null>({ id: 'intro-call', title: '+ New Call' });
+  // Prerender and first paint agree on `true`; the real preference is read on mount
+  // (see the effect below), because a static export has no window at build time and a
+  // lazy initialiser would hydrate against a different value.
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const [ready, setReady] = useState(false);
   const [meetings, setMeetings] = useState<CurrentMeeting[]>([]);
   const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>([]);
   const [isMeetingActive, setIsMeetingActive] = useState(false);
@@ -89,7 +104,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 
   // Extract fetchMeetings as a reusable function
   const fetchMeetings = React.useCallback(async () => {
-    if (serverAddress) {
+    if (ready) {
       try {
         const meetings = await invoke('api_get_meetings') as Array<{ id: string, title: string }>;
         const transformedMeetings = meetings.map((meeting: any) => ({
@@ -104,18 +119,37 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         Analytics.trackBackendConnection(false);
       }
     }
-  }, [serverAddress]);
+  }, [ready]);
 
   useEffect(() => {
     fetchMeetings();
-  }, [serverAddress, fetchMeetings]);
+  }, [ready, fetchMeetings]);
 
   useEffect(() => {
-    const fetchSettings = async () => {
-      setServerAddress('http://localhost:5167');
-      setTranscriptServerAddress('http://127.0.0.1:8178/stream');
-    };
-    fetchSettings();
+    // One mount-time initialisation. The two addresses are kept because
+    // `ModelSettingsModal` and `useModelConfiguration` still read them; what changed is
+    // that nothing gates on them any more.
+    setServerAddress('http://localhost:5167');
+    setTranscriptServerAddress('http://127.0.0.1:8178/stream');
+    setReady(true);
+  }, []);
+
+  /**
+   * The meetings pane remembers whether it was open, per §3.2 — the old shell reset to
+   * collapsed on every launch, so the library was hidden by default forever. A first
+   * run with no stored preference follows the window: open at >=1100px, closed below
+   * 1000px, and between the two it keeps whichever side of that band the width is on.
+   */
+  useEffect(() => {
+    let collapsed: boolean;
+    try {
+      const stored = localStorage.getItem(MEETINGS_PANE_STORAGE_KEY);
+      collapsed = stored === null ? window.innerWidth < 1100 : stored !== 'open';
+    } catch {
+      // Private mode or blocked site data: fall back to the width rule.
+      collapsed = window.innerWidth < 1100;
+    }
+    setIsCollapsed(collapsed);
   }, []);
 
   const baseItems: SidebarItem[] = [
@@ -130,9 +164,17 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   ];
 
 
-  const toggleCollapse = () => {
-    setIsCollapsed(!isCollapsed);
-  };
+  const toggleCollapse = useCallback(() => {
+    setIsCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(MEETINGS_PANE_STORAGE_KEY, next ? 'closed' : 'open');
+      } catch {
+        // Not being able to remember the preference must never break the toggle.
+      }
+      return next;
+    });
+  }, []);
 
   // Update current meeting when on home page
   useEffect(() => {
@@ -347,6 +389,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       isMeetingActive,
       setIsMeetingActive,
       handleRecordingToggle,
+      ready,
       searchTranscripts,
       searchResults,
       isSearching,
