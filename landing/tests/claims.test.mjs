@@ -39,11 +39,25 @@ test('the copilot is described as a beta that is off by default, reached from Se
   assert.match(index, /not yet been checked against a real model/i);
   assert.match(index, /cites the transcript segment it came from, or is refused/i);
   assert.match(privacy, /last few minutes of transcript text/i);
-  // The shipped build has no UI for the cloud-egress setting, so the notice must
-  // say the copilot stays on-device rather than offering a switch nobody can reach.
-  assert.match(privacy, /separate workspace setting that is off by default/i);
-  assert.match(privacy, /offers no way to turn that setting on/i);
-  assert.match(index, /works only with a model running on your device/i);
+  // The shipped build DOES expose the cloud-egress setting: `CopilotSettings.tsx`
+  // renders an "Allow cloud insights" switch, `BetaSettings.tsx` mounts it, and
+  // Settings -> Beta reaches it. The assertions that used to live here pinned the
+  // opposite ("offers no way to turn that setting on"). That was true when it was
+  // written against v1.2.1 and was falsified by the copilot settings shipping in
+  // the next release -- and because a test required the sentence, CI stayed green
+  // BECAUSE the privacy notice was wrong. A page that under-states egress is the
+  // worst thing this file can let through, so it now pins the shape of the truth
+  // instead of one sentence: name a switch the reader can actually find, say it is
+  // off by default, say what turning it on costs -- and forbid, by name, the claim
+  // that the switch does not exist.
+  assert.match(privacy, /separate setting[\s\S]{0,60}Allow cloud insights/i);
+  assert.match(privacy, /off by default/i);
+  for (const [name, text] of [['index.html', index], ['privacy.html', privacy]]) {
+    assert.match(text, /Allow cloud insights/, `${name} must name the cloud switch a reader can find`);
+    assert.match(text, /on every (press of an )?action/i, `${name} must say what turning the switch on does`);
+    assert.doesNotMatch(text, /no way to turn that setting on/i, `${name}: that switch IS reachable in the shipped build`);
+    assert.doesNotMatch(text, /works only with a model running on your device/i, `${name}: egress is conditional on a setting, not impossible`);
+  }
 });
 
 test('no page claims what the I9 and A5 gates have not measured', () => {
