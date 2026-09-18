@@ -1492,14 +1492,109 @@ Its other two findings were `prose` and `prose-blue` on the legacy `/notes/*` ro
 > Renumbered from ADR-0050 when this branch merged `main`: ADR-0050 there is "Three silent refusals on the recording path", which was published first and keeps the number. Nothing in the code cited the number — `globals.css`, `ModelSettingsModal.tsx` and `TranscriptSettings.tsx` all refer to this decision as **ADR-H** — so only this heading moved.
 
 ---
+## ADR-0070 — The instruction set of a release is declared in-tree, not inherited from the build machine
+
+**Status:** Accepted (2026-09-18). Landed by the v1.2.3 hotfix.
+
+**Context.** v1.2.2 hard-crashed the first time a user pressed Record. Not an error, not a
+panic — the process vanished, and the log stopped mid-sentence after
+`Loading quantized Parakeet model from encoder-model.int8.onnx...` with **zero `[ERROR]` and
+zero `[WARN]` lines in the entire file**.
+
+Two minidumps gave the same fault at the same address: `EXCEPTION_ILLEGAL_INSTRUCTION`
+(`0xC000001D`) at `mityu.exe+0x1BBE25E`. The bytes there are `62 F1 FE 08 7B 44 24 09` — a
+`0x62` EVEX prefix, decoding to `vcvtusi2ss xmm0, xmm0, qword ptr [rsp+0x48]`, an **AVX-512F**
+instruction. The instruction boundary is certified by the image's own `.pdata`: the enclosing
+`RUNTIME_FUNCTION` starts at `0x1BBE250` with `SizeOfProlog=14`, and the fault is at exactly
+`+14` — the first instruction after the prologue. The machine was an AMD Ryzen 7 7435HS
+(Zen 3+): `IsProcessorFeaturePresent` and raw `CPUID.7.0:EBX[16]` both report **no AVX-512F**.
+So the CPU raised `#UD` and Windows killed the process.
+
+**It was not ONNX Runtime**, which is the first place anyone looks because the crash happens
+during a model load. `ort` links a **SHA-pinned prebuilt** static library
+(`ort-sys/dist.txt`, `540D19B3…E190D`), so a local build and a CI build link byte-identical
+ORT. It was **ggml**, which `whisper-rs-sys` compiles from source. ggml defaults `GGML_NATIVE`
+to `ON`; with it on, `ggml/src/CMakeLists.txt:1181` includes `../cmake/FindSIMD.cmake`, which
+decides the `/arch:` flag using `CheckCSourceRuns` — it **compiles and executes an AVX-512
+probe on the build machine** — and then applies the answer image-wide via
+`add_compile_options()`, with **no runtime dispatch anywhere**. MSVC's `/arch:AVX512` is
+all-or-nothing, and the linker keeps one copy of each inline-template COMDAT for the whole
+image, so AVX-512-compiled STL helpers are reachable from code that has nothing to do with
+whisper.
+
+The instruction set of a Mityu release was therefore **a property of whichever GitHub runner
+picked up the job.** The owner's machine proves the mechanism from the other side: its own
+`whisper-rs-sys` cache reads `GGML_NATIVE:BOOL=ON` with
+`HAS_AVX512_1_EXITCODE:INTERNAL=FAILED_TO_RUN` — the probe compiled and then **crashed when
+run**, which is the same `#UD`, so the local build got no AVX-512. Hence: the faulting 8-byte
+sequence occurs exactly **once** in each shipped binary and **zero** times in either locally
+built one.
+
+**This is not a v1.2.2 regression.** v1.2.1's binary contains the identical sequence at
+`0x1BA505E` — the same function, merely relocated. It never fired because v1.2.1 could not
+start a recording at all; ADR-0050 records the three silent refusals between the button and a
+live stream. v1.2.2 fixed those, Record worked for the first time, and it walked straight into
+a landmine that had been sitting there since the engine landed. **Rolling back to v1.2.1 is
+therefore strictly worse**, and was tried and reverted during the incident: same instruction,
+no recording at all, and — since v1.2.2 is the first Windows build to link
+`tauri-plugin-log` — no log file either.
+
+**Decision.**
+
+1. **The baseline is declared in the repository.** `cmake/mityu-cpu-baseline.cmake` forces
+   `GGML_NATIVE OFF` and pins the floor at **x86-64 + AVX + AVX2 + FMA** (Haswell 2013 /
+   Excavator 2015), with every AVX-512 and AMX option forced off. `GGML_NATIVE=OFF` also flips
+   ggml's `INS_ENB` default to `ON` (`ggml/CMakeLists.txt:88`), which is what turns the
+   baseline on *as a declaration* instead of a machine-dependent guess.
+2. **It is delivered from the repo root**, via `.cargo/config.toml` `[env]` as
+   `CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc` (cmake-rs reads it from the environment,
+   `cmake-0.1.58` `src/lib.rs:450`). Root, not `src-tauri/`, because a developer's build and a
+   CI build must get the same ISA — **that divergence is the bug**, and it is exactly why a
+   manual smoke test passed on the same machine the release then crashed on. Target-suffixed
+   on purpose: when `target != host`, cmake-rs skips its own `CMAKE_SYSTEM_NAME` setup if a
+   toolchain file is defined, which would break a macOS cross-build.
+3. **The CI cache key moves with it** (`build.yml`, `-vulkan-v2` → `-vulkan-v3`). The v1.2.2
+   release restored `target/` and never recompiled `whisper-rs-sys`; its ggml objects came
+   from an earlier runner. Without the bump the fix ships as a **no-op**.
+4. **A floor that is not checked at runtime is not a floor.** `src/cpu.rs` probes it and is
+   wired in three places: `startup_line()` is logged before `Application setup complete`;
+   `decide_readiness` takes the refusal as a **parameter**, so a below-floor machine is
+   expressible in a test on a machine that is above one; and
+   `validate_transcription_model_ready` refuses authoritatively, because the tray and a stale
+   frontend can both reach it without passing the UI gate.
+5. **A VAD failure no longer aborts the process.** `AudioPipeline::new` returned `Self` and
+   `panic!`ed when `ContinuousVadProcessor::new` failed. `start()` already returns `Result`;
+   the failure belongs there. Panicking on the thread that is starting a recording, while it
+   holds audio the user cannot recreate, is never the right trade.
+
+**Consequences.**
+
+- The startup log now names the CPU's features, **including AVX-512 which we do not require** —
+  it is reported precisely because its *absence* is what killed v1.2.2. One such line would
+  have replaced a two-minidump disassembly with a grep. It is the cheapest item in this change
+  and the one most likely to matter next time.
+- **The baseline is a promise to users, not a tuning knob.** Raising it breaks machines
+  silently and invisibly, which is this defect exactly. Raising it means changing the cmake
+  file and `cpu::BASELINE` in the same commit, publishing the requirement, and writing an ADR.
+- **What this change does not prove.** No CI job has ever executed `mityu.exe`; the only thing
+  the Windows job runs is FFmpeg's AAC smoke test. A static ISA gate in CI, and running the
+  built artefact, are owed and are not in this hotfix.
+- **One residual is unresolved.** AVX-512 instructions were reported inside ORT's own
+  `element_wise_ops` translation unit — a generic CPU-EP unit, not an `*Avx512*` dispatch unit.
+  No probe corroborated or refuted it. If real, pinning ggml alone does not make the app safe
+  and no static gate proposed here would catch it. **This is why the end-to-end check on a
+  non-AVX-512 machine is not optional before this ships**, and why "there is no problem in the
+  app" is not a sentence this ADR licenses anyone to say.
+
+---
 > **Records recovered 2026-09-18.** The four records below were accepted and published on `main` as
 > ADR-0047, ADR-0048 and ADR-0049 (twice). The merge `f101b8c` ("merge: main into the UI redesign"),
 > which landed in `622225b` / PR #59, resolved `docs/DECISIONS.md` in favour of the redesign branch and
 > dropped all four without a conflict marker or a note. The ADR count went 52 → 70 over the same merge,
 > because the redesign added eighteen of its own, so nothing about the total made the loss visible. They
 > are restored here verbatim, under the next free numbers, because the numbers they had are now held by
-> published redesign records. ADR-0070 is reserved by `fix/cpu-baseline-avx512` (PR #61), so these start
-> at ADR-0071.
+> published redesign records. ADR-0070 was taken by the v1.2.3 CPU-baseline hotfix (#61), which merged
+> while this branch was open, so these start at ADR-0071 and the numbering is contiguous.
 
 ---
 ## ADR-0071 — The engine decision lives in Rust, the app writes a log file, and a folded explanation is still an explanation
