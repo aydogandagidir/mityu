@@ -2,14 +2,14 @@
 
 This document provides a quick overview of all available CI/CD workflows in this repository.
 
-**Note:** Most workflows in this repository — every build and release workflow below — use **manual triggers only** (`workflow_dispatch`). The exception is **`ci.yml`**, which triggers **automatically** on push (`main`, `feat/**`, `fix/**`, `chore/**`, `docs/**`) and on every pull request, in addition to supporting manual dispatch. Since ADR-0048 it also runs the **full Windows release build on every pull request** that touches anything native, and uploads the installer.
+**Note:** Most workflows in this repository — every build and release workflow below — use **manual triggers only** (`workflow_dispatch`). The exception is **`ci.yml`**, which triggers **automatically** on push (`main`, `feat/**`, `fix/**`, `chore/**`, `docs/**`) and on every pull request, in addition to supporting manual dispatch. Since ADR-0072 it also runs the **full Windows release build on every pull request** that touches anything native, and uploads the installer.
 
-**Until ADR-0048 the five manual build wrappers had never completed a run.** `build.yml` declared `contents: write` on its job, so any caller granting less was an invalid workflow — `startup_failure`, zero jobs, in two seconds. Only `release.yml` granted write. `build.yml` now inherits the caller's permissions; the wrappers grant `contents: read` and pass `secrets: inherit`.
+**Until ADR-0072 the five manual build wrappers had never completed a run.** `build.yml` declared `contents: write` on its job, so any caller granting less was an invalid workflow — `startup_failure`, zero jobs, in two seconds. Only `release.yml` granted write. `build.yml` now inherits the caller's permissions; the wrappers grant `contents: read` and pass `secrets: inherit`.
 
 ## Workflow Files
 
 ### 1. **ci.yml** - Continuous Integration
-**Purpose:** Lint, type-check, and test every push and pull request — the automatic quality gate. On pull requests it is also the one place a Windows compile happens automatically (ADR-0048).
+**Purpose:** Lint, type-check, and test every push and pull request — the automatic quality gate. On pull requests it is also the one place a Windows compile happens automatically (ADR-0072).
 
 **Key Features:**
 - `rust` job: `cargo fmt --all --check`, `cargo clippy --all-targets`, `cargo test --all`
@@ -20,7 +20,7 @@ This document provides a quick overview of all available CI/CD workflows in this
 - **A PR opened by an agent fires no `pull_request` event**, because GitHub does not start runs for
   actions taken with an app or `GITHUB_TOKEN` credential — so `changes` and `windows-build` are absent
   until the next git push to the branch, which arrives as `synchronize` and runs them normally. Until
-  then, dispatch `build-windows.yml` manually rather than pushing an empty commit (ADR-0048).
+  then, dispatch `build-windows.yml` manually rather than pushing an empty commit (ADR-0072).
 - `windows-build` job (pull requests only, when `changes` says native): calls `build.yml` for `windows-latest` / `x86_64-pc-windows-msvc`, release profile, signing off, read-only token. Uploads artifact **`mityu-pr-x86_64-pc-windows-msvc`** (the `.msi` and the NSIS `.exe`, 30-day retention) — download it from the run's Summary page to smoke-test the PR without building locally. A newer push to the same PR cancels the build in flight. Never runs when `release.yml` calls this file, so a release does not build Windows twice. It is a compile-and-bundle proof, **not** the manual smoke test CLAUDE.md §4 still requires.
 - No signing, no releases
 
