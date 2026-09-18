@@ -64,7 +64,7 @@ jobs:
     # write: a called workflow may not request more than its caller gives, and
     # one that does is invalid — rejected as `startup_failure` before any job
     # exists. That is why the five manual wrappers, all granting read, had never
-    # completed a run, and why a PR-triggered build (ADR-0048) would otherwise
+    # completed a run, and why a PR-triggered build (ADR-0072) would otherwise
     # need a write token it has no use for.
     runs-on: ${{ inputs.platform }}
     environment: ${{ inputs.production-release && 'Production' || 'Build-Test' }}

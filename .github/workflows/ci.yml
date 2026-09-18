@@ -41,7 +41,7 @@ jobs:
     # anything native. Added after v1.2.1 shipped with `tauri-plugin-log`
     # declared only for macOS: `cargo test --all` on ubuntu cannot see a
     # Windows-only compile or link problem, and every Windows build workflow
-    # was manual — and, until ADR-0048, could not start at all. This is not a
+    # was manual — and, until ADR-0072, could not start at all. This is not a
     # smoke test (CLAUDE.md §4 still requires one), but the installer it
     # uploads is what the smoke test installs: artifact
     # `mityu-pr-x86_64-pc-windows-msvc`, holding the .msi and the NSIS .exe.
