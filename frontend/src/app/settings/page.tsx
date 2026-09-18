@@ -49,6 +49,7 @@ import { PageHeader } from '@/components/shell/PageHeader';
 import { useConfig } from '@/contexts/ConfigContext';
 import { focusRing } from '@/components/ui/focus-ring';
 import { cn } from '@/lib/utils';
+import { resolveTabFromSearch } from './tabs';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: Settings2 },
@@ -61,6 +62,21 @@ const SECTIONS = [
   { id: 'license', label: 'License', icon: KeyRound },
   { id: 'about', label: 'About', icon: Info },
 ] as const;
+
+/**
+ * `tray.rs:79` hard-codes `/settings?tab=beta` for the copilot switch, written against the
+ * old TABS list. The redesign's URL is `?section=`, so the old names are translated rather
+ * than broken — a Rust-side link has no compile-time tie to this file, which is exactly how
+ * it would have failed silently.
+ */
+const LEGACY_TAB_TO_SECTION: Record<string, SectionId> = {
+  general: 'general',
+  recording: 'recording',
+  Transcriptionmodels: 'transcription',
+  summaryModels: 'summary',
+  beta: 'beta',
+  license: 'license',
+};
 
 type SectionId = (typeof SECTIONS)[number]['id'];
 
@@ -76,6 +92,16 @@ function SettingsContent() {
   const section: SectionId = isSection(params.get('section'))
     ? (params.get('section') as SectionId)
     : 'general';
+
+  // Translate a legacy `?tab=` link into this page's `?section=`. In an effect, never in
+  // render: this app ships as a static export, and resolving the query while rendering is
+  // what made the previous version throw "Hydration failed..." and rebuild the tree.
+  useEffect(() => {
+    if (params.get('section')) return;
+    const legacy = resolveTabFromSearch(window.location.search);
+    const mapped = legacy ? LEGACY_TAB_TO_SECTION[legacy] : undefined;
+    if (mapped) router.replace(`/settings?section=${mapped}`);
+  }, [params, router]);
 
   // Load saved transcript configuration on mount (unchanged behaviour).
   useEffect(() => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import { Switch } from "./ui/switch"
-import { FolderOpen, Compass } from "lucide-react"
+import { FolderOpen, Compass, Sparkles } from "lucide-react"
 import { openDatabaseFolder, openModelsFolder, openRecordingsFolder } from "@/services/systemService"
 import Analytics from "@/lib/analytics"
 import { useTour } from "@/components/tour"
@@ -14,6 +14,8 @@ import { ThemeToggle } from "./ThemeToggle"
 import { SettingsCard } from "@/components/settings/SettingsCard"
 import { SwitchRow } from "@/components/settings/SwitchRow"
 import { Button } from "@/components/ui/button"
+import { WhatsNew } from "./WhatsNew"
+import { APP_VERSION } from "@/lib/appVersion"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 
 export function PreferenceSettings() {
@@ -26,6 +28,7 @@ export function PreferenceSettings() {
   } = useConfig();
 
   const { replayTour } = useTour();
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
 
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -172,6 +175,27 @@ export function PreferenceSettings() {
           onCheckedChange={setNotificationsEnabled}
         />
       </SettingsCard>
+
+      {/* Ported from main: the update dialog shows itself once, and this is how a user
+          reads it again after dismissing it. Rebuilt on the SettingsCard primitive so it
+          matches the rest of the column (§6.5) rather than main's hand-rolled button. */}
+      <SettingsCard
+        title="What's new"
+        description={`What changed in version ${APP_VERSION}, including what is still off by default.`}
+        action={
+          <Button
+            variant="outline"
+            onClick={() => {
+              void Analytics.trackButtonClick('open_whats_new', 'settings');
+              setWhatsNewOpen(true);
+            }}
+          >
+            <Sparkles className="size-4" aria-hidden="true" />
+            Open
+          </Button>
+        }
+      />
+      <WhatsNew open={whatsNewOpen} onOpenChange={setWhatsNewOpen} />
 
       <SettingsCard
         title="Product tour"

@@ -92,7 +92,7 @@ function ProtectionChip({ status }: { status: CopilotStatus }) {
     return (
       <span
         className="inline-flex items-center gap-1 text-caption text-muted-foreground"
-        title="Hiding the panel from screen shares is switched off. Turn it on in Settings → Copilot."
+        title="Hiding the panel from screen shares is switched off. Turn it on in Settings → Beta → Live copilot."
       >
         <Eye className="h-3 w-3 shrink-0" />
         <span className="truncate">Visible in screen shares</span>
@@ -309,9 +309,22 @@ export function CopilotPanel({
       <footer className="shrink-0 border-t border-border px-3 py-2">
         <p className="text-caption leading-snug text-muted-foreground">
           <Eye className="mr-1 inline h-3 w-3 align-[-2px]" />
-          This panel mirrors the live transcript and answers only from it. Nothing it offers is
-          saved.
-          {toggleShortcut?.registered && <> Press {toggleShortcut.keybind} to hide it.</>}
+          {/* "Nothing it offers is saved" stopped being true when pinning
+              shipped (ADR-0046): a pinned answer is written into the meeting's
+              summary as a draft when the meeting is saved. Two adjacent
+              sentences contradicting each other is the one thing a panel built
+              on source-linked honesty cannot afford. */}
+          This panel mirrors the live transcript and answers only from it. Nothing is kept unless
+          you pin it.
+          {/* Shown whether or not the OS accepted the binding. Hiding this when
+              the shortcut was refused removed the information exactly when the
+              user needed it most. */}
+          {toggleShortcut &&
+            (toggleShortcut.registered ? (
+              <> Press {toggleShortcut.keybind} to hide it.</>
+            ) : (
+              <> {toggleShortcut.keybind} is not available{toggleShortcut.unavailableReason ? `: ${toggleShortcut.unavailableReason}` : ''}.</>
+            ))}
         </p>
       </footer>
     </div>

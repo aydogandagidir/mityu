@@ -472,6 +472,42 @@ pub fn run() {
     }
 
     builder
+        // Logging, registered before anything else so startup failures land in
+        // the file too. `tauri-plugin-log` was a declared dependency that was
+        // never registered — CLAUDE.md §3 listed it as in use, and it was not —
+        // so the shipped Windows build produced no log file at all.
+        //
+        // Level is Info, not Debug: this codebase's convention is that log
+        // lines carry ids, counts and reason codes and never meeting content
+        // (CLAUDE.md §0.6), and Info is the level those lines are written at.
+        // Raising it to Debug in a release would start recording things nobody
+        // audited for content.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
+                .max_file_size(5_000_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                // `targets()` REPLACES; `target()` APPENDS to the two the
+                // builder already carries (`DEFAULT_LOG_TARGETS` = Stdout +
+                // LogDir{file_name: None}). Appending gave four targets and two
+                // byte-identical files on disk — `Mityu.log` from the default
+                // and `mityu.log` from ours — with every stdout line written
+                // twice. Observed on a real Linux launch: one PID holding two
+                // write fds, both files 113513 bytes, same md5. It also meant
+                // the 5 MB / KeepOne rotation above was being applied per file
+                // to two files, so the real ceiling was 10 MB.
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("mityu".to_string()),
+                    }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
@@ -643,6 +679,10 @@ pub fn run() {
             analytics::commands::track_analytics_enabled,
             analytics::commands::track_analytics_disabled,
             analytics::commands::track_analytics_transparency_viewed,
+            // Pre-flight the UI asks before offering to record. Engine-aware:
+            // which transcription engine is configured is decided in Rust and
+            // nowhere else (the renderer used to guess, and guessed Parakeet).
+            audio::transcription::engine::api_transcription_readiness,
             whisper_engine::commands::whisper_init,
             whisper_engine::commands::whisper_get_available_models,
             whisper_engine::commands::whisper_load_model,

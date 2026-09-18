@@ -38,6 +38,7 @@ a{color:inherit;text-decoration:none}
 .skip{position:absolute;left:16px;top:-56px;z-index:100;background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;font-size:14px}
 .skip:focus{top:12px}
 .container{max-width:1200px;margin:0 auto;padding-left:24px;padding-right:24px}
+#loop,#learn,#pricing,#faq{scroll-margin-top:72px}
 
 /* ---------- buttons ---------- */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 20px;border-radius:999px;font-size:14px;font-weight:500;white-space:nowrap;transition:background .15s ease}
@@ -429,7 +430,7 @@ a{color:inherit;text-decoration:none}
         <a class="btn btn-gray" href="#pricing">See pricing</a>
       </div>
       <p class="platforms">Windows 10/11 (64-bit) · macOS in development</p>
-      <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. Target-environment validation and the human pilot have not been performed; review important output against its source audio. Speaker separation is a best-effort estimate, runs after the recording ends rather than live, and takes roughly a quarter of the recording&rsquo;s length; speaker labels stay anonymous and Mityu never attaches a name to a voice, because storing which voice belongs to whom would be biometric data. Raw meeting audio remains local until you delete the meeting.</p>
+      <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. Target-environment validation and the human pilot have not been performed; review important output against its source audio. Speaker separation is a best-effort estimate, runs after the recording ends rather than live, and takes roughly a quarter of the recording&rsquo;s length; speaker labels stay anonymous and Mityu never attaches a name to a voice, because storing which voice belongs to whom would be biometric data. The live copilot is a beta: off by default, and not yet checked against a real model. Raw meeting audio remains local until you delete the meeting.</p>
     </div>
   </section>
 
@@ -549,11 +550,13 @@ a{color:inherit;text-decoration:none}
       <article class="card">
         <span class="badge">Human-approved</span>
         <h3>Drafts until you approve.</h3>
-        <p class="desc">Every AI-generated line is a labeled draft linked to its source in the transcript. Nothing is final until you sign it off.</p>
+        <p class="desc">Every AI-generated line is a labeled draft linked to its source in the transcript. Nothing is final until you sign it off — and a question you ask a meeting afterwards is answered from that transcript alone.</p>
         <div class="divider"></div>
         <ul class="checks">
           <li><span class="ck">✓</span><span>“AI-generated” label on every draft</span></li>
           <li><span class="ck">✓</span><span>Source links to exact timestamps</span></li>
+          <li><span class="ck">✓</span><span>Ask this meeting: answers cite the transcript, or refuse</span></li>
+          <li><span class="ck">✓</span><span>Export approved notes to PDF, Word or Markdown</span></li>
           <li><span class="ck">✓</span><span>BYOK: Ollama, OpenAI, Anthropic, Groq, OpenRouter</span></li>
         </ul>
       </article>
@@ -688,7 +691,7 @@ a{color:inherit;text-decoration:none}
         </ul>
       </article>
     </div>
-    <p class="footnote">Mityu 1.0 is available now for Windows 10/11 (64-bit) — download the free trial or buy a Pro license above.</p>
+    <p class="footnote">Mityu is available now for Windows 10/11 (64-bit) — download the free trial or buy a Pro license above. Every plan includes the current release, with the live copilot beta off by default.</p>
     <p class="footnote">Every purchase comes with a 14-day money-back guarantee.</p>
   </section>
 
@@ -698,11 +701,11 @@ a{color:inherit;text-decoration:none}
       <h2 class="faq-h">Frequently asked questions</h2>
       <details>
         <summary>When can I get Mityu?</summary>
-        <p class="a">Mityu 1.0 is available now for Windows 10 and 11 (64-bit). Download the free 14-day trial, or buy a Pro license — both from the buttons above. macOS support is in development.</p>
+        <p class="a">Mityu is available now for Windows 10 and 11 (64-bit). Download the free 14-day trial, or buy a Pro license — both from the buttons above. The download always serves the current release, and every version’s notes are on the <a class="u" href="https://github.com/aydogandagidir/mityu/releases" target="_blank" rel="noopener">release notes page</a>. macOS support is in development.</p>
       </details>
       <details>
         <summary>Is my audio uploaded anywhere?</summary>
-        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize is sent to that provider — your audio never leaves the machine.</p>
+        <p class="a">No. Recording, transcription, and storage all happen on your device. If you connect your own cloud model key, only the transcript text you choose to summarize or ask about is sent to that provider — your audio never leaves the machine. The beta live copilot is stricter still: in the current release it works only with a model running on your device, so what it reads never reaches a cloud provider at all.</p>
       </details>
       <details>
         <summary>Does a bot join my meetings?</summary>
@@ -710,7 +713,7 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Which platforms are supported?</summary>
-        <p class="a">Mityu is available on Windows 10 and 11 (64-bit). macOS support is in development, and Linux is being explored. Join the launch list and we’ll tell you the moment new platforms land.</p>
+        <p class="a">Mityu is available on Windows 10 and 11 (64-bit). macOS support is in development, and Linux is being explored. <a class="u" href="mailto:info@bluedev.dev?subject=Mityu%20launch%20list">Write to us</a> and we’ll tell you the moment new platforms land.</p>
       </details>
       <details>
         <summary>Does it work offline?</summary>
@@ -718,7 +721,15 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Which models and API keys can I use?</summary>
-        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter.</p>
+        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Ask this meeting uses that same model choice. The beta live copilot does not: in the current release it works only with a model running on your device.</p>
+      </details>
+      <details>
+        <summary>What is the live copilot, and is it on?</summary>
+        <p class="a">It is off by default, and it is a beta. Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. In the current release it works only with a model running on your device, so the conversation it reads does not reach a cloud provider. It never records on its own, never hides Mityu from you or anyone in the room, and on Windows it can stay out of your screen share. It has not yet been checked against a real model, which is why it is a beta and why we publish no accuracy or latency figure for it.</p>
+      </details>
+      <details>
+        <summary>Can I ask a meeting a question afterwards?</summary>
+        <p class="a">Yes. Open a finished meeting and ask; the answer is drawn only from that meeting’s transcript, each line opens the segment it came from, and anything the model cannot trace to the transcript is dropped rather than shown. Every answer is marked as AI-generated and needs your review.</p>
       </details>
       <details>
         <summary>What’s the refund policy?</summary>
@@ -736,6 +747,7 @@ a{color:inherit;text-decoration:none}
     <nav class="foot-cols" aria-label="Footer">
       <ul>
         <li><a href="mailto:info@bluedev.dev?subject=Mityu%20launch%20list">Get notified</a></li>
+        <li><a href="https://github.com/aydogandagidir/mityu/releases" target="_blank" rel="noopener">Release notes</a></li>
         <li><a href="#pricing">Pricing</a></li>
         <li><a href="#faq">FAQ</a></li>
       </ul>

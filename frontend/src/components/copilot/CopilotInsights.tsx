@@ -145,7 +145,7 @@ function failureCopy(failure: InsightFailure): { text: string; hint?: string } {
     case 'cloudNotAllowed':
       return {
         text: failure.message,
-        hint: 'Switch to the built-in local model, or allow cloud insights in Settings → Copilot.',
+        hint: 'Switch to the built-in local model, or turn on "Allow cloud insights" in Settings → Beta → Live copilot.',
       };
     case 'timeout':
       return { text: failure.message, hint: 'Ask again, or try a smaller window.' };

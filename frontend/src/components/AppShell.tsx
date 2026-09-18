@@ -48,6 +48,7 @@ import { TourProvider } from '@/components/tour'
 import { CommandPalette } from '@/components/shell/CommandPalette'
 import { RecordingSessionProvider } from '@/contexts/RecordingSessionContext'
 import { ShellSessionDock } from '@/components/shell/ShellSessionDock'
+import { WhatsNew } from '@/components/WhatsNew'
 
 
 // Module-level component — stable reference across RootLayout re-renders.
@@ -136,10 +137,19 @@ export function AppShell({
         toast.error("Please complete setup first", {
           description: "You need to finish onboarding before you can start recording."
         });
-      } else {
-        // If in main app, forward to useRecordingStart via window event
+      } else if (window.location.pathname === '/') {
+        // On the home page the listener is mounted, so dispatch directly.
         console.log('[Layout] Forwarding to start-recording-from-sidebar');
         window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
+      } else {
+        // Anywhere else it is NOT: `useRecordingStart` — the only listener for
+        // that event — is mounted by the home page alone, so dispatching here
+        // did nothing at all. Pressing record from the tray while viewing a
+        // meeting or settings was silently ignored. Navigate first and let the
+        // home page pick it up, which is what the sidebar button already does.
+        console.log('[Layout] Not on home; routing there to start the recording');
+        sessionStorage.setItem('autoStartRecording', 'true');
+        window.location.assign('/');
       }
     });
 
@@ -147,6 +157,29 @@ export function AppShell({
       unlisten.then(fn => fn());
     };
   }, [showOnboarding]);
+
+  // The backend's own recording failures.
+  //
+  // `recording-error` is emitted by the Rust recording pipeline when a start or
+  // a stop fails (audio/recording_commands.rs), carrying a sentence written for
+  // a user. Nothing listened to it, so a whole class of failures — the device
+  // disappeared, the stream could not open, the engine would not load — reached
+  // the user as a button that did nothing. Mounted app-wide because the failure
+  // can arrive long after the click, and on any route.
+  useEffect(() => {
+    const unlisten = listen<string>('recording-error', (event) => {
+      const message = typeof event.payload === 'string' ? event.payload : String(event.payload);
+      console.error('[Layout] recording-error from the backend:', message);
+      toast.error('Recording problem', {
+        description: message || 'The recording pipeline reported a failure with no detail.',
+        duration: 10000,
+      });
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Handle file drop for audio import
   const handleFileDrop = useCallback((paths: string[]) => {
@@ -310,6 +343,12 @@ export function AppShell({
                                 </TourProvider>
                                 </RecordingSessionProvider>
                               )}
+                              {/* What changed in this version (G2). Renders
+                                  nothing on a fresh install and nothing when
+                                  the version has not moved; mounted outside the
+                                  onboarding branch so it can never interrupt
+                                  first-run setup. */}
+                              {!showOnboarding && <WhatsNew />}
                               {/* Import audio overlay and dialog */}
                               <ImportDropOverlay visible={showDropOverlay} />
                               <ConditionalImportDialog

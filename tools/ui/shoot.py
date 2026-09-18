@@ -189,16 +189,22 @@ def serve(directory: str, theme=None):
 def chrome_flags() -> list:
     """Flags every Chrome invocation needs on this machine.
 
-    Chrome refuses to start as root without --no-sandbox (crbug.com/638180),
-    which is exactly how it runs in a container/CI. Detect that instead of
-    failing with "chrome exited 1 and rendered nothing". MITYU_CHROME_FLAGS
-    (space-separated) appends anything else a machine needs.
+    Chrome refuses to start as root without --no-sandbox and exits 1 having
+    rendered nothing: "Running as root without --no-sandbox is not supported."
+    Every container this repo builds and tests in runs as root, so without the
+    flag the screenshot gate could not run in CI or in an agent sandbox at all --
+    a verification tool that is itself unrunnable verifies nothing. The sandbox is
+    a defence against hostile page content; these pages are our own static export,
+    served from localhost by this same script.
+
+    `os.geteuid` is Unix-only, so ask for it rather than assuming it: this script
+    also runs on the Windows dev machines listed in CHROME_CANDIDATES.
+    MITYU_CHROME_FLAGS (space-separated) appends anything else a machine needs.
     """
     flags = []
-    if hasattr(os, "geteuid") and os.geteuid() == 0:
+    if getattr(os, "geteuid", lambda: 1)() == 0:
         flags.append("--no-sandbox")
-    extra = os.environ.get("MITYU_CHROME_FLAGS", "").split()
-    flags.extend(extra)
+    flags.extend(os.environ.get("MITYU_CHROME_FLAGS", "").split())
     return flags
 
 

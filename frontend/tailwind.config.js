@@ -45,6 +45,10 @@ module.exports = {
         read: ['0.9375rem', { lineHeight: '1.5rem', fontWeight: '400' }],
         body: ['0.875rem', { lineHeight: '1.375rem', fontWeight: '400' }],
         label: ['0.8125rem', { lineHeight: '1.125rem', fontWeight: '500' }],
+        // Same 13px as `label`, looser leading. Kept because main's components
+        // (NoMicrophoneNotice, PreferenceSettings) and setting-card.test.tsx use
+        // `text-meta`; without the step those classes compile to nothing.
+        meta: ['0.8125rem', { lineHeight: '1.25rem' }],
         // 12px is the floor for anything a person must read — every compliance string.
         caption: ['0.75rem', { lineHeight: '1rem', fontWeight: '400', letterSpacing: '0.005em' }],
         // 11px: an uppercase eyebrow, a count or an mm:ss. Never a sentence outside the

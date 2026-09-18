@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { RecordingControls } from '@/components/RecordingControls';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { usePermissionCheck } from '@/hooks/usePermissionCheck';
+import { NoMicrophoneNotice } from '@/components/NoMicrophoneNotice';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useConfig } from '@/contexts/ConfigContext';
@@ -55,7 +56,7 @@ export default function Home() {
   const { status, statusMessage, isStopping, isProcessing } = recordingState;
 
   // Hooks
-  const { hasMicrophone } = usePermissionCheck();
+  const { hasMicrophone, isChecking: isCheckingMicrophone, error: microphoneError, checkPermissions } = usePermissionCheck();
   const { refetchMeetings, currentMeeting } = useSidebar();
   const { modals, messages, showModal, hideModal } = useModalState(transcriptModelConfig);
   const { handleRecordingStart } = useRecordingStart(isRecording, setIsRecordingState, showModal);
@@ -241,6 +242,21 @@ export default function Home() {
             showModal={showModal}
           />
         )}
+
+        {/* The recording slot is never empty. Without a microphone this used to
+            render nothing at all — no button and no reason — which is
+            indistinguishable from the app being broken. */}
+        {!hasMicrophone &&
+          !isRecording &&
+          !isCheckingMicrophone &&
+          status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
+          status !== RecordingStatus.SAVING && (
+            <div className="absolute inset-x-0 bottom-12 z-10 flex justify-center px-gutter">
+              <div className="flex w-2/3 max-w-[750px] justify-center">
+                <NoMicrophoneNotice error={microphoneError} onRetry={checkPermissions} />
+              </div>
+            </div>
+          )}
 
         {/* Recording controls - only show when permissions are granted or already recording and not showing status messages */}
         {(hasMicrophone || isRecording) &&

@@ -5,6 +5,8 @@ on: workflow_dispatch
 jobs:
   build-test:
     permissions:
+      # See build-windows.yml: build.yml inherits the caller's permissions, and
+      # a manual build uploads nothing to the repository.
       contents: read
     strategy:
       fail-fast: false
@@ -32,3 +34,6 @@ jobs:
       asset-prefix: "mityu-test"
       upload-artifacts: true
       is-debug-build: ${{ contains(matrix.args, '--debug') }}
+    # See build-windows.yml: build.yml reads credentials it never declares, so a
+    # caller that passes none is an invalid workflow and dies at startup.
+    secrets: inherit
