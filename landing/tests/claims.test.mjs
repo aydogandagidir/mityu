@@ -60,6 +60,22 @@ test('the copilot is described as a beta that is off by default, reached from Se
   }
 });
 
+test('the CPU requirement is stated before anyone pays', () => {
+  // v1.2.2 shipped an AVX-512 instruction and killed itself on every CPU without
+  // it. v1.2.3 fixed that by pinning the build to an AVX2 baseline -- which makes
+  // AVX2 a HARD REQUIREMENT that did not exist before. A buyer on a Celeron or
+  // Pentium Silver laptop (some sold as recently as 2023 have no AVX at all) meets
+  // every requirement this page used to state, pays, and cannot record.
+  //
+  // The page said only "Windows 10/11 (64-bit)" in five places. A requirement that
+  // is enforced in code and published nowhere is a refund conversation with a
+  // customer who did nothing wrong, so it is pinned here: the same class of
+  // omission as the cloud-egress sentence above, caught the same way.
+  assert.match(index, /AVX2/, 'index.html must state the AVX2 requirement');
+  const specs = index.match(/Windows 10\/11 \(64-bit\)/g) ?? [];
+  assert.ok(specs.length > 0, 'the platform line should still name the OS');
+});
+
 test('no page claims what the I9 and A5 gates have not measured', () => {
   for (const [name, text] of [['index.html', index], ['privacy.html', privacy]]) {
     assert.doesNotMatch(text, /undetectable/i, `${name}: "undetectable" never appears in product copy (ADR-0038)`);

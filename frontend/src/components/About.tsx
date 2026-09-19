@@ -116,7 +116,7 @@ export function About() {
                     </div>
                     <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
                         <h3 className="font-bold text-sm text-foreground mb-1">Any meeting app</h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Google Meet, or Microsoft Teams — no bot joins your call. Windows 10/11 (64-bit); macOS in development.</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Google Meet, or Microsoft Teams — no bot joins your call. Windows 10/11 (64-bit) with an AVX2-capable processor; macOS in development.</p>
                     </div>
                     <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
                         <h3 className="font-bold text-sm text-foreground mb-1">Human-approved</h3>
