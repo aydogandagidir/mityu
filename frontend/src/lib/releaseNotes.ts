@@ -50,7 +50,7 @@ export const RELEASE_NOTES: ReleaseNote[] = [
       {
         title: 'The app no longer disappears when you press Record',
         detail:
-          'On many processors — including most consumer laptops sold in the last few years — pressing Record closed Mityu instantly, with no message and nothing written to the log. The build had been compiled to use an instruction set (AVX-512) that those processors do not have, so the processor refused the instruction and Windows ended the program. Mityu is now built for a processor baseline that every machine from roughly 2013 onwards meets, and that baseline is written down in the project instead of being inherited from whichever machine compiled the release.',
+          'On many processors — including most consumer laptops sold in the last few years — pressing Record closed Mityu instantly, with no message and nothing written to the log. The build had been compiled to use an instruction set (AVX-512) that those processors do not have, so the processor refused the instruction and Windows ended the program. Mityu is now built for a stated processor baseline — AVX2, which Intel Core chips have had since 2013 and AMD since 2015 — and that baseline is written down in the project instead of being inherited from whichever machine compiled the release. It is not universal: some budget Celeron and Pentium Silver laptops sold as recently as 2023 have no AVX at all, and on those Mityu now refuses to record with an explanation instead of closing.',
       },
       {
         title: 'If your processor is too old, you are told so instead of losing the app',
