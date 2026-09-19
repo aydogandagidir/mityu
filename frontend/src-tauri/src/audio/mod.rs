@@ -3,6 +3,7 @@ pub mod audio_processing;
 pub mod decoder;
 pub mod encode;
 pub mod ffmpeg;
+pub mod silence_gate;
 pub mod vad;
 
 // Modularized device management
