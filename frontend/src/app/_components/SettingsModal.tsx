@@ -4,6 +4,7 @@ import { DeviceSelection } from "@/components/DeviceSelection";
 import { LanguageSelection } from "@/components/LanguageSelection";
 import { TranscriptSettings } from "@/components/TranscriptSettings";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Notice } from "@/components/ui/notice";
 import { toast } from "sonner";
 import { useConfig } from "@/contexts/ConfigContext";
 import { useRecordingState } from "@/contexts/RecordingStateContext";
@@ -262,6 +263,17 @@ export function SettingsModals({
 
           {/* Scrollable Content */}
           <div className="flex-1 overflow-y-auto p-6 pt-4">
+            {/* The reason, shown. `messages.modelSelector` carries the sentence the
+                backend refused with, and until now it was read only as a boolean to
+                pick a heading — so a user whose CPU is below the build baseline was
+                shown a model picker and never told that downloading a model cannot
+                help them. One sentence, at the point of action; the detail lives in
+                the log. */}
+            {messages.modelSelector && (
+              <Notice as="status" tone="warning" className="mb-4">
+                {messages.modelSelector}
+              </Notice>
+            )}
             <TranscriptSettings
               transcriptModelConfig={transcriptModelConfig}
               setTranscriptModelConfig={setTranscriptModelConfig}
