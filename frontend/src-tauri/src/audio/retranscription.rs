@@ -95,6 +95,23 @@ pub async fn start_retranscription<R: Runtime>(
     model: Option<String>,
     provider: Option<String>,
 ) -> Result<RetranscriptionResult> {
+    // The CPU floor, before anything native is loaded.
+    //
+    // v1.2.3 put this check on the Record button and ONLY there, which left the
+    // same crash reachable through a different door: both of this file's
+    // `load_model` calls run the very engine whose native code assumes the
+    // baseline, so on a machine below it the process would still vanish --
+    // here while holding a file the user just chose, which is worse than
+    // vanishing on Record. A refusal the user can read costs one branch.
+    if let Some(refusal) = crate::cpu::refusal_sentence() {
+        log::error!(
+            "Refusing {}: CPU is below the build baseline. {}",
+            "re-transcription",
+            crate::cpu::startup_line()
+        );
+        return Err(anyhow!(refusal));
+    }
+
     // Acquire guard - ensures flag is cleared even on panic/early return
     let _guard = RetranscriptionGuard::acquire().map_err(|e| anyhow!(e))?;
 
