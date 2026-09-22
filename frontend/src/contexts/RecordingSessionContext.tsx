@@ -20,8 +20,18 @@
  * which is the behaviour the consent gate and the device pickers are written against.
  */
 
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { appDataDir } from '@tauri-apps/api/path';
+import { listen } from '@tauri-apps/api/event';
+import { isTauri } from '@/lib/isTauri';
 import { useRecordingStop } from '@/hooks/useRecordingStop';
 import { recordingService } from '@/services/recordingService';
 import Analytics from '@/lib/analytics';
@@ -119,6 +129,46 @@ export function RecordingSessionProvider({ children }: { children: React.ReactNo
       stopRequestInFlight.current = false;
     }
   }, [handleRecordingStop, setIsStopping]);
+
+  /**
+   * Stops that end natively -- the tray menu, the tray toggle -- finish through this
+   * event rather than through a button in the shell. Until v1.2.3 it was heard by a
+   * separate provider that ran `useRecordingStop` a SECOND time, with no-op setters. A
+   * tray stop therefore saved the meeting but never reset `isRecording` here, and the
+   * rail's Record button, ⌘⇧R and the tray's own Record entry were then refused as
+   * "already recording" -- silently -- until the window was reloaded. There is one stop
+   * hook now, and it is this one, so the flag it clears is the flag the start path reads.
+   */
+  const handleRecordingStopRef = useRef(handleRecordingStop);
+  handleRecordingStopRef.current = handleRecordingStop;
+  useEffect(() => {
+    // Outside Tauri (fixtures, tests, the dev preview) there is no event source.
+    if (!isTauri()) return;
+    let disposed = false;
+    let unlistenFn: (() => void) | undefined;
+
+    (async () => {
+      try {
+        const unlisten = await listen<boolean>('recording-stop-complete', (event) => {
+          console.log('[RecordingSession] recording-stop-complete:', event.payload);
+          // The payload is the callApi flag; the tray sends `true` for a clean stop.
+          void handleRecordingStopRef.current(event.payload);
+        });
+        if (disposed) {
+          unlisten();
+          return;
+        }
+        unlistenFn = unlisten;
+      } catch (error) {
+        console.error('[RecordingSession] Failed to listen for recording-stop-complete:', error);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unlistenFn?.();
+    };
+  }, []);
 
   const value = useMemo(
     () => ({

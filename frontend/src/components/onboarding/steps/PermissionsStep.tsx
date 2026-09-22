@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { OnboardingContainer } from '../OnboardingContainer';
 import { PermissionRow } from '../shared';
 import { useOnboarding } from '@/contexts/OnboardingContext';
+import { openSystemSettings } from '@/services/systemService';
 
 export function PermissionsStep({ onFinish }: { onFinish: () => void }) {
   const { setPermissionStatus, setPermissionsSkipped, permissions, completeOnboarding } = useOnboarding();
@@ -34,9 +35,10 @@ export function PermissionsStep({ onFinish }: { onFinish: () => void }) {
   // Request microphone permission
   const handleMicrophoneAction = async () => {
     if (permissions.microphone === 'denied') {
-      // Try to open system settings
+      // Try to open system settings. The command REQUIRES the pane; called without
+      // it, Tauri rejected with "invalid args" and the deep link never worked.
       try {
-        await invoke('open_system_settings');
+        await openSystemSettings('Privacy_Microphone');
       } catch {
         toast.error('Could not open system settings', {
           description:
@@ -70,9 +72,10 @@ export function PermissionsStep({ onFinish }: { onFinish: () => void }) {
   // Request system audio permission
   const handleSystemAudioAction = async () => {
     if (permissions.systemAudio === 'denied') {
-      // Try to open system settings
+      // Try to open system settings (system audio is captured through ScreenCaptureKit,
+      // whose permission lives under Screen Recording).
       try {
-        await invoke('open_system_settings');
+        await openSystemSettings('Privacy_ScreenCapture');
       } catch {
         toast.error('Could not open system settings', {
           description:

@@ -60,12 +60,12 @@ export class TranscriptService {
   }
 
   /**
-   * Listen for transcription-complete event
+   * Listen for transcription-queue-complete event (the worker has queued every chunk)
    * @param callback - Function to call when transcription processing is complete
    * @returns Promise that resolves to unlisten function
    */
   async onTranscriptionComplete(callback: () => void): Promise<UnlistenFn> {
-    return listen('transcription-complete', callback);
+    return listen('transcription-queue-complete', callback);
   }
 
   /**

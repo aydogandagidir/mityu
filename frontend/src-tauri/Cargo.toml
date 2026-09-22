@@ -244,6 +244,11 @@ whisper-rs = { version = "0.13.2", features = ["raw-api"] }
 futures-channel = "0.3.31"
 
 [dev-dependencies]
+# The mock runtime (`tauri::test::mock_app`), so the event plumbing between the
+# transcription worker and the recording-folder writer can be exercised in a unit
+# test without a window or an audio device. Queued by ADR-0073; dev-only, so the
+# shipped binary's feature set is unchanged.
+tauri = { version = "2.6.2", features = ["test"] }
 # Also a runtime dep; declared here so integration tests can install keyring's
 # built-in in-memory `mock` backend (keyring::set_default_credential_builder)
 # and never touch the real OS credential store.

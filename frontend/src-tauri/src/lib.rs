@@ -161,15 +161,33 @@ async fn start_recording<R: Runtime>(
         return Err("Recording already in progress".to_string());
     }
 
-    // Call the actual audio recording system with meeting name
-    match audio::recording_commands::start_recording_with_devices_and_meeting(
-        app.clone(),
-        mic_device_name,
-        system_device_name,
-        meeting_name.clone(),
-    )
-    .await
-    {
+    // Call the actual audio recording system with meeting name.
+    //
+    // With no device named on either side, resolve preference -> default -> error,
+    // exactly as the `_authorized` variant below already does. The devices-and-meeting
+    // path resolves only names it is given: handed `(None, None)` it opened no stream,
+    // failed with "No audio streams could be created" -- after the meeting folder was
+    // created and the single-use consent ticket consumed.
+    let recording_result = match (mic_device_name.clone(), system_device_name.clone()) {
+        (None, None) => {
+            audio::recording_commands::start_recording_with_meeting_name(
+                app.clone(),
+                meeting_name.clone(),
+            )
+            .await
+        }
+        _ => {
+            audio::recording_commands::start_recording_with_devices_and_meeting(
+                app.clone(),
+                mic_device_name,
+                system_device_name,
+                meeting_name.clone(),
+            )
+            .await
+        }
+    };
+
+    match recording_result {
         Ok(_) => {
             RECORDING_FLAG.store(true, Ordering::SeqCst);
             tray::update_tray_menu(&app);
@@ -625,10 +643,41 @@ pub fn run() {
             // }
 
             // Initialize database (handles first launch detection and conditional setup)
-            tauri::async_runtime::block_on(async {
-                database::setup::initialize_database_on_startup(&_app.handle()).await
-            })
-            .expect("Failed to initialize database");
+            //
+            // Not `.expect()`. `DatabaseManager::new` deliberately returns a distinct,
+            // RECOVERABLE error when the database file is encrypted and its key is not
+            // in the OS credential store (locked keychain, a profile restored from
+            // backup, a wiped `db-key` entry): "retry once the keychain is unlocked, or
+            // restore the key". A panic here turned that into a process that died
+            // before any window existed, on every launch, with the remedy written only
+            // into a log file the user did not know to look for. Now the sentence is
+            // shown, and the app closes when it is dismissed.
+            if let Err(e) = tauri::async_runtime::block_on(async {
+                database::setup::initialize_database_on_startup(_app.handle()).await
+            }) {
+                log::error!("Failed to initialize database: {}", e);
+                let handle = _app.handle().clone();
+                let message = format!(
+                    "Mityu could not open its local database, so it cannot start.\n\n{}\n\n\
+                     Nothing has been deleted. If the message names the OS keychain, unlock it \
+                     or restore the 'db-key' entry and start Mityu again.",
+                    e
+                );
+                // A message dialog must not block the main thread (it is where the dialog
+                // is drawn), so it is shown from a worker thread once the event loop runs,
+                // and the process ends when the user dismisses it.
+                std::thread::spawn(move || {
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                    handle
+                        .dialog()
+                        .message(message)
+                        .title("Mityu cannot start")
+                        .kind(MessageDialogKind::Error)
+                        .blocking_show();
+                    std::process::exit(1);
+                });
+                return Ok(());
+            }
 
             // Initialize bundled templates directory for dynamic template discovery
             log::info!("Initializing bundled templates directory...");

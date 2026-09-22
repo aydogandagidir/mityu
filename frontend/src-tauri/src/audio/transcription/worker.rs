@@ -44,6 +44,35 @@ pub struct TranscriptUpdate {
 // NOTE: get_transcript_history and get_recording_meeting_name functions
 // have been moved to recording_commands.rs where they have access to RECORDING_MANAGER
 
+/// Whether a decoder result reaches the transcript. The only question is: is there text?
+///
+/// Until v1.2.3 this also required `confidence >= 0.3` for Whisper. That number is not a
+/// confidence. `whisper_engine.rs` derives it from text length alone --
+/// `(len / 100).min(0.9) + 0.1` -- so the gate meant "at least 20 bytes", and what it
+/// deleted was short real speech: "Evet.", "Tamam.", "Katılıyorum.", "Sorusu olan var mı?".
+/// Agreement, refusal and the question that ends a meeting vanished with no marker and no
+/// count, while a fluent invention sailed through because it was long.
+///
+/// The defence against Whisper's inventions on silence now sits where it belongs: in front
+/// of the decoder (`audio::silence_gate`), judging audio by whether anyone spoke rather than
+/// text by how long it is. With that in place, filtering the decoder's output by length only
+/// costs words. Parakeet reports no confidence and was never gated; this makes the two
+/// engines behave the same.
+pub(crate) fn should_emit_transcript(text: &str) -> bool {
+    !text.trim().is_empty()
+}
+
+/// The sentence shown when the worker finished with fewer chunks transcribed than it was
+/// handed. Counts only, never content (CLAUDE.md §0.6).
+pub(crate) fn chunk_loss_warning(chunks_queued: u64, chunks_completed: u64) -> String {
+    let lost = chunks_queued.saturating_sub(chunks_completed);
+    format!(
+        "{} of {} audio segments were not transcribed before the recording finished. \
+         The audio was saved, but the transcript may be missing passages.",
+        lost, chunks_queued
+    )
+}
+
 /// Optimized parallel transcription task ensuring ZERO chunk loss
 pub fn start_transcription_task<R: Runtime>(
     app: AppHandle<R>,
@@ -159,32 +188,24 @@ pub fn start_transcription_task<R: Runtime>(
                                 .await
                             {
                                 Ok((transcript, confidence_opt, is_partial)) => {
-                                    // Provider-aware confidence threshold
-                                    let confidence_threshold = match &engine_clone {
-                                        TranscriptionEngine::Whisper(_)
-                                        | TranscriptionEngine::Provider(_) => 0.3,
-                                        TranscriptionEngine::Parakeet(_) => 0.0, // Parakeet has no confidence, accept all
-                                    };
-
                                     let confidence_str = match confidence_opt {
                                         Some(c) => format!("{:.2}", c),
                                         None => "N/A".to_string(),
                                     };
 
                                     info!(
-                                        "Worker {} transcription result: chars={}, confidence={}, partial={}, threshold={:.2}",
+                                        "Worker {} transcription result: chars={}, confidence={}, partial={}",
                                         worker_id,
                                         transcript.chars().count(),
                                         confidence_str,
-                                        is_partial,
-                                        confidence_threshold
+                                        is_partial
                                     );
 
-                                    // Check confidence threshold (or accept if no confidence provided)
-                                    let meets_threshold =
-                                        confidence_opt.map_or(true, |c| c >= confidence_threshold);
-
-                                    if !transcript.trim().is_empty() && meets_threshold {
+                                    // No confidence threshold here, on purpose -- see
+                                    // `should_emit_transcript`. Silence is refused before the
+                                    // decoder (`audio::silence_gate`); whatever the decoder
+                                    // returns for audio that carried speech is kept.
+                                    if should_emit_transcript(&transcript) {
                                         // PERFORMANCE: Only log transcription results, not every processing step
                                         info!(
                                             "Worker {} accepted transcription (chars={}, confidence={}, partial={})",
@@ -249,12 +270,11 @@ pub fn start_transcription_task<R: Runtime>(
                                             );
                                         }
                                         // PERFORMANCE: Removed verbose logging of every emission
-                                    } else if !transcript.trim().is_empty() && should_log_this_chunk
-                                    {
-                                        // PERFORMANCE: Only log low-confidence results occasionally
-                                        if let Some(c) = confidence_opt {
-                                            info!("Worker {} low-confidence transcription (confidence: {:.2}), skipping", worker_id, c);
-                                        }
+                                    } else if should_log_this_chunk {
+                                        info!(
+                                            "Worker {} empty transcription for chunk, nothing to emit",
+                                            worker_id
+                                        );
                                     }
                                 }
                                 Err(e) => {
@@ -414,15 +434,14 @@ pub fn start_transcription_task<R: Runtime>(
                     MAX_VERIFICATION_ATTEMPTS, final_queued, final_completed
                 );
 
-                // Emit critical error event
+                // `chunk-drop-warning` with a plain sentence is what the renderer listens
+                // for (useModalState.ts) and shows in its "Transcription Performance
+                // Warning" dialog. This used to go out as `transcript-chunk-loss-detected`
+                // with a JSON body, a name nothing listened to, so the one time the worker
+                // KNEW it had lost audio, the user was not told.
                 let _ = app.emit(
-                    "transcript-chunk-loss-detected",
-                    serde_json::json!({
-                        "chunks_queued": final_queued,
-                        "chunks_completed": final_completed,
-                        "chunks_lost": final_queued - final_completed,
-                        "message": "Some transcript chunks may have been lost during shutdown"
-                    }),
+                    "chunk-drop-warning",
+                    chunk_loss_warning(final_queued, final_completed),
                 );
                 break;
             }
@@ -626,4 +645,66 @@ fn format_recording_time(seconds: f64) -> String {
     let secs = total_seconds % 60;
 
     format!("[{:02}:{:02}]", minutes, secs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The formula `whisper_engine.rs` uses for the number it calls "confidence". Reproduced
+    /// here, not imported, so this test pins what the worker used to compare against and
+    /// fails if someone reintroduces a threshold on it.
+    fn whisper_length_pseudo_confidence(text: &str) -> f32 {
+        let len = text.len() as f32;
+        if len > 0.0 {
+            (len / 100.0).min(0.9) + 0.1
+        } else {
+            0.1
+        }
+    }
+
+    #[test]
+    fn short_real_speech_is_kept_even_though_its_pseudo_confidence_is_below_the_old_gate() {
+        // Every one of these is under 20 bytes, so the removed `>= 0.3` gate deleted them.
+        for utterance in ["Evet.", "Tamam.", "Hayır.", "Katılıyorum.", "Soru var mı?"] {
+            let pseudo = whisper_length_pseudo_confidence(utterance);
+            assert!(
+                pseudo < 0.3,
+                "{utterance:?} scores {pseudo:.2}; the premise of this test is that the old gate dropped it"
+            );
+            assert!(
+                should_emit_transcript(utterance),
+                "{utterance:?} is real speech and must reach the transcript"
+            );
+        }
+    }
+
+    /// Exactly 20 bytes scored exactly 0.30 and squeaked through the old gate; 19 did not.
+    /// The boundary is pinned so nobody "fixes" the formula back into a threshold.
+    #[test]
+    fn the_old_gate_was_a_twenty_byte_length_check() {
+        assert!(whisper_length_pseudo_confidence(&"a".repeat(19)) < 0.3);
+        assert!(whisper_length_pseudo_confidence(&"a".repeat(20)) >= 0.3);
+    }
+
+    #[test]
+    fn a_decoder_result_with_no_text_is_not_emitted() {
+        assert!(!should_emit_transcript(""));
+        assert!(!should_emit_transcript("   "));
+        assert!(!should_emit_transcript("\n\t"));
+    }
+
+    #[test]
+    fn the_chunk_loss_warning_carries_counts_and_never_goes_negative() {
+        let w = chunk_loss_warning(106, 100);
+        assert!(w.starts_with("6 of 106 audio segments"), "{w}");
+        // A completed count above the queued count is a bookkeeping slip, not a loss.
+        assert!(chunk_loss_warning(5, 7).starts_with("0 of 5"));
+    }
+
+    #[test]
+    fn the_decision_does_not_depend_on_length() {
+        assert!(should_emit_transcript("a"));
+        assert!(should_emit_transcript(&"uzun ".repeat(100)));
+    }
 }

@@ -36,6 +36,10 @@ pub fn encode_single_audio(
 
     debug!("Using FFmpeg at: {:?}", ffmpeg_path);
 
+    let output_path_str = output_path.to_str().ok_or_else(|| {
+        anyhow::anyhow!("Output path is not valid UTF-8: {}", output_path.display())
+    })?;
+
     let mut command = Command::new(ffmpeg_path);
     command
         .args([
@@ -57,7 +61,7 @@ pub fn encode_single_audio(
             "+faststart", // Optimize for web streaming
             "-f",
             "mp4",
-            output_path.to_str().unwrap(),
+            output_path_str,
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -73,17 +77,34 @@ pub fn encode_single_audio(
 
     debug!("FFmpeg command: {:?}", command);
 
+    // Errors, not panics. This runs inside the accumulation task that saves a
+    // checkpoint every 30 s of audio; a panic there ended audio saving for the rest
+    // of the recording with nothing in the UI. `find_ffmpeg_path` only proves the
+    // file exists -- a quarantined or non-executable bundled binary still fails
+    // here, and the caller already logs an `Err`.
     #[allow(clippy::zombie_processes)]
-    let mut ffmpeg = command.spawn().expect("Failed to spawn FFmpeg process");
+    let mut ffmpeg = command
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to spawn FFmpeg process: {}", e))?;
     debug!("FFmpeg process spawned");
-    let mut stdin = ffmpeg.stdin.take().expect("Failed to open stdin");
+    let mut stdin = ffmpeg
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("FFmpeg stdin was not available"))?;
 
-    stdin.write_all(data)?;
+    if let Err(e) = stdin.write_all(data) {
+        // Reap the child so a failed write does not leave a zombie behind.
+        drop(stdin);
+        let _ = ffmpeg.wait();
+        return Err(anyhow::anyhow!("Failed to write audio to FFmpeg: {}", e));
+    }
 
     debug!("Dropping stdin");
     drop(stdin);
     debug!("Waiting for FFmpeg process to exit");
-    let output = ffmpeg.wait_with_output().unwrap();
+    let output = ffmpeg
+        .wait_with_output()
+        .map_err(|e| anyhow::anyhow!("Failed to wait for FFmpeg process: {}", e))?;
     let status = output.status;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);

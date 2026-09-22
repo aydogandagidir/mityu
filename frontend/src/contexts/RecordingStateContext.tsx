@@ -101,9 +101,29 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
         isActive: backendState.is_active,
         recordingDuration: backendState.recording_duration,
         activeDuration: backendState.active_duration,
+        // A provider that mounts into a live recording never saw `recording-started`,
+        // so its status is still IDLE; say RECORDING, as that handler would have.
+        status:
+          backendState.is_recording && prev.status === RecordingStatus.IDLE
+            ? RecordingStatus.RECORDING
+            : prev.status,
       }));
 
       console.log('[RecordingStateContext] Synced with backend:', backendState);
+
+      // Polling used to start ONLY in the `recording-started` handler. A reload during
+      // a live recording -- the tray's Settings entry does a full
+      // `window.location.assign` -- remounts this provider long after that event fired,
+      // so the mount sync showed "Recording • 03:12" and the number never moved again.
+      // The backend's answer is the authority: poll while it says a recording is live,
+      // stop when it says idle.
+      if (backendState.is_recording) {
+        if (!pollingIntervalRef.current) {
+          startPolling();
+        }
+      } else if (pollingIntervalRef.current) {
+        stopPolling();
+      }
     } catch (error) {
       console.error('[RecordingStateContext] Failed to sync with backend:', error);
       // Don't update state on error - keep current state

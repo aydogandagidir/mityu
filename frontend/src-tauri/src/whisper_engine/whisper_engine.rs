@@ -110,6 +110,58 @@ fn whisper_model_artifact(model_name: &str) -> Option<(String, u64, &'static str
     ))
 }
 
+/// Mean decoder probability over the text tokens of one segment, or `None` when the
+/// segment has no readable text token.
+///
+/// Special tokens -- end-of-text, start-of-transcript, language and timestamp markers,
+/// all of which have ids at or above `token_eot` -- are not words and are skipped, so a
+/// segment is judged on what it says and not on the decoder's certainty that it ended.
+/// A probability whisper.cpp reports as NaN or infinite is skipped for the same reason.
+fn segment_token_confidence(
+    state: &whisper_rs::WhisperState,
+    segment: std::os::raw::c_int,
+    eot: whisper_rs::WhisperToken,
+) -> Option<f32> {
+    let n_tokens = state.full_n_tokens(segment).ok()?;
+    let probs = (0..n_tokens).filter_map(|t| {
+        let id = state.full_get_token_id(segment, t).ok()?;
+        if id >= eot {
+            return None;
+        }
+        state.full_get_token_prob(segment, t).ok()
+    });
+    mean_token_probability(probs)
+}
+
+/// The arithmetic behind `segment_token_confidence`, separated so it can be tested
+/// without a model: the mean of the finite probabilities, `None` if there are none.
+fn mean_token_probability(probs: impl Iterator<Item = f32>) -> Option<f32> {
+    let (sum, n) = probs
+        .filter(|p| p.is_finite())
+        .fold((0.0f32, 0usize), |(sum, n), p| (sum + p, n + 1));
+    if n == 0 {
+        None
+    } else {
+        Some(sum / n as f32)
+    }
+}
+
+/// The estimate this engine reported as "confidence" until v1.2.3, now only a fallback.
+///
+/// It is a function of text length and nothing else: `(len / 100).min(0.9) + 0.1`. It
+/// scored "Evet." at 0.15 and a fluent 90-byte invention at 1.0, which is the opposite
+/// of what a listener would say, and the live worker used to delete everything under
+/// 0.3 on the strength of it. It survives only for a segment whose token probabilities
+/// cannot be read at all, which should not happen with a healthy decoder.
+fn length_based_confidence_estimate(text: &str) -> f32 {
+    let len = text.len() as f32;
+    if len > 0.0 {
+        (len / 100.0).min(0.9) + 0.1
+    } else {
+        0.1
+    }
+}
+
 pub struct WhisperEngine {
     models_dir: PathBuf,
     current_context: Arc<RwLock<Option<WhisperContext>>>,
@@ -754,29 +806,32 @@ impl WhisperEngine {
         let mut segment_count = 0;
 
         let num_segments = num_segments?;
+        let eot = ctx.token_eot();
         for i in 0..num_segments {
             let segment_text = match state.full_get_segment_text_lossy(i) {
                 Ok(text) => text,
                 Err(_) => continue,
             };
 
-            // Calculate confidence based on segment length and duration (simplified approach)
-            let segment_length = segment_text.len() as f32;
-            let segment_confidence = if segment_length > 0.0 {
-                (segment_length / 100.0).min(0.9) + 0.1 // 0.1 to 1.0 confidence based on text length
-            } else {
-                0.1
-            };
+            let cleaned_text = segment_text.trim();
+            if cleaned_text.is_empty() {
+                // Nothing said, nothing to be confident about; an empty segment must not
+                // drag the average of the segments that do carry words.
+                continue;
+            }
+
+            // The decoder's own probability for each text token, averaged. This is the
+            // number whisper.cpp itself colours tokens by; the length-based estimate it
+            // replaces is kept only as a fallback for the case where no token is readable.
+            let segment_confidence = segment_token_confidence(&state, i, eot)
+                .unwrap_or_else(|| length_based_confidence_estimate(cleaned_text));
             total_confidence += segment_confidence;
             segment_count += 1;
 
-            let cleaned_text = segment_text.trim();
-            if !cleaned_text.is_empty() {
-                if !result.is_empty() {
-                    result.push(' ');
-                }
-                result.push_str(cleaned_text);
+            if !result.is_empty() {
+                result.push(' ');
             }
+            result.push_str(cleaned_text);
         }
 
         let final_result = result.trim().to_string();
@@ -1417,5 +1472,42 @@ impl WhisperEngine {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod confidence_tests {
+    use super::*;
+
+    #[test]
+    fn the_confidence_is_the_mean_of_the_decoders_token_probabilities() {
+        let c = mean_token_probability([0.9f32, 0.7, 0.8].into_iter()).expect("three tokens");
+        assert!((c - 0.8).abs() < 1e-6, "{c}");
+    }
+
+    #[test]
+    fn a_short_certain_answer_outscores_a_long_uncertain_one() {
+        // The property the old estimate got backwards. "Evet." decoded at p=0.95 per
+        // token is more trustworthy than ninety bytes decoded at p=0.3 per token, and
+        // the number must say so, because the UI shows it as "% confidence".
+        let short_certain = mean_token_probability([0.95f32, 0.96].into_iter()).unwrap();
+        let long_uncertain = mean_token_probability(std::iter::repeat(0.3f32).take(30)).unwrap();
+        assert!(short_certain > long_uncertain);
+
+        let old_short = length_based_confidence_estimate("Evet.");
+        let old_long = length_based_confidence_estimate(&"a".repeat(90));
+        assert!(old_short < old_long, "this is the inversion being replaced");
+        assert!(
+            old_short < 0.3,
+            "and the live worker used to delete it for that"
+        );
+    }
+
+    #[test]
+    fn non_finite_probabilities_are_skipped_and_no_tokens_means_no_confidence() {
+        let c = mean_token_probability([f32::NAN, 0.5, f32::INFINITY].into_iter()).unwrap();
+        assert!((c - 0.5).abs() < 1e-6);
+        assert!(mean_token_probability(std::iter::empty()).is_none());
+        assert!(mean_token_probability([f32::NAN].into_iter()).is_none());
     }
 }

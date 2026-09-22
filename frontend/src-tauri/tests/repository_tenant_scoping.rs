@@ -396,7 +396,7 @@ async fn reads_are_workspace_scoped_in_both_directions() {
             .is_empty()
     );
 
-    // Summary reads are scoped too (plain and JOIN variants).
+    // Summary reads are scoped too (both read variants; the row's own workspace_id is the scope).
     SummaryProcessesRepository::create_or_reset_process(&pool, &local, &local_meeting)
         .await
         .expect("local summary process");

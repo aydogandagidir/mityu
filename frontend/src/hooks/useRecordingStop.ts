@@ -233,9 +233,10 @@ export function useRecordingStop(
       let elapsedTime = 0;
       let transcriptionComplete = false;
 
-      // Listen for transcription-complete event
-      const unlistenComplete = await listen('transcription-complete', () => {
-        console.log('Received transcription-complete event');
+      // The worker's own signal that every chunk has been queued. It was listened for
+      // under the name `transcription-complete`, which nothing in Rust has ever emitted.
+      const unlistenComplete = await listen('transcription-queue-complete', () => {
+        console.log('Received transcription-queue-complete event');
         transcriptionComplete = true;
       });
 
@@ -275,7 +276,7 @@ export function useRecordingStop(
       }
 
       // Clean up listener
-      console.log('🧹 CLEANUP: Cleaning up transcription-complete listener');
+      console.log('🧹 CLEANUP: Cleaning up transcription-queue-complete listener');
       unlistenComplete();
 
       if (!transcriptionComplete && elapsedTime >= MAX_WAIT_TIME) {

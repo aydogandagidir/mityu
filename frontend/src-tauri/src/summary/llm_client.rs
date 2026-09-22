@@ -48,8 +48,42 @@ pub struct Choice {
 
 #[derive(Deserialize, Debug)]
 pub struct MessageContent {
-    pub content: String,
+    /// `null` from a reasoning model whose answer went into `reasoning_content`
+    /// -- and `api_test_custom_openai_connection` accepts exactly that shape as a
+    /// valid endpoint. Reading it as a bare `String` made every generation
+    /// against such a server fail with "expected a string", after the app's own
+    /// connection test had said the endpoint was fine.
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
 }
+
+impl MessageContent {
+    /// The text to use: `content` when it says something, otherwise
+    /// `reasoning_content`, otherwise nothing.
+    pub fn text(&self) -> Option<&str> {
+        self.content
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .or_else(|| {
+                self.reasoning_content
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|c| !c.is_empty())
+            })
+    }
+}
+
+/// The output ceiling sent with every Claude request. Anthropic's Messages API
+/// requires `max_tokens` and stops generating at it. The structured path asks for
+/// one JSON object holding every section of a whole meeting plus its action items;
+/// 2048 -- the value hardcoded until v1.2.3 -- truncated that mid-object for any
+/// meeting past a short one, the truncated JSON failed to parse, and with the legacy
+/// fallback disabled the generation ended as `failed` on every retry. 8192 is
+/// accepted by every Claude model this app offers (4.x and 3.5 Sonnet).
+pub const CLAUDE_MAX_OUTPUT_TOKENS: u32 = 8192;
 
 // Claude-specific request structure
 #[derive(Debug, Serialize)]
@@ -312,7 +346,7 @@ pub async fn generate_summary_with_response_format(
         serde_json::json!(ClaudeRequest {
             system: system_prompt.to_string(),
             model: model_name.to_string(),
-            max_tokens: 2048,
+            max_tokens: CLAUDE_MAX_OUTPUT_TOKENS,
             messages: vec![ChatMessage {
                 role: "user".to_string(),
                 content: user_prompt.to_string(),
@@ -349,7 +383,10 @@ pub async fn generate_summary_with_response_format(
             result = request_future => {
                 result.map_err(|e| {
                     if e.is_timeout() {
-                        "LLM request timed out after 60 seconds".to_string()
+                        format!(
+                            "LLM request timed out after {} seconds",
+                            REQUEST_TIMEOUT_DURATION.as_secs()
+                        )
                     } else if e.is_connect() {
                         "Could not connect to the configured LLM provider".to_string()
                     } else {
@@ -364,7 +401,10 @@ pub async fn generate_summary_with_response_format(
     } else {
         request_future.await.map_err(|e| {
             if e.is_timeout() {
-                "LLM request timed out after 60 seconds".to_string()
+                format!(
+                    "LLM request timed out after {} seconds",
+                    REQUEST_TIMEOUT_DURATION.as_secs()
+                )
             } else if e.is_connect() {
                 "Could not connect to the configured LLM provider".to_string()
             } else {
@@ -409,9 +449,43 @@ pub async fn generate_summary_with_response_format(
             .first()
             .ok_or("No content in LLM response")?
             .message
-            .content
-            .trim();
+            .text()
+            .ok_or("No content in LLM response")?;
         Ok(content.to_string())
+    }
+}
+
+#[cfg(test)]
+mod response_shape_tests {
+    use super::*;
+
+    #[test]
+    fn a_reasoning_model_reply_with_null_content_is_still_readable() {
+        let raw =
+            r#"{"choices":[{"message":{"content":null,"reasoning_content":"  the answer  "}}]}"#;
+        let parsed: ChatResponse = serde_json::from_str(raw).expect("must parse");
+        assert_eq!(parsed.choices[0].message.text(), Some("the answer"));
+    }
+
+    #[test]
+    fn content_wins_over_reasoning_when_both_are_present() {
+        let raw = r#"{"choices":[{"message":{"content":"final","reasoning_content":"draft"}}]}"#;
+        let parsed: ChatResponse = serde_json::from_str(raw).expect("must parse");
+        assert_eq!(parsed.choices[0].message.text(), Some("final"));
+    }
+
+    #[test]
+    fn the_plain_openai_shape_still_parses() {
+        let raw = r#"{"choices":[{"message":{"role":"assistant","content":"hello"}}]}"#;
+        let parsed: ChatResponse = serde_json::from_str(raw).expect("must parse");
+        assert_eq!(parsed.choices[0].message.text(), Some("hello"));
+    }
+
+    #[test]
+    fn an_empty_reply_is_no_content() {
+        let raw = r#"{"choices":[{"message":{"content":"   "}}]}"#;
+        let parsed: ChatResponse = serde_json::from_str(raw).expect("must parse");
+        assert_eq!(parsed.choices[0].message.text(), None);
     }
 }
 

@@ -597,14 +597,19 @@ mod tests {
         }
 
         // Legacy summary_processes result carries non-empty markdown (export path).
-        let result: String = sqlx::query_scalar(
-            "SELECT result FROM summary_processes WHERE meeting_id = ? AND workspace_id = ?",
+        // Read through the SAME repository call `api_get_summary` uses, not raw SQL:
+        // the raw read passed while the page showed "not generated yet", because the
+        // repository joined a table the seed never writes.
+        let process = crate::database::repositories::summary::SummaryProcessesRepository::get_summary_data_for_meeting(
+            &pool,
+            &ctx,
+            SAMPLE_MEETING_ID,
         )
-        .bind(SAMPLE_MEETING_ID)
-        .bind(ctx.tenant_id.as_str())
-        .fetch_one(&pool)
         .await
-        .expect("fetch summary_processes result");
+        .expect("get_summary_data_for_meeting")
+        .expect("the sample meeting's summary must be readable the way the meeting page reads it");
+        assert_eq!(process.status, "completed");
+        let result = process.result.expect("completed process carries a result");
         let parsed: serde_json::Value = serde_json::from_str(&result).expect("result must be JSON");
         let markdown = parsed
             .get("markdown")
