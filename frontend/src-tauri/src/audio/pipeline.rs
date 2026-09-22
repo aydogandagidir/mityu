@@ -742,6 +742,9 @@ pub struct AudioPipeline {
     mixer: ProfessionalAudioMixer,
     // Recording sender for pre-mixed audio
     recording_sender_for_mixed: Option<mpsc::UnboundedSender<AudioChunk>>,
+    // How often the silence gate said no, so a wrong floor is a number in the log rather
+    // than words the user notices missing weeks later.
+    silence_gate_stats: crate::audio::silence_gate::SilenceGateStats,
 }
 
 impl AudioPipeline {
@@ -826,6 +829,7 @@ impl AudioPipeline {
             ring_buffer,
             mixer,
             recording_sender_for_mixed: None, // Will be set by manager
+            silence_gate_stats: Default::default(),
         })
     }
 
@@ -918,7 +922,20 @@ impl AudioPipeline {
                                         let duration_ms =
                                             segment.end_timestamp_ms - segment.start_timestamp_ms;
 
-                                        if segment.samples.len() >= 800 {
+                                        // Two questions, in order: is it long enough to be
+                                        // worth decoding, and did anyone actually speak in it?
+                                        // The second one is new -- see `audio::silence_gate`.
+                                        // Silero opens segments on this hardware's near-digital
+                                        // silence, and Whisper answers silence with a confident
+                                        // invention, so the segment must be refused here rather
+                                        // than its output filtered later.
+                                        let (has_speech, seg_energy) =
+                                            crate::audio::silence_gate::carries_speech(
+                                                &segment.samples,
+                                            );
+                                        self.silence_gate_stats.record(has_speech);
+
+                                        if segment.samples.len() >= 800 && has_speech {
                                             // Minimum 50ms at 16kHz - matches Parakeet capability
                                             info!(
                                                 "📤 Sending VAD segment: {:.1}ms, {} samples",
@@ -941,6 +958,16 @@ impl AudioPipeline {
                                             } else {
                                                 self.chunk_id_counter += 1;
                                             }
+                                        } else if !has_speech {
+                                            // Logged at INFO, not DEBUG: the failure this
+                                            // replaces deleted words with no trace, and a
+                                            // wrong floor must be visible in a normal log.
+                                            info!(
+                                                "🔇 Silence gate rejected {:.1}ms segment: loudest 100ms window {:.2e} < floor {:.1e} mean-square",
+                                                duration_ms,
+                                                seg_energy,
+                                                crate::audio::silence_gate::SPEECH_ENERGY_FLOOR
+                                            );
                                         } else {
                                             debug!("⏭️ Dropping short VAD segment: {:.1}ms ({} samples < 800)",
                                                    duration_ms, segment.samples.len());
@@ -1000,7 +1027,21 @@ impl AudioPipeline {
                     let duration_ms = segment.end_timestamp_ms - segment.start_timestamp_ms;
 
                     // Send segments >= 50ms (800 samples at 16kHz) - matches main pipeline filter
-                    if segment.samples.len() >= 800 {
+                    // ...and the same silence gate as the streaming path: the tail of a
+                    // recording is where trailing room tone lands, and Whisper invents on it
+                    // exactly as readily there.
+                    let (has_speech, seg_energy) =
+                        crate::audio::silence_gate::carries_speech(&segment.samples);
+                    self.silence_gate_stats.record(has_speech);
+
+                    if !has_speech {
+                        info!(
+                            "🔇 Silence gate rejected final {:.1}ms segment: loudest 100ms window {:.2e} < floor {:.1e} mean-square",
+                            duration_ms,
+                            seg_energy,
+                            crate::audio::silence_gate::SPEECH_ENERGY_FLOOR
+                        );
+                    } else if segment.samples.len() >= 800 {
                         info!(
                             "📤 Sending final VAD segment to Whisper: {:.1}ms duration, {} samples",
                             duration_ms,
@@ -1033,6 +1074,12 @@ impl AudioPipeline {
                 warn!("Failed to flush VAD processor: {}", e);
             }
         }
+
+        // One line per recording, so the question "is the gate eating my speech?" is answered
+        // by reading the log rather than by noticing an absence. A session whose rejected
+        // count dwarfs its decoded count on a recording the user knows had talking in it is
+        // the signal that the floor is wrong.
+        info!("{}", self.silence_gate_stats.summary());
 
         Ok(())
     }
