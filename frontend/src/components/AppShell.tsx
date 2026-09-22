@@ -37,7 +37,6 @@ import { OnboardingFlow } from '@/components/onboarding'
 import { loadBetaFeatures } from '@/types/betaFeatures'
 import { DownloadProgressToastProvider } from '@/components/shared/DownloadProgressToast'
 import { UpdateCheckProvider } from '@/components/UpdateCheckProvider'
-import { RecordingPostProcessingProvider } from '@/contexts/RecordingPostProcessingProvider'
 import { ImportAudioDialog, ImportDropOverlay } from '@/components/ImportAudio'
 import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
 import { SystemNotices } from '@/components/shell/SystemNotices'
@@ -295,7 +294,6 @@ export function AppShell({
                     <UpdateCheckProvider>
                       <SidebarProvider>
                         <TooltipProvider>
-                          <RecordingPostProcessingProvider>
                             <ImportDialogProvider onOpen={handleOpenImportDialog}>
                             {/* ADR-0023 licensing: status provider + the shared activate/paywall
                                 dialog. Innermost position that still wraps every consumer:
@@ -358,7 +356,6 @@ export function AppShell({
                               />
                             </LicensingProvider>
                             </ImportDialogProvider>
-                          </RecordingPostProcessingProvider>
                         </TooltipProvider>
                       </SidebarProvider>
                     </UpdateCheckProvider>

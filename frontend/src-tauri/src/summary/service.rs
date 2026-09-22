@@ -1081,13 +1081,19 @@ impl SummaryService {
                 if let Err(e) =
                     ActionItemsRepository::insert_drafts(pool, ctx, meeting_id, &action_items).await
                 {
-                    // The summaries row is already written (draft status,
-                    // reviewable); degrading still gives the user a legacy
-                    // summary while the drafts await review.
-                    return StructuredOutcome::Degrade(format!(
-                        "failed to persist action item drafts: {}",
+                    // The summaries row is already committed and reviewable. Marking the
+                    // whole process failed here -- which is what `Degrade` now does, the
+                    // legacy fallback being disabled -- produced a split brain: the review
+                    // panel showed the new draft while the summary panel showed the
+                    // PREVIOUS summary (restored from `result_backup`) under a "generation
+                    // failed, retry" banner. The summary is real; only the action-item
+                    // drafts are missing, so say that and complete the process.
+                    error!(
+                        meeting_id = meeting_id,
+                        action_items = action_items.len(),
+                        "action item drafts were not persisted; the summary draft is saved and reviewable: {}",
                         e
-                    ));
+                    );
                 }
 
                 // ADR-0019 decision 1: the legacy result shape stays written

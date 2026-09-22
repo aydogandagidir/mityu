@@ -96,8 +96,3 @@ export async function getGroqModels(apiKey: string | null = null): Promise<GroqM
 export async function hasApiKey(provider: string): Promise<boolean> {
   return invoke<boolean>('api_has_api_key', { provider });
 }
-
-/** Whether summaries are auto-generated when a recording finishes. */
-export async function getAutoGenerateSetting(): Promise<boolean> {
-  return invoke<boolean>('api_get_auto_generate_setting');
-}

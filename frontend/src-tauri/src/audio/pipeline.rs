@@ -104,6 +104,29 @@ impl AudioMixerRingBuffer {
             || self.system_buffer.len() >= self.window_size_samples
     }
 
+    /// Whatever is still in the buffers, as one zero-padded window; `None` once both are
+    /// empty.
+    ///
+    /// For the END of a recording only. Mid-stream, padding a window that has not filled
+    /// would write silence into a live stream; at stop nothing more is coming, so what is
+    /// here is the last of the recording and the only alternative to padding it is
+    /// dropping it -- which is what happened until v1.2.3: `can_mix` needs a full 600 ms
+    /// window, so the final partial one was never mixed, never saved and never
+    /// transcribed. The closing words of a meeting were the most likely thing to lose.
+    fn drain_remaining_as_window(&mut self) -> Option<(Vec<f32>, Vec<f32>)> {
+        if self.mic_buffer.is_empty() && self.system_buffer.is_empty() {
+            return None;
+        }
+        let n = self.window_size_samples;
+        let take = |buf: &mut VecDeque<f32>| -> Vec<f32> {
+            let available = buf.len().min(n);
+            let mut out: Vec<f32> = buf.drain(..available).collect();
+            out.resize(n, 0.0);
+            out
+        };
+        Some((take(&mut self.mic_buffer), take(&mut self.system_buffer)))
+    }
+
     fn extract_window(&mut self) -> Option<(Vec<f32>, Vec<f32>)> {
         if !self.can_mix() {
             return None;
@@ -745,6 +768,9 @@ pub struct AudioPipeline {
     // How often the silence gate said no, so a wrong floor is a number in the log rather
     // than words the user notices missing weeks later.
     silence_gate_stats: crate::audio::silence_gate::SilenceGateStats,
+    // Timestamp of the last chunk seen, so the tail mixed at stop is stamped like the
+    // chunks before it rather than at zero.
+    last_chunk_timestamp: f64,
 }
 
 impl AudioPipeline {
@@ -830,6 +856,7 @@ impl AudioPipeline {
             mixer,
             recording_sender_for_mixed: None, // Will be set by manager
             silence_gate_stats: Default::default(),
+            last_chunk_timestamp: 0.0,
         })
     }
 
@@ -897,6 +924,9 @@ impl AudioPipeline {
                         self.last_summary_time = std::time::Instant::now();
                     }
 
+                    let chunk_timestamp = chunk.timestamp;
+                    self.last_chunk_timestamp = chunk_timestamp;
+
                     // STEP 1: Add raw audio to ring buffer for mixing
                     // Microphone audio is already normalized at capture level (AudioCapture)
                     // System audio remains raw
@@ -906,90 +936,7 @@ impl AudioPipeline {
                     // STEP 2: Mix audio in fixed windows when both streams have sufficient data
                     while self.ring_buffer.can_mix() {
                         if let Some((mic_window, sys_window)) = self.ring_buffer.extract_window() {
-                            // Simple mixing without aggressive ducking
-                            let mixed_clean = self.mixer.mix_window(&mic_window, &sys_window);
-
-                            // NO POST-GAIN NEEDED: Microphone already normalized by EBU R128 to -23 LUFS
-                            // This is broadcast-standard loudness (Netflix/YouTube/Spotify level)
-                            // System audio at natural levels
-                            // Previous 2x gain was causing excessive limiting/distortion
-                            let mixed_with_gain = mixed_clean;
-
-                            // STEP 3: Send mixed audio for transcription (VAD + Whisper)
-                            match self.vad_processor.process_audio(&mixed_with_gain) {
-                                Ok(speech_segments) => {
-                                    for segment in speech_segments {
-                                        let duration_ms =
-                                            segment.end_timestamp_ms - segment.start_timestamp_ms;
-
-                                        // Two questions, in order: is it long enough to be
-                                        // worth decoding, and did anyone actually speak in it?
-                                        // The second one is new -- see `audio::silence_gate`.
-                                        // Silero opens segments on this hardware's near-digital
-                                        // silence, and Whisper answers silence with a confident
-                                        // invention, so the segment must be refused here rather
-                                        // than its output filtered later.
-                                        let (has_speech, seg_energy) =
-                                            crate::audio::silence_gate::carries_speech(
-                                                &segment.samples,
-                                            );
-                                        self.silence_gate_stats.record(has_speech);
-
-                                        if segment.samples.len() >= 800 && has_speech {
-                                            // Minimum 50ms at 16kHz - matches Parakeet capability
-                                            info!(
-                                                "📤 Sending VAD segment: {:.1}ms, {} samples",
-                                                duration_ms,
-                                                segment.samples.len()
-                                            );
-
-                                            let transcription_chunk = AudioChunk {
-                                                data: segment.samples,
-                                                sample_rate: 16000,
-                                                timestamp: segment.start_timestamp_ms / 1000.0,
-                                                chunk_id: self.chunk_id_counter,
-                                                device_type: DeviceType::Microphone, // Mixed audio
-                                            };
-
-                                            if let Err(e) =
-                                                self.transcription_sender.send(transcription_chunk)
-                                            {
-                                                warn!("Failed to send VAD segment: {}", e);
-                                            } else {
-                                                self.chunk_id_counter += 1;
-                                            }
-                                        } else if !has_speech {
-                                            // Logged at INFO, not DEBUG: the failure this
-                                            // replaces deleted words with no trace, and a
-                                            // wrong floor must be visible in a normal log.
-                                            info!(
-                                                "🔇 Silence gate rejected {:.1}ms segment: loudest 100ms window {:.2e} < floor {:.1e} mean-square",
-                                                duration_ms,
-                                                seg_energy,
-                                                crate::audio::silence_gate::SPEECH_ENERGY_FLOOR
-                                            );
-                                        } else {
-                                            debug!("⏭️ Dropping short VAD segment: {:.1}ms ({} samples < 800)",
-                                                   duration_ms, segment.samples.len());
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!("⚠️ VAD error: {}", e);
-                                }
-                            }
-
-                            // STEP 4: Send mixed audio for recording (WAV file)
-                            if let Some(ref sender) = self.recording_sender_for_mixed {
-                                let recording_chunk = AudioChunk {
-                                    data: mixed_with_gain.clone(),
-                                    sample_rate: self.sample_rate,
-                                    timestamp: chunk.timestamp,
-                                    chunk_id: self.chunk_id_counter,
-                                    device_type: DeviceType::Microphone, // Mixed audio
-                                };
-                                let _ = sender.send(recording_chunk);
-                            }
+                            self.process_mixed_window(&mic_window, &sys_window, chunk_timestamp);
                         }
                     }
                 }
@@ -1014,11 +961,122 @@ impl AudioPipeline {
         Ok(())
     }
 
+    /// One mixed window through the rest of the pipeline: VAD, the silence gate, the
+    /// transcription queue, and the recording writer. Shared by the live loop and by the
+    /// stop-time drain of the ring buffer, so the tail of a recording is treated exactly
+    /// like the middle of it.
+    fn process_mixed_window(
+        &mut self,
+        mic_window: &[f32],
+        sys_window: &[f32],
+        chunk_timestamp: f64,
+    ) {
+        // Simple mixing without aggressive ducking
+        let mixed_clean = self.mixer.mix_window(mic_window, sys_window);
+
+        // NO POST-GAIN NEEDED: Microphone already normalized by EBU R128 to -23 LUFS
+        // This is broadcast-standard loudness (Netflix/YouTube/Spotify level)
+        // System audio at natural levels
+        // Previous 2x gain was causing excessive limiting/distortion
+        let mixed_with_gain = mixed_clean;
+
+        // STEP 3: Send mixed audio for transcription (VAD + Whisper)
+        match self.vad_processor.process_audio(&mixed_with_gain) {
+            Ok(speech_segments) => {
+                for segment in speech_segments {
+                    let duration_ms = segment.end_timestamp_ms - segment.start_timestamp_ms;
+
+                    // Two questions, in order: is it long enough to be
+                    // worth decoding, and did anyone actually speak in it?
+                    // The second one is new -- see `audio::silence_gate`.
+                    // Silero opens segments on this hardware's near-digital
+                    // silence, and Whisper answers silence with a confident
+                    // invention, so the segment must be refused here rather
+                    // than its output filtered later.
+                    let (has_speech, seg_energy) =
+                        crate::audio::silence_gate::carries_speech(&segment.samples);
+                    self.silence_gate_stats.record(has_speech);
+
+                    if segment.samples.len() >= 800 && has_speech {
+                        // Minimum 50ms at 16kHz - matches Parakeet capability
+                        info!(
+                            "📤 Sending VAD segment: {:.1}ms, {} samples",
+                            duration_ms,
+                            segment.samples.len()
+                        );
+
+                        let transcription_chunk = AudioChunk {
+                            data: segment.samples,
+                            sample_rate: 16000,
+                            timestamp: segment.start_timestamp_ms / 1000.0,
+                            chunk_id: self.chunk_id_counter,
+                            device_type: DeviceType::Microphone, // Mixed audio
+                        };
+
+                        if let Err(e) = self.transcription_sender.send(transcription_chunk) {
+                            warn!("Failed to send VAD segment: {}", e);
+                        } else {
+                            self.chunk_id_counter += 1;
+                        }
+                    } else if !has_speech {
+                        // Logged at INFO, not DEBUG: the failure this
+                        // replaces deleted words with no trace, and a
+                        // wrong floor must be visible in a normal log.
+                        info!(
+                            "🔇 Silence gate rejected {:.1}ms segment: loudest 100ms window {:.2e} < floor {:.1e} mean-square",
+                            duration_ms,
+                            seg_energy,
+                            crate::audio::silence_gate::SPEECH_ENERGY_FLOOR
+                        );
+                    } else {
+                        debug!(
+                            "⏭️ Dropping short VAD segment: {:.1}ms ({} samples < 800)",
+                            duration_ms,
+                            segment.samples.len()
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("⚠️ VAD error: {}", e);
+            }
+        }
+
+        // STEP 4: Send mixed audio for recording (WAV file)
+        if let Some(ref sender) = self.recording_sender_for_mixed {
+            let recording_chunk = AudioChunk {
+                data: mixed_with_gain.clone(),
+                sample_rate: self.sample_rate,
+                timestamp: chunk_timestamp,
+                chunk_id: self.chunk_id_counter,
+                device_type: DeviceType::Microphone, // Mixed audio
+            };
+            let _ = sender.send(recording_chunk);
+        }
+    }
+
     fn flush_remaining_audio(&mut self) -> Result<()> {
         info!(
             "Flushing remaining audio from pipeline (processed {} chunks)",
             self.processed_chunks
         );
+
+        // The mixer holds whatever arrived after the last full window -- up to one window
+        // (600 ms) per stream. Nothing more is coming, so it is mixed now, through the
+        // same path as every window before it; otherwise the end of the recording is
+        // neither saved nor transcribed.
+        let mut drained_windows = 0usize;
+        while let Some((mic_window, sys_window)) = self.ring_buffer.drain_remaining_as_window() {
+            drained_windows += 1;
+            let ts = self.last_chunk_timestamp;
+            self.process_mixed_window(&mic_window, &sys_window, ts);
+        }
+        if drained_windows > 0 {
+            info!(
+                "Mixed {} partial window(s) left in the ring buffer at stop",
+                drained_windows
+            );
+        }
 
         // Flush any remaining audio from VAD processor and send segments to transcription
         match self.vad_processor.flush() {
@@ -1225,5 +1283,65 @@ impl AudioPipelineManager {
 impl Default for AudioPipelineManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod ring_buffer_tail_tests {
+    use super::*;
+
+    #[test]
+    fn a_partial_window_is_not_mixable_live_but_is_drained_at_stop() {
+        let mut rb = AudioMixerRingBuffer::new(48_000);
+        let window = rb.window_size_samples;
+        assert_eq!(window, 28_800, "600 ms at 48 kHz");
+
+        // 300 ms of microphone, nothing from the system stream: the shape of the moment
+        // the user presses Stop mid-sentence.
+        rb.add_samples(DeviceType::Microphone, vec![0.5; window / 2]);
+        assert!(
+            !rb.can_mix(),
+            "live mixing must still wait for a full window"
+        );
+        assert!(rb.extract_window().is_none());
+
+        let (mic, sys) = rb
+            .drain_remaining_as_window()
+            .expect("the tail must be drained, not dropped");
+        assert_eq!(mic.len(), window);
+        assert_eq!(sys.len(), window);
+        assert!(
+            mic[..window / 2].iter().all(|&x| x == 0.5),
+            "the audio comes first"
+        );
+        assert!(
+            mic[window / 2..].iter().all(|&x| x == 0.0),
+            "then zero padding"
+        );
+        assert!(sys.iter().all(|&x| x == 0.0));
+
+        assert!(
+            rb.drain_remaining_as_window().is_none(),
+            "and then there is nothing left"
+        );
+    }
+
+    #[test]
+    fn draining_empty_buffers_yields_nothing() {
+        let mut rb = AudioMixerRingBuffer::new(48_000);
+        assert!(rb.drain_remaining_as_window().is_none());
+    }
+
+    #[test]
+    fn a_full_window_plus_a_tail_drains_in_two_windows() {
+        let mut rb = AudioMixerRingBuffer::new(48_000);
+        let window = rb.window_size_samples;
+        rb.add_samples(DeviceType::System, vec![0.25; window + 100]);
+        let first = rb.drain_remaining_as_window().expect("first");
+        assert!(first.1.iter().all(|&x| x == 0.25));
+        let second = rb.drain_remaining_as_window().expect("second");
+        assert!(second.1[..100].iter().all(|&x| x == 0.25));
+        assert!(second.1[100..].iter().all(|&x| x == 0.0));
+        assert!(rb.drain_remaining_as_window().is_none());
     }
 }

@@ -96,18 +96,24 @@ impl SummaryProcessesRepository {
         Ok(true)
     }
 
+    /// The summary the meeting page shows (`api_get_summary`).
+    ///
+    /// Reads `summary_processes` alone. Until v1.2.3 this inner-joined
+    /// `transcript_chunks`, a table only `api_process_transcript` writes, so a
+    /// summary row with no chunk row was invisible: the seeded sample meeting
+    /// (which has one and never had chunks) opened to "not generated yet", and so
+    /// did any summary the user edited and saved without ever generating one. The
+    /// join added no column and no tenant guarantee -- `workspace_id` on the row
+    /// itself is the scope, exactly as in `get_summary_data`.
     pub async fn get_summary_data_for_meeting(
         pool: &SqlitePool,
         ctx: &AuthContext,
         meeting_id: &str,
     ) -> Result<Option<SummaryProcess>, sqlx::Error> {
         sqlx::query_as::<_, SummaryProcess>(
-            "SELECT p.* FROM summary_processes p \
-             JOIN transcript_chunks t ON p.meeting_id = t.meeting_id \
-             WHERE p.meeting_id = ? AND p.workspace_id = ? AND t.workspace_id = ?",
+            "SELECT * FROM summary_processes WHERE meeting_id = ? AND workspace_id = ?",
         )
         .bind(meeting_id)
-        .bind(ctx.tenant_id.as_str())
         .bind(ctx.tenant_id.as_str())
         .fetch_optional(pool)
         .await

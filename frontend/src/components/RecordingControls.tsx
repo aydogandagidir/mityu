@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import Analytics from '@/lib/analytics';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
+import { parseTranscriptionError } from '@/lib/transcriptionErrorPolicy';
 
 interface RecordingControlsProps {
   isRecording: boolean;
@@ -267,17 +268,40 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     };
   }, []);
 
+  // The latest callbacks, read at event time. The listener effect below registers
+  // ONCE. With the callbacks as its dependencies it re-ran on every render of the home
+  // page -- on every transcript segment, because both props are inline arrows there --
+  // tearing down and re-creating three Tauri listeners continuously, and orphaning them
+  // whenever the cleanup ran before the `await listen()` calls had resolved.
+  const onRecordingStopRef = useRef(onRecordingStop);
+  const onTranscriptionErrorRef = useRef(onTranscriptionError);
+  useEffect(() => {
+    onRecordingStopRef.current = onRecordingStop;
+    onTranscriptionErrorRef.current = onTranscriptionError;
+  });
+
   useEffect(() => {
     console.log('Setting up recording event listeners');
-    let unsubscribes: (() => void)[] = [];
+    let disposed = false;
+    const unsubscribes: (() => void)[] = [];
+
+    // Registers one listener, or drops it at once if this effect was already cleaned
+    // up while the registration was in flight.
+    const register = async <T,>(event: string, handler: (payload: T) => void) => {
+      const unlisten = await listen<T>(event, (e) => handler(e.payload));
+      if (disposed) {
+        unlisten();
+      } else {
+        unsubscribes.push(unlisten);
+      }
+    };
 
     const setupListeners = async () => {
       try {
         // Transcript error listener - handles both regular and actionable errors
-        const transcriptErrorUnsubscribe = await listen('transcript-error', (event) => {
+        await register<string>('transcript-error', (errorMessage) => {
           console.log('transcript-error event received');
           console.error('Transcription error received');
-          const errorMessage = event.payload as string;
 
           Analytics.trackTranscriptionError();
 
@@ -288,27 +312,16 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           });
           setIsProcessing(false);
           console.log('Calling onRecordingStop(false) due to transcript error');
-          onRecordingStop(false);
-          if (onTranscriptionError) {
-            onTranscriptionError(errorMessage);
-          }
+          onRecordingStopRef.current(false);
+          onTranscriptionErrorRef.current?.(errorMessage);
         });
 
         // Transcription error listener - handles structured error objects with actionable flag
-        const transcriptionErrorUnsubscribe = await listen('transcription-error', (event) => {
+        await register<unknown>('transcription-error', (payload) => {
           console.log('transcription-error event received');
           console.error('Transcription error received');
 
-          let errorMessage: string;
-          let isActionable = false;
-
-          if (typeof event.payload === 'object' && event.payload !== null) {
-            const payload = event.payload as { error: string, userMessage: string, actionable: boolean };
-            errorMessage = payload.userMessage || payload.error;
-            isActionable = payload.actionable || false;
-          } else {
-            errorMessage = String(event.payload);
-          }
+          const { actionable } = parseTranscriptionError(payload);
 
           Analytics.trackTranscriptionError();
 
@@ -317,32 +330,31 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
             console.log('Transcription error count incremented:', newCount);
             return newCount;
           });
-          setIsProcessing(false);
-          console.log('Calling onRecordingStop(false) due to transcription error');
-          onRecordingStop(false);
 
-          // For actionable errors (like model loading failures), the main page will handle showing the model selector
-          // For regular errors, they are handled by useModalState global listener which shows a toast
-          // We don't want to show a modal (via onTranscriptionError) AND a toast, so we skip the callback here
-          /* if (onTranscriptionError && !isActionable) {
-            onTranscriptionError(errorMessage);
-          } */
+          if (!actionable) {
+            // One failed chunk. Rust has already moved on to the next one and the
+            // capture is still running, so the UI must keep saying so; the global
+            // listener in useModalState shows the toast. See transcriptionErrorPolicy.ts.
+            console.log('Non-actionable transcription error: recording continues');
+            return;
+          }
+
+          // The engine could not start: nothing will be transcribed for this recording.
+          // The main page shows the model selector for this case.
+          setIsProcessing(false);
+          console.log('Calling onRecordingStop(false) due to actionable transcription error');
+          onRecordingStopRef.current(false);
         });
 
         // Pause/Resume events are now handled by RecordingStateContext
         // No need for duplicate listeners here
 
         // Speech detected listener - for UX feedback when VAD detects speech
-        const speechDetectedUnsubscribe = await listen('speech-detected', () => {
+        await register<unknown>('speech-detected', () => {
           console.log('speech-detected event received');
           setSpeechDetected(true);
         });
 
-        unsubscribes = [
-          transcriptErrorUnsubscribe,
-          transcriptionErrorUnsubscribe,
-          speechDetectedUnsubscribe
-        ];
         console.log('Recording event listeners set up successfully');
       } catch {
         console.error('Failed to set up recording event listeners');
@@ -353,13 +365,10 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
 
     return () => {
       console.log('Cleaning up recording event listeners');
-      unsubscribes.forEach(unsubscribe => {
-        if (unsubscribe && typeof unsubscribe === 'function') {
-          unsubscribe();
-        }
-      });
+      disposed = true;
+      unsubscribes.forEach(unsubscribe => unsubscribe());
     };
-  }, [onRecordingStop, onTranscriptionError]);
+  }, []);
 
   return (
     <TooltipProvider>

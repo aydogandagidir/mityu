@@ -13,6 +13,21 @@ pub struct SpeechSegment {
     pub confidence: f32,
 }
 
+/// Where a speech segment began, in 16 kHz samples since the session started.
+///
+/// `VadTransition::SpeechStart { timestamp_ms }` is already an absolute session time:
+/// silero-rs derives it from its own running total of processed samples (less the
+/// pre-speech pad). `ContinuousVadProcessor::processed_samples` is the same running total,
+/// kept independently on this side. Adding the two, as this code did until v1.2.3, counted
+/// the elapsed recording twice. Its only consumer is `flush()`, for the segment still open
+/// when the user presses Stop, so the last line of every meeting that ended mid-sentence was
+/// stamped at roughly twice its real position: past the end of the audio, where clicking it
+/// seeks nowhere, and after every other line once sorted by start time.
+pub(crate) fn speech_start_sample_from_transition(timestamp_ms: usize) -> usize {
+    // 16 000 samples per second is 16 per millisecond.
+    timestamp_ms * 16
+}
+
 /// Processes audio in 30ms chunks but returns complete speech segments
 pub struct ContinuousVadProcessor {
     session: VadSession,
@@ -254,9 +269,7 @@ impl ContinuousVadProcessor {
                         self.last_logged_state = true;
                     }
                     self.in_speech = true;
-                    // Use 16000 (VAD processing rate) since processed_samples counts 16kHz samples
-                    self.speech_start_sample =
-                        self.processed_samples + (timestamp_ms * 16000 / 1000);
+                    self.speech_start_sample = speech_start_sample_from_transition(timestamp_ms);
                     self.current_speech.clear();
                 }
                 VadTransition::SpeechEnd {
@@ -698,5 +711,35 @@ mod tests {
                 duration_ms
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod speech_start_tests {
+    use super::*;
+
+    #[test]
+    fn the_start_sample_is_the_transition_time_and_nothing_else() {
+        assert_eq!(speech_start_sample_from_transition(0), 0);
+        assert_eq!(speech_start_sample_from_transition(1_000), 16_000);
+        assert_eq!(speech_start_sample_from_transition(59_700), 955_200);
+    }
+
+    /// The shape of the bug: a minute into a recording, silero reports speech starting at
+    /// 59.7 s. The start must lie before the samples processed so far, not a minute after.
+    #[test]
+    fn a_speech_start_never_lies_in_the_future() {
+        let processed_samples: usize = 60 * 16_000;
+        let start = speech_start_sample_from_transition(59_700);
+        assert!(
+            start <= processed_samples,
+            "start sample {start} is after the {processed_samples} samples processed so far"
+        );
+
+        let old_formula = processed_samples + (59_700 * 16_000 / 1_000);
+        assert!(
+            old_formula > processed_samples,
+            "the premise of this test is that the removed formula overshot"
+        );
     }
 }

@@ -12,7 +12,6 @@ import {
   getAnthropicModels,
   getGroqModels,
   hasApiKey,
-  getAutoGenerateSetting,
   type OllamaModel,
   type OpenRouterModel,
   type OpenAIModel,
@@ -140,7 +139,6 @@ export function ModelSettingsModal({
   const [hasAutoFetched, setHasAutoFetched] = useState<boolean>(false);
   const hasSyncedFromParent = useRef<boolean>(false);
   const hasLoadedInitialConfig = useRef<boolean>(false);
-  const [autoGenerateEnabled, setAutoGenerateEnabled] = useState<boolean>(true); // Default to true
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isEndpointSectionCollapsed, setIsEndpointSectionCollapsed] = useState<boolean>(true); // Collapsed by default
   const [ollamaNotInstalled, setOllamaNotInstalled] = useState<boolean>(false); // Track if Ollama is not installed
@@ -300,22 +298,6 @@ export function ModelSettingsModal({
 
     fetchModelConfig();
   }, [skipInitialFetch]);
-
-  // Fetch auto-generate setting on mount
-  useEffect(() => {
-    const fetchAutoGenerateSetting = async () => {
-      try {
-        const enabled = await getAutoGenerateSetting();
-        setAutoGenerateEnabled(enabled);
-        console.log('Auto-generate setting loaded:', enabled);
-      } catch (err) {
-        console.error('Failed to fetch auto-generate setting:', err);
-        // Keep default value (true) on error
-      }
-    };
-
-    fetchAutoGenerateSetting();
-  }, []);
 
   // Sync ollamaEndpoint state when modelConfig.ollamaEndpoint changes from parent
   useEffect(() => {
@@ -1364,7 +1346,10 @@ export function ModelSettingsModal({
         )}
       </div>
 
-      {/* Auto-generate summaries toggle */}
+      {/* Auto-generate summaries toggle. Kept out until it has a backend: the
+          `api_get_auto_generate_setting` / `api_save_auto_generate_setting` commands
+          it needs are not registered, so the switch was a promise nothing kept and
+          the fetch on mount logged an error on every open. */}
       {/* <div className="mt-6 pt-6 border-t border-border">
         <div className="flex items-center justify-between">
           <div className="flex-1">

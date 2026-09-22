@@ -431,22 +431,18 @@ impl RecordingSaver {
         // Give time for final chunks
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
-        // Check if incremental saver exists (indicates auto_save was enabled)
-        let should_save_audio = self.incremental_saver.is_some();
-
-        if !should_save_audio {
-            info!("⚠️  No audio saver initialized (auto-save was disabled) - skipping audio finalization");
-            info!("✅ Transcripts and metadata already saved incrementally");
-            return Ok(None);
-        }
-
-        // Finalize incremental saver (merge checkpoints into final audio.mp4)
+        // Finalize incremental saver (merge checkpoints into final audio.mp4). With
+        // auto-save off there is no saver and no audio file -- but the transcript and
+        // metadata below are still this recording's record on disk, and they are
+        // finalised regardless. Returning early here, as this did until v1.2.3, left
+        // every transcript-only meeting's metadata.json saying `"status": "recording"`
+        // with no `completed_at` and no duration, forever.
         let final_audio_path = if let Some(saver_arc) = &self.incremental_saver {
             let mut saver = saver_arc.lock().await;
             match saver.finalize().await {
                 Ok(path) => {
                     info!("✅ Successfully finalized audio: {}", path.display());
-                    path
+                    Some(path)
                 }
                 Err(e) => {
                     error!("❌ Failed to finalize incremental saver: {}", e);
@@ -454,8 +450,8 @@ impl RecordingSaver {
                 }
             }
         } else {
-            error!("No incremental saver initialized - cannot save recording");
-            return Err("No incremental saver initialized".to_string());
+            info!("ℹ️ No audio saver initialized (auto-save was disabled) - finalizing transcripts and metadata only");
+            None
         };
 
         // Save final transcripts.json with validation
@@ -505,7 +501,7 @@ impl RecordingSaver {
 
         // Emit save event with audio and transcript paths
         let save_event = serde_json::json!({
-            "audio_file": final_audio_path.to_string_lossy(),
+            "audio_file": final_audio_path.as_ref().map(|p| p.to_string_lossy().to_string()),
             "transcript_file": self.meeting_folder.as_ref()
                 .map(|f| f.join("transcripts.json").to_string_lossy().to_string()),
             "meeting_name": self.meeting_name,
@@ -522,7 +518,7 @@ impl RecordingSaver {
             segments.clear();
         }
 
-        Ok(Some(final_audio_path.to_string_lossy().to_string()))
+        Ok(final_audio_path.map(|p| p.to_string_lossy().to_string()))
     }
 
     /// Get the meeting folder path (for passing to backend)

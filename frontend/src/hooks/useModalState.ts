@@ -163,30 +163,44 @@ export function useModalState(transcriptModelConfig?: TranscriptModelProps): Use
     };
   }, [showModal]);
 
-  // Listen for model download completion to auto-close modal
+  // Listen for model download completion to auto-close modal.
+  //
+  // The cleanup is returned from the EFFECT, not from the async helper: until v1.2.3
+  // the helper returned it and the effect ignored it, so every re-run (a new
+  // `transcriptModelConfig` object on each Settings visit) stacked one more listener
+  // for the life of the window, and one download produced N "Model ready!" toasts.
   useEffect(() => {
+    let disposed = false;
+    let unlistenWhisper: (() => void) | undefined;
+
     const setupDownloadListeners = async () => {
-      const unlisteners: (() => void)[] = [];
+      try {
+        const unlisten = await listen<{ modelName: string }>('model-download-complete', (event) => {
+          const { modelName } = event.payload;
+          console.log('[useModalState] Whisper model download complete:', modelName);
 
-      // Listen for Whisper model download complete
-      const unlistenWhisper = await listen<{ modelName: string }>('model-download-complete', (event) => {
-        const { modelName } = event.payload;
-        console.log('[useModalState] Whisper model download complete:', modelName);
-
-        // Auto-close modal if the downloaded model matches the selected one
-        if (transcriptModelConfig?.provider === 'localWhisper' && transcriptModelConfig?.model === modelName) {
-          toast.success('Model ready! Closing window...', { duration: 1500 });
-          setTimeout(() => hideModal('modelSelector'), 1500);
+          // Auto-close modal if the downloaded model matches the selected one
+          if (transcriptModelConfig?.provider === 'localWhisper' && transcriptModelConfig?.model === modelName) {
+            toast.success('Model ready! Closing window...', { duration: 1500 });
+            setTimeout(() => hideModal('modelSelector'), 1500);
+          }
+        });
+        if (disposed) {
+          unlisten();
+          return;
         }
-      });
-      unlisteners.push(unlistenWhisper);
-
-      return () => {
-        unlisteners.forEach(unsub => unsub());
-      };
+        unlistenWhisper = unlisten;
+      } catch (error) {
+        console.error('[useModalState] Failed to set up download listener:', error);
+      }
     };
 
     setupDownloadListeners();
+
+    return () => {
+      disposed = true;
+      unlistenWhisper?.();
+    };
   }, [transcriptModelConfig, hideModal]);
 
   return {

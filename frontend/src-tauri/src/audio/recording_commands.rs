@@ -684,16 +684,6 @@ pub async fn stop_recording<R: Runtime>(
         }
     }
 
-    // Step 1.5: Clean up transcript listener to release microphone
-    // Unlisten transcript-update event to prevent lingering references
-    {
-        use tauri::Listener;
-        if let Some(listener_id) = TRANSCRIPT_LISTENER_ID.lock().unwrap().take() {
-            app.unlisten(listener_id);
-            info!("✅ Transcript-update listener removed");
-        }
-    }
-
     // Step 2: Signal transcription workers to finish processing ALL queued chunks
     let _ = app.emit(
         "recording-shutdown-progress",
@@ -704,63 +694,22 @@ pub async fn stop_recording<R: Runtime>(
         }),
     );
 
-    // Wait for transcription task with enhanced progress monitoring (NO TIMEOUT - we must process all chunks)
+    // Wait for the transcription task, THEN remove the transcript-update listener.
+    //
+    // The listener used to be removed here, before the wait ("Step 1.5"), on the
+    // theory that it held the microphone. It holds nothing of the kind -- its
+    // closure only touches RECORDING_MANAGER -- but it is the ONLY thing that
+    // copies each decoded segment into the recording's `transcripts.json`. The
+    // force flush above has just pushed the tail of the recording into the
+    // worker's queue, so every segment decoded from this point on was emitted
+    // to a listener that no longer existed: the on-disk transcript ended some
+    // segments before the meeting did, on every recording, and nothing said so.
     let transcription_task = {
         let mut global_task = TRANSCRIPTION_TASK.lock().unwrap();
         global_task.take()
     };
-
-    if let Some(task_handle) = transcription_task {
-        info!("⏳ Waiting for ALL transcription chunks to be processed (no timeout - preserving every chunk)");
-
-        // Enhanced progress monitoring during shutdown
-        let progress_app = app.clone();
-        let progress_task = tokio::spawn(async move {
-            let last_update = std::time::Instant::now();
-
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-                // Emit periodic progress updates during shutdown
-                let elapsed = last_update.elapsed().as_secs();
-                let _ = progress_app.emit(
-                    "recording-shutdown-progress",
-                    serde_json::json!({
-                        "stage": "processing_transcripts",
-                        "message": format!("Processing transcripts... ({}s elapsed)", elapsed),
-                        "progress": 40,
-                        "detailed": true,
-                        "elapsed_seconds": elapsed
-                    }),
-                );
-            }
-        });
-
-        // Wait up to 10 minutes for transcription completion to prevent indefinite hangs
-        match tokio::time::timeout(
-            tokio::time::Duration::from_secs(600), // 10 minutes max
-            task_handle,
-        )
-        .await
-        {
-            Ok(Ok(())) => {
-                info!("✅ ALL transcription chunks processed successfully - no data lost");
-            }
-            Ok(Err(e)) => {
-                warn!("⚠️ Transcription task completed with error: {:?}", e);
-                // Continue anyway - the worker may have processed most chunks
-            }
-            Err(_) => {
-                warn!("⏱️ Transcription timeout (10 minutes) reached, continuing shutdown to prevent indefinite hang");
-                // Continue shutdown even on timeout - better to lose some chunks than hang forever
-            }
-        }
-
-        // Stop progress monitoring
-        progress_task.abort();
-    } else {
-        info!("ℹ️ No transcription task found to wait for");
-    }
+    let transcript_listener = TRANSCRIPT_LISTENER_ID.lock().unwrap().take();
+    drain_transcription_then_release_listener(&app, transcription_task, transcript_listener).await;
 
     // Step 3: Now safely unload Whisper model after ALL chunks are processed
     let _ = app.emit(
@@ -1060,6 +1009,82 @@ pub async fn stop_recording<R: Runtime>(
 
     info!("🎉 Recording stopped successfully with ZERO transcript chunks lost");
     Ok(true)
+}
+
+/// Waits for the transcription worker to finish every queued chunk, then removes the
+/// `transcript-update` listener that copies each result into the recording's
+/// `transcripts.json`.
+///
+/// The order is the whole point. Segments the worker decodes after the streams stop --
+/// the force-flushed tail of the recording -- are emitted as `transcript-update` like
+/// every other segment. If the listener is gone by then, the frontend still receives
+/// them (and saves them to the database), but the recording folder's own transcript
+/// and the reload-sync history silently end early. Removing it after the drain keeps
+/// the two records equal.
+///
+/// Bounded at ten minutes so a wedged worker cannot hang the shutdown forever; on a
+/// timeout the listener is still removed, because leaving it registered would make
+/// the *next* recording's start register a second one.
+async fn drain_transcription_then_release_listener<R: Runtime>(
+    app: &AppHandle<R>,
+    transcription_task: Option<JoinHandle<()>>,
+    transcript_listener: Option<tauri::EventId>,
+) {
+    if let Some(task_handle) = transcription_task {
+        info!("⏳ Waiting for ALL transcription chunks to be processed (preserving every chunk)");
+
+        // Progress heartbeat while the worker drains, so the UI is not silent.
+        let progress_app = app.clone();
+        let progress_task = tokio::spawn(async move {
+            let started = std::time::Instant::now();
+
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+                let elapsed = started.elapsed().as_secs();
+                let _ = progress_app.emit(
+                    "recording-shutdown-progress",
+                    serde_json::json!({
+                        "stage": "processing_transcripts",
+                        "message": format!("Processing transcripts... ({}s elapsed)", elapsed),
+                        "progress": 40,
+                        "detailed": true,
+                        "elapsed_seconds": elapsed
+                    }),
+                );
+            }
+        });
+
+        // Wait up to 10 minutes for transcription completion to prevent indefinite hangs
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(600), // 10 minutes max
+            task_handle,
+        )
+        .await
+        {
+            Ok(Ok(())) => {
+                info!("✅ ALL transcription chunks processed successfully - no data lost");
+            }
+            Ok(Err(e)) => {
+                warn!("⚠️ Transcription task completed with error: {:?}", e);
+                // Continue anyway - the worker may have processed most chunks
+            }
+            Err(_) => {
+                warn!("⏱️ Transcription timeout (10 minutes) reached, continuing shutdown to prevent indefinite hang");
+                // Continue shutdown even on timeout - better to lose some chunks than hang forever
+            }
+        }
+
+        progress_task.abort();
+    } else {
+        info!("ℹ️ No transcription task found to wait for");
+    }
+
+    if let Some(listener_id) = transcript_listener {
+        use tauri::Listener;
+        app.unlisten(listener_id);
+        info!("✅ Transcript-update listener removed after the last chunk was processed");
+    }
 }
 
 /// Check if recording is active
@@ -2006,5 +2031,84 @@ mod completed_recording_save_tests {
         drop(owner);
 
         assert!(try_begin_recording_stop(&flag).is_some());
+    }
+}
+
+#[cfg(test)]
+mod shutdown_order_tests {
+    //! The one property of the shutdown that a unit test can pin without an audio
+    //! device: the `transcript-update` listener outlives the worker that feeds it.
+
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+    use tauri::Listener;
+
+    /// Segments decoded after the streams stop must still reach the listener that
+    /// writes `transcripts.json`. Before the fix the listener was removed first, so
+    /// every one of these went to nobody.
+    #[tokio::test]
+    async fn the_listener_still_hears_segments_the_worker_emits_during_the_drain() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+
+        let heard = Arc::new(AtomicUsize::new(0));
+        let heard_by_listener = heard.clone();
+        let listener_id = handle.listen("transcript-update", move |_event| {
+            heard_by_listener.fetch_add(1, Ordering::SeqCst);
+        });
+
+        // Stand-in for the transcription worker draining its queue after the
+        // force flush: three segments, emitted from a task that is still running
+        // when the shutdown starts waiting for it.
+        const TAIL_SEGMENTS: usize = 3;
+        let worker_app = handle.clone();
+        let worker = tokio::spawn(async move {
+            for i in 0..TAIL_SEGMENTS {
+                tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+                worker_app
+                    .emit("transcript-update", serde_json::json!({ "sequence_id": i }))
+                    .expect("mock runtime emits");
+            }
+        });
+
+        drain_transcription_then_release_listener(&handle, Some(worker), Some(listener_id)).await;
+
+        assert_eq!(
+            heard.load(Ordering::SeqCst),
+            TAIL_SEGMENTS,
+            "every segment emitted while the worker drained must have been heard"
+        );
+
+        // ...and once the drain is over the listener is gone, so the next recording's
+        // start does not stack a second one on top of it.
+        handle
+            .emit(
+                "transcript-update",
+                serde_json::json!({ "sequence_id": 99 }),
+            )
+            .expect("mock runtime emits");
+        assert_eq!(
+            heard.load(Ordering::SeqCst),
+            TAIL_SEGMENTS,
+            "the listener must be removed after the drain, not before"
+        );
+    }
+
+    #[tokio::test]
+    async fn with_no_worker_the_listener_is_still_released() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let heard = Arc::new(AtomicUsize::new(0));
+        let heard_by_listener = heard.clone();
+        let listener_id = handle.listen("transcript-update", move |_event| {
+            heard_by_listener.fetch_add(1, Ordering::SeqCst);
+        });
+
+        drain_transcription_then_release_listener(&handle, None, Some(listener_id)).await;
+
+        handle
+            .emit("transcript-update", serde_json::json!({ "sequence_id": 0 }))
+            .expect("mock runtime emits");
+        assert_eq!(heard.load(Ordering::SeqCst), 0);
     }
 }
