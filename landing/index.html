@@ -164,89 +164,124 @@ a{color:inherit;text-decoration:none}
 .platforms{margin-top:16px;color:var(--subtle);font-size:12px;line-height:1.55;max-width:62ch}
 .platforms+.platforms{margin-top:8px;font-size:11.5px}
 
-/* ---------- Hero Right: Live Nemotron 3.5 Multi-Speaker & Engine Card ---------- */
+/* ---------- Hero Right: Cluely-Inspired Dark Smoked-Glass HUD & Live Nemotron 3.5 Stage ---------- */
+.hero-stage{
+  position:relative;
+  padding:14px;
+  border-radius:18px;
+  background:
+    radial-gradient(460px 260px at 50% 0%,rgba(74,143,221,.28),rgba(109,40,217,.14) 52%,transparent 76%),
+    linear-gradient(180deg,#DDE5F4 0%,#EEF2FA 52%,#F8FAFC 100%);
+  border:1px solid rgba(37,99,235,.16);
+  box-shadow:0 28px 64px -28px rgba(15,23,42,.18),inset 0 1px 0 rgba(255,255,255,.85);
+}
+.hero-hud-pillbar{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin-bottom:10px;padding:6px 11px;border-radius:999px;
+  background:hsla(252,12%,10%,.84);
+  backdrop-filter:blur(16px);
+  color:rgba(255,255,255,.92);font-size:11px;font-weight:600;
+  box-shadow:0 0 0 1px rgba(207,226,255,.24),0 -.5px 0 0 rgba(255,255,255,.75),0 12px 24px -8px rgba(9,9,11,.35);
+}
+.hud-pill-left,.hud-pill-right{display:inline-flex;align-items:center;gap:7px}
+.hud-timer{font-variant-numeric:tabular-nums;color:#fff;display:inline-flex;align-items:center;gap:6px}
+.hud-timer .rec-dot{width:7px;height:7px;border-radius:50%;background:#EF4444;box-shadow:0 0 0 3px rgba(239,68,68,.28)}
+.hud-kbd{
+  display:inline-flex;align-items:center;justify-content:center;
+  height:18px;padding:0 5px;border-radius:4px;
+  border:1px solid rgba(255,255,255,.22);
+  background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(0,0,0,.22));
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:10px;color:rgba(255,255,255,.78);
+}
 .hero-card{
-  background:var(--surface);
-  border:1px solid var(--hair);
-  border-radius:12px;
-  box-shadow:0 20px 50px -24px rgba(9,9,11,.12),0 4px 12px -4px rgba(9,9,11,.05);
+  background:hsla(252,12%,10%,.88);
+  backdrop-filter:blur(20px);
+  border-radius:14px;
+  box-shadow:0 0 0 1px rgba(207,226,255,.24),0 -.5px 0 0 rgba(255,255,255,.72),0 28px 56px -18px rgba(9,9,11,.45);
   overflow:hidden;
   display:flex;flex-direction:column;
+  color:rgba(255,255,255,.92);
 }
 .hc-top{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding:12px 16px;background:var(--elevated);border-bottom:1px solid var(--hair);
+  padding:11px 15px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.10);
   flex-wrap:wrap;
 }
-.hc-title{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}
-.hc-title .rec-dot{width:8px;height:8px;border-radius:50%;background:#DC2626;box-shadow:0 0 0 3px rgba(220,38,38,.18)}
+.hc-title{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:#fff}
+.hc-title .rec-dot{width:8px;height:8px;border-radius:50%;background:#38BDF8;box-shadow:0 0 0 3px rgba(56,189,248,.22)}
 .hc-engine-pill{
   display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;
-  border-radius:999px;background:var(--violet-bg);border:1px solid var(--violet-border);
-  color:var(--violet);font-size:11px;font-weight:600;
+  border-radius:999px;background:rgba(139,92,246,.22);border:1px solid rgba(196,181,253,.35);
+  color:#DDD6FE;font-size:10.5px;font-weight:600;
 }
-.hc-body{padding:16px;display:flex;flex-direction:column;gap:12px}
+.hc-body{padding:14px 15px;display:flex;flex-direction:column;gap:11px}
 
-/* Engine selector strip inside hero card */
+/* Engine selector strip inside Cluely smoked-glass card */
 .hc-engines{
   display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;
-  padding:4px;background:var(--elevated);border:1px solid var(--hair);border-radius:8px;
+  padding:4px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.10);border-radius:8px;
 }
 .hc-eng{
-  padding:7px 9px;border-radius:6px;display:flex;flex-direction:column;gap:2px;
-  font-size:11px;color:var(--muted);
+  padding:6px 8px;border-radius:6px;display:flex;flex-direction:column;gap:2px;
+  font-size:11px;color:rgba(255,255,255,.58);cursor:pointer;transition:background .15s ease,color .15s ease;
 }
 .hc-eng.active{
-  background:var(--surface);color:var(--ink);
-  border:1px solid var(--hair);box-shadow:0 1px 2px rgba(9,9,11,.06);
+  background:rgba(255,255,255,.11);color:#fff;
+  border:1px solid rgba(207,226,255,.24);box-shadow:inset 0 1px 0 rgba(255,255,255,.18);
 }
 .hc-eng-name{font-weight:600;color:inherit;display:flex;align-items:center;justify-content:space-between;gap:4px}
-.hc-eng-sub{font-size:10px;color:var(--subtle);font-variant-numeric:tabular-nums}
-.hc-eng.active .hc-eng-sub{color:var(--violet);font-weight:600}
+.hc-eng-sub{font-size:10px;color:rgba(255,255,255,.46);font-variant-numeric:tabular-nums}
+.hc-eng.active .hc-eng-sub{color:#C4B5FD;font-weight:600}
 
-/* 8-speaker multi-track timeline inside hero card */
+/* 8-speaker multi-track timeline + Canvas Harmonic Wave inside hero card */
 .hc-diar{
-  background:var(--canvas);border:1px solid var(--hair);border-radius:8px;padding:11px 12px;
+  background:rgba(0,0,0,.26);border:1px solid rgba(255,255,255,.10);border-radius:9px;padding:10px 12px;
   display:flex;flex-direction:column;gap:8px;
 }
 .hc-diar-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px}
-.hc-diar-head strong{font-weight:600;color:var(--ink)}
-.hc-diar-head span{color:var(--violet);font-weight:600;font-size:10.5px}
+.hc-diar-head strong{font-weight:600;color:#fff}
+.hc-diar-head span{color:#93C5FD;font-weight:600;font-size:10.5px}
+.hc-wave-canvas{
+  width:100%;height:44px;display:block;border-radius:6px;
+  background:linear-gradient(180deg,rgba(15,23,42,.55),rgba(15,23,42,.25));
+  border:1px solid rgba(255,255,255,.07);
+}
 .hc-tracks{display:flex;flex-direction:column;gap:5px}
 .hc-track{display:grid;grid-template-columns:74px 1fr 42px;align-items:center;gap:8px;font-size:10.5px;font-variant-numeric:tabular-nums}
-.hc-sp-label{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--ink-2)}
+.hc-sp-label{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:rgba(255,255,255,.82)}
 .hc-sp-dot{width:7px;height:7px;border-radius:50%;flex:none}
-.hc-bar-bg{height:6px;border-radius:999px;background:var(--hair);position:relative;overflow:hidden}
+.hc-bar-bg{height:6px;border-radius:999px;background:rgba(255,255,255,.12);position:relative;overflow:hidden}
 .hc-bar-fill{position:absolute;top:0;bottom:0;border-radius:999px}
-.hc-pct{text-align:right;color:var(--subtle);font-weight:500}
+.hc-pct{text-align:right;color:rgba(255,255,255,.58);font-weight:500}
 
-/* Live overlapping speech turns inside hero card */
+/* Live overlapping speech turns inside Cluely HUD card */
 .hc-turns{display:flex;flex-direction:column;gap:7px}
 .hc-turn{
-  padding:9px 11px;border-radius:8px;background:var(--surface);border:1px solid var(--hair);
+  padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);
   display:flex;flex-direction:column;gap:4px;font-size:11.5px;
 }
-.hc-turn.overlap{background:#FFFBEB;border-color:#FDE68A}
+.hc-turn.overlap{background:rgba(245,158,11,.10);border-color:rgba(251,191,36,.32)}
 .hc-turn-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
-.hc-turn-sp{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ink);font-size:11px}
-.hc-turn-time{font-size:10.5px;color:var(--subtle);font-variant-numeric:tabular-nums}
-.hc-turn-txt{color:var(--ink-2);line-height:1.45}
+.hc-turn-sp{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:#fff;font-size:11px}
+.hc-turn-time{font-size:10.5px;color:rgba(255,255,255,.52);font-variant-numeric:tabular-nums}
+.hc-turn-txt{color:rgba(255,255,255,.84);line-height:1.45}
 .hc-turn-tr{
-  margin-top:2px;padding-top:4px;border-top:1px dashed var(--hair);
-  font-size:10.5px;color:var(--blue-dark);display:flex;align-items:center;gap:6px;
+  margin-top:2px;padding-top:4px;border-top:1px dashed rgba(255,255,255,.14);
+  font-size:10.5px;color:#93C5FD;display:flex;align-items:center;gap:6px;
 }
 .hc-pill-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
 .hc-mini-pill{
   display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:4px;
   font-size:10px;font-weight:600;
 }
-.hc-mini-pill.ov{background:#FEF3C7;color:#B45309;border:1px solid #FDE68A}
-.hc-mini-pill.pii{background:var(--emerald-bg);color:var(--emerald);border:1px solid var(--emerald-border)}
-.hc-mini-pill.ctx{background:var(--blue-bg);color:var(--blue-dark);border:1px solid var(--blue-border)}
+.hc-mini-pill.ov{background:rgba(251,191,36,.18);color:#FDE68A;border:1px solid rgba(251,191,36,.35)}
+.hc-mini-pill.pii{background:rgba(16,185,129,.18);color:#A7F3D0;border:1px solid rgba(16,185,129,.35)}
+.hc-mini-pill.ctx{background:rgba(59,130,246,.22);color:#BFDBFE;border:1px solid rgba(96,165,250,.35)}
 .hc-foot{
-  padding:10px 16px;background:var(--elevated);border-top:1px solid var(--hair);
+  padding:9px 15px;background:rgba(0,0,0,.32);border-top:1px solid rgba(255,255,255,.10);
   display:flex;align-items:center;justify-content:space-between;gap:8px;
-  font-size:11px;color:var(--muted);flex-wrap:wrap;
+  font-size:10.5px;color:rgba(255,255,255,.65);flex-wrap:wrap;
 }
 
 /* ---------- Section Headers ---------- */
@@ -266,16 +301,32 @@ a{color:inherit;text-decoration:none}
   margin-top:10px;color:var(--muted);font-size:clamp(.95rem,1.2vw,1.06rem);line-height:1.6;
 }
 
-/* ---------- Architectural Bento Grid (#architecture) ---------- */
+/* ---------- Architectural Bento Grid (#architecture) + React Bits SpotlightCard ---------- */
 .arch-sec{padding:clamp(56px,8vh,96px) 0;border-bottom:1px solid var(--hair);background:var(--canvas)}
 .bento-grid{
   display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;
 }
-.bento-card{
-  background:var(--surface);border:1px solid var(--hair);border-radius:12px;
-  padding:22px;display:flex;flex-direction:column;gap:12px;
-  box-shadow:0 1px 2px rgba(9,9,11,.03);
+.bento-card,.card{
+  --mouse-x:50%;
+  --mouse-y:50%;
+  --spotlight-opacity:0;
+  position:relative;overflow:hidden;
+  background:var(--surface);border:1px solid var(--hair);border-radius:14px;
+  padding:24px;display:flex;flex-direction:column;gap:12px;
+  box-shadow:0 1px 2px rgba(9,9,11,.03),0 8px 24px -16px rgba(9,9,11,.06);
+  transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease;
 }
+.bento-card:hover,.card:hover{
+  transform:translateY(-2px);
+  border-color:rgba(37,99,235,.32);
+  box-shadow:0 18px 38px -22px rgba(37,99,235,.16),0 2px 6px rgba(9,9,11,.04);
+}
+.bento-card::before,.card::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(520px circle at var(--mouse-x) var(--mouse-y),rgba(37,99,235,.07),rgba(109,40,217,.04) 40%,transparent 70%);
+  opacity:var(--spotlight-opacity,0);transition:opacity .25s ease;
+}
+.bento-card>*,.card>*{position:relative;z-index:1}
 .bento-6{grid-column:span 6}
 .bento-4{grid-column:span 4}
 @media (max-width:960px){
@@ -315,20 +366,19 @@ a{color:inherit;text-decoration:none}
 .ck{color:var(--blue);font-weight:700;flex:none}
 .u{text-decoration:underline;text-underline-offset:3px}
 
-/* ---------- Pricing Section (v1.2 Crisp Cards) ---------- */
+/* ---------- Pricing Section (Constellation + Crisp Spotlight Cards) ---------- */
 .pricing{padding:clamp(64px,9vh,104px) 0;border-bottom:1px solid var(--hair);background:var(--canvas)}
-.pricing-head{text-align:center;margin-bottom:40px}
-.big-h{font-size:clamp(2rem,3.6vw,3rem);font-weight:600;letter-spacing:-.03em;line-height:1.1}
+.pricing-head{position:relative;text-align:center;padding:32px 0 36px;margin-bottom:12px}
+.confetti{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.confetti span{position:absolute;width:4px;height:4px;border-radius:50%;opacity:.75}
+.big-h{font-size:clamp(2.1rem,3.8vw,3.2rem);font-weight:600;letter-spacing:-.03em;line-height:1.08}
+.caret-h{display:inline-block;width:3px;height:.78em;background:var(--blue);margin-left:5px;vertical-align:-.06em;border-radius:2px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
 @media (max-width:940px){.grid3{grid-template-columns:1fr;max-width:540px;margin-left:auto;margin-right:auto}}
-.card{
-  background:var(--surface);border:1px solid var(--hair);border-radius:12px;
-  padding:26px;display:flex;flex-direction:column;
-  box-shadow:0 1px 2px rgba(9,9,11,.03);
-}
+.card{padding:26px;gap:0}
 .card.featured{
   border-color:var(--blue);
-  box-shadow:0 12px 32px -16px rgba(37,99,235,.18),0 0 0 1px var(--blue);
+  box-shadow:0 16px 38px -18px rgba(37,99,235,.22),0 0 0 1px var(--blue);
 }
 .card h3{margin-top:14px;font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
 .price{display:flex;align-items:baseline;gap:8px;margin-top:12px;font-variant-numeric:tabular-nums}
@@ -353,15 +403,20 @@ a{color:inherit;text-decoration:none}
 .faq details[open] summary::after{transform:rotate(45deg)}
 .faq .a{padding:0 0 20px;color:var(--muted);font-size:14px;line-height:1.65;max-width:68ch}
 
-/* ---------- Footer ---------- */
-.footer{padding:56px 0 36px;background:var(--canvas)}
-.foot-top{display:flex;justify-content:space-between;align-items:flex-start;gap:40px;flex-wrap:wrap;padding-bottom:36px;border-bottom:1px solid var(--hair)}
-.foot-line{font-size:clamp(1.5rem,2.6vw,2.2rem);font-weight:600;letter-spacing:-.025em;line-height:1.15;color:var(--ink)}
+/* ---------- Footer + Monumental 25vw Wordmark ---------- */
+.footer{padding:56px 0 36px;background:var(--canvas);overflow:hidden}
+.foot-top{display:flex;justify-content:space-between;align-items:flex-start;gap:40px;flex-wrap:wrap;padding-bottom:28px}
+.foot-line{font-size:clamp(1.6rem,2.8vw,2.35rem);font-weight:600;letter-spacing:-.025em;line-height:1.15;color:var(--ink)}
 .foot-sub{margin-top:8px;font-size:13px;color:var(--muted);max-width:46ch}
 .foot-cols{display:flex;gap:56px}
 .foot-cols a{display:inline-block;color:var(--muted);font-size:13.5px;font-weight:500;padding:4px 0}
 .foot-cols a:hover{color:var(--ink)}
-.foot-bottom{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding-top:22px}
+.foot-word{
+  max-width:1280px;margin:16px auto 0;padding:0 16px;
+  font-size:clamp(92px,23vw,330px);font-weight:700;letter-spacing:-.055em;line-height:.86;
+  text-align:center;color:var(--ink);user-select:none;
+}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding-top:26px;margin-top:20px;border-top:1px solid var(--hair)}
 .foot-brand{font-size:13px;font-weight:600;color:var(--ink)}
 .foot-links{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
 .foot-links a{color:var(--muted)}
@@ -369,45 +424,49 @@ a{color:inherit;text-decoration:none}
 
 @media (prefers-reduced-motion:reduce){
   .caret{animation:none}
-  .nav,.btn,.faq summary::after{transition:none}
+  .nav,.btn,.bento-card,.card,.faq summary::after{transition:none}
 }
 </style>
 <style id="loop-styles">
-/* ===================== 4-Zone Desktop Shell Showpiece (#loop) ===================== */
+/* ===================== 4-Zone Desktop Shell Showpiece (#loop — 260vh Sticky Dark Stage) ===================== */
 .loop{
   position:relative;
-  background:var(--elevated);
-  border-bottom:1px solid var(--hair);
-  padding:clamp(56px,8vh,88px) 0;
+  background:#0A0A0F;
+  color:#fff;
+  padding:0;
 }
-.loop-runway{position:relative;height:auto}
+.loop-runway{position:relative;height:260vh}
 .loop-stage{
-  position:relative;min-height:0;
+  position:sticky;top:0;height:100vh;min-height:640px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:0 16px;overflow:visible;
+  padding:20px 16px;overflow:hidden;
+  background:
+    radial-gradient(640px 340px at 50% 56%,rgba(37,99,235,.32),rgba(109,40,217,.12) 48%,transparent 72%),
+    #0A0A0F;
 }
-.loop-eyebrow{position:relative;text-align:center;padding:0 24px;margin-bottom:28px;z-index:2}
+.loop-eyebrow{position:relative;text-align:center;padding:0 24px;margin-bottom:22px;z-index:2;transition:opacity .35s ease,transform .35s ease}
 .loop-eyebrow .k{
-  display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 10px;
-  border-radius:999px;background:var(--surface);border:1px solid var(--hair);
-  font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--blue);
+  display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 11px;
+  border-radius:999px;background:rgba(37,99,235,.16);border:1px solid rgba(96,165,250,.32);
+  font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#93C5FD;
 }
-.loop-eyebrow .k::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
-.loop-eyebrow h2{margin-top:12px;font-size:clamp(1.65rem,3vw,2.45rem);font-weight:600;letter-spacing:-.03em;line-height:1.12;color:var(--ink)}
-.loop-eyebrow p{margin:10px auto 0;max-width:60ch;color:var(--muted);font-size:clamp(.95rem,1.2vw,1.05rem);line-height:1.6}
+.loop-eyebrow .k::before{content:"";width:6px;height:6px;border-radius:50%;background:#3B82F6;box-shadow:0 0 8px #3B82F6}
+.loop-eyebrow h2{margin-top:10px;font-size:clamp(1.6rem,2.9vw,2.4rem);font-weight:600;letter-spacing:-.03em;line-height:1.12;color:#fff}
+.loop-eyebrow p{margin:8px auto 0;max-width:60ch;color:rgba(255,255,255,.66);font-size:clamp(.92rem,1.15vw,1.02rem);line-height:1.58}
 
-/* Full-size v1.2 application shell */
+/* Full-size v1.2 application shell on dark stage */
 .screen{
-  position:relative;width:min(1260px,95vw);border-radius:12px;overflow:hidden;
-  background:#FAFAFA;display:flex;flex-direction:column;
-  border:1px solid var(--hair-strong);
-  box-shadow:0 24px 60px -24px rgba(9,9,11,.14),0 4px 16px -4px rgba(9,9,11,.06);
+  position:relative;width:min(1260px,95vw);border-radius:14px;overflow:hidden;
+  background:#FAFAFA;color:#09090B;display:flex;flex-direction:column;
+  border:1px solid rgba(255,255,255,.22);
+  box-shadow:0 36px 90px -28px rgba(0,0,0,.78),0 0 0 1px rgba(37,99,235,.22),0 0 80px -20px rgba(37,99,235,.32);
+  transform-origin:center 55%;will-change:transform;
 }
 
 /* toolbar — the flow, integrated into the one screen */
 .app-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 18px;background:#FFFFFF;border-bottom:1px solid #E4E4E7;flex:none;flex-wrap:wrap}
 .stepper{display:flex;align-items:center;gap:clamp(4px,.75vw,10px);min-width:0;overflow:hidden}
-.step{display:inline-flex;align-items:center;gap:7px;min-width:0}
+.step{display:inline-flex;align-items:center;gap:7px;min-width:0;cursor:pointer;user-select:none}
 .step .s-dot{width:24px;height:24px;flex:none;border-radius:50%;background:#fff;border:1.5px solid #E4E4E7;display:grid;place-items:center;color:#71717A;transition:border-color .35s ease,background .35s ease,color .35s ease,box-shadow .35s ease}
 .step .s-dot svg{width:12px;height:12px}
 .step .s-label{font-size:12px;font-weight:500;color:#52525B;white-space:nowrap;letter-spacing:-.01em;transition:color .35s ease}
@@ -560,6 +619,8 @@ a{color:inherit;text-decoration:none}
   .v-library{display:none}
 }
 @media (max-width:760px){
+  .loop-runway{height:auto}
+  .loop-stage{position:relative;height:auto;padding:48px 16px}
   .screen{width:95vw;border-radius:12px}
   .step .s-label{display:none}
   .app-panes{grid-template-columns:1fr}
@@ -568,20 +629,22 @@ a{color:inherit;text-decoration:none}
   .chips{grid-template-columns:repeat(2,1fr)}
 }
 @media (prefers-reduced-motion:reduce){
+  .loop-runway{height:auto}
+  .loop-stage{position:relative;height:auto;padding:56px 16px}
   .app-status .live,.wave i{animation:none}
   .sep,.step .s-dot,.tline,.recall,.recall-res,.rc-plus{transition:none}
 }
 </style>
 <style id="learn-styles">
-/* ============ The Learning Loop (#learn) ============ */
+/* ============ The Learning Loop (#learn — 200vh Sticky Atmospheric Runway) ============ */
 .learn{
   position:relative;
-  background:var(--surface);
+  background:linear-gradient(180deg,#FFFFFF 0%,#EDF3FF 22%,#DFE9FF 50%,#EDF3FF 78%,#FFFFFF 100%);
   border-bottom:1px solid var(--hair);
-  padding:clamp(60px,9vh,100px) 24px;
+  padding:0;
 }
-.learn-runway{position:relative;height:auto}
-.learn-stage{position:relative;min-height:0;display:flex;align-items:center;justify-content:center}
+.learn-runway{position:relative;height:200vh}
+.learn-stage{position:sticky;top:0;height:100vh;min-height:600px;display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden}
 .learn-wrap{max-width:880px;margin:0 auto;width:100%}
 .learn-head{text-align:center;max-width:60ch;margin:0 auto}
 .learn-k{
@@ -594,10 +657,19 @@ a{color:inherit;text-decoration:none}
 .learn-head p{margin:12px auto 0;max-width:56ch;color:var(--muted);font-size:clamp(.95rem,1.2vw,1.06rem);line-height:1.65}
 
 .learn-demo{
-  position:relative;max-width:760px;margin:32px auto 0;
-  background:var(--surface);border:1px solid var(--hair-strong);border-radius:12px;
-  box-shadow:0 18px 44px -22px rgba(9,9,11,.12);
+  position:relative;max-width:760px;margin:28px auto 0;
+  background:var(--surface);border:1px solid var(--hair-strong);border-radius:14px;
+  box-shadow:0 24px 56px -24px rgba(15,23,42,.18),0 2px 8px rgba(15,23,42,.05);
   display:flex;flex-direction:column;overflow:hidden;
+  transform-origin:center 50%;will-change:transform;
+}
+@media (max-width:720px){
+  .learn-runway{height:auto}
+  .learn-stage{position:relative;height:auto;padding:56px 20px}
+}
+@media (prefers-reduced-motion:reduce){
+  .learn-runway{height:auto}
+  .learn-stage{position:relative;height:auto;padding:56px 20px}
 }
 .ld-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid #E4E4E7;background:#FAFAFA}
 .ld-title{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--ink)}
@@ -728,83 +800,97 @@ a{color:inherit;text-decoration:none}
         </div>
       </div>
 
-      <!-- Right Column: Live Multi-Speaker & Engine Architecture Preview -->
-      <aside class="hero-card" aria-label="NVIDIA Nemotron 3.5 Transcribe Live Multi-Speaker Attribution Preview">
-        <div class="hc-top">
-          <span class="hc-title"><span class="rec-dot"></span>Live Session · Multi-Speaker Audio Stream</span>
-          <span class="hc-engine-pill">Nemotron 3.5 Transcribe · 30B-A4B MoE</span>
-        </div>
-        <div class="hc-body">
-          <div class="hc-engines" aria-label="Supported Local Transcription Engines">
-            <div class="hc-eng">
-              <span class="hc-eng-name">Whisper large-v3</span>
-              <span class="hc-eng-sub">GGML · On-device</span>
-            </div>
-            <div class="hc-eng">
-              <span class="hc-eng-name">Parakeet</span>
-              <span class="hc-eng-sub">ONNX · Fast CPU</span>
-            </div>
-            <div class="hc-eng active">
-              <span class="hc-eng-name">Nemotron 3.5</span>
-              <span class="hc-eng-sub">30B MoE · ~4B active</span>
-            </div>
+      <!-- Right Column: Cluely-Inspired Smoked-Glass HUD & Live Nemotron 3.5 Stage -->
+      <aside class="hero-stage" id="cluelyHud" aria-label="NVIDIA Nemotron 3.5 Transcribe Live Multi-Speaker Attribution Preview">
+        <div class="hero-hud-pillbar" aria-hidden="true">
+          <div class="hud-pill-left">
+            <span class="hud-timer"><span class="rec-dot"></span>00:42 · Live Capture</span>
+            <span style="color:rgba(255,255,255,.35)">|</span>
+            <span style="color:#93C5FD">WASAPI + Mic</span>
           </div>
-
-          <div class="hc-diar">
-            <div class="hc-diar-head">
-              <strong>Parallel Expert Encoder + Sortformer</strong>
-              <span>8-Speaker Attribution · Crosstalk Resolved</span>
-            </div>
-            <div class="hc-tracks">
-              <div class="hc-track">
-                <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#2563EB"></span>Speaker 1</span>
-                <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:0;width:36%;background:#2563EB"></span><span class="hc-bar-fill" style="left:58%;width:22%;background:#2563EB"></span></div>
-                <span class="hc-pct">32%</span>
-              </div>
-              <div class="hc-track">
-                <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#0D9488"></span>Speaker 2</span>
-                <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:18%;width:34%;background:#0D9488"></span><span class="hc-bar-fill" style="left:72%;width:18%;background:#0D9488"></span></div>
-                <span class="hc-pct">24%</span>
-              </div>
-              <div class="hc-track">
-                <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#D97706"></span>Speaker 3</span>
-                <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:32%;width:28%;background:#D97706"></span></div>
-                <span class="hc-pct">18%</span>
-              </div>
-              <div class="hc-track">
-                <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#7C3AED"></span>Spk 4–8</span>
-                <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:44%;width:48%;background:#7C3AED"></span></div>
-                <span class="hc-pct">26%</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="hc-turns">
-            <div class="hc-turn">
-              <div class="hc-turn-head">
-                <span class="hc-turn-sp"><span class="hc-sp-dot" style="background:#2563EB"></span>Speaker 1</span>
-                <span class="hc-turn-time">12:18 – 12:31</span>
-              </div>
-              <div class="hc-turn-txt">We lock the Q3 enterprise SKU today and route billing inquiries through <span class="hc-mini-pill pii">[REDACTED_EMAIL]</span>.</div>
-              <div class="hc-turn-tr"><span>EN → ES</span><span>Cerramos hoy el SKU empresarial del T3 y canalizamos facturación.</span></div>
-            </div>
-
-            <div class="hc-turn overlap">
-              <div class="hc-turn-head">
-                <span class="hc-turn-sp"><span class="hc-sp-dot" style="background:#0D9488"></span>Speaker 2 &amp; <span class="hc-sp-dot" style="background:#D97706"></span>Speaker 3</span>
-                <span class="hc-turn-time">12:31 – 12:44</span>
-              </div>
-              <div class="hc-turn-txt"><strong>Speaker 2:</strong> Final onboarding copy lands Friday. <strong>Speaker 3:</strong> Amira sends the revised budget before Thursday’s review.</div>
-              <div class="hc-pill-row">
-                <span class="hc-mini-pill ov">at the same time · overlapping speech separated</span>
-                <span class="hc-mini-pill ctx">Domain prompt: Q3 SKU, Amira</span>
-              </div>
-            </div>
+          <div class="hud-pill-right">
+            <span>Copilot HUD</span>
+            <kbd class="hud-kbd">⌘</kbd><kbd class="hud-kbd">\</kbd>
           </div>
         </div>
-        <div class="hc-foot">
-          <span>Up to 1-hour continuous context · 8 distinct speaker swatches</span>
-          <span>Local vLLM / NIM / OpenAI-compatible</span>
+        <div class="hero-card">
+          <div class="hc-top">
+            <span class="hc-title"><span class="rec-dot"></span>Live Session · Multi-Speaker Audio Stream</span>
+            <span class="hc-engine-pill">Nemotron 3.5 Transcribe · 30B-A4B MoE</span>
+          </div>
+          <div class="hc-body">
+            <div class="hc-engines" aria-label="Supported Local Transcription Engines">
+              <div class="hc-eng">
+                <span class="hc-eng-name">Whisper large-v3</span>
+                <span class="hc-eng-sub">GGML · On-device</span>
+              </div>
+              <div class="hc-eng">
+                <span class="hc-eng-name">Parakeet</span>
+                <span class="hc-eng-sub">ONNX · Fast CPU</span>
+              </div>
+              <div class="hc-eng active">
+                <span class="hc-eng-name">Nemotron 3.5</span>
+                <span class="hc-eng-sub">30B MoE · ~4B active</span>
+              </div>
+            </div>
+
+            <div class="hc-diar">
+              <div class="hc-diar-head">
+                <strong>Parallel Expert Encoder + Sortformer</strong>
+                <span>8-Speaker Attribution · Crosstalk Resolved</span>
+              </div>
+              <canvas class="hc-wave-canvas" id="nemotronWaveCanvas" width="460" height="88" aria-hidden="true"></canvas>
+              <div class="hc-tracks">
+                <div class="hc-track">
+                  <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#38BDF8"></span>Speaker 1</span>
+                  <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:0;width:36%;background:#38BDF8"></span><span class="hc-bar-fill" style="left:58%;width:22%;background:#38BDF8"></span></div>
+                  <span class="hc-pct">32%</span>
+                </div>
+                <div class="hc-track">
+                  <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#2DD4BF"></span>Speaker 2</span>
+                  <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:18%;width:34%;background:#2DD4BF"></span><span class="hc-bar-fill" style="left:72%;width:18%;background:#2DD4BF"></span></div>
+                  <span class="hc-pct">24%</span>
+                </div>
+                <div class="hc-track">
+                  <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#FBBF24"></span>Speaker 3</span>
+                  <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:32%;width:28%;background:#FBBF24"></span></div>
+                  <span class="hc-pct">18%</span>
+                </div>
+                <div class="hc-track">
+                  <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#A78BFA"></span>Spk 4–8</span>
+                  <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:44%;width:48%;background:#A78BFA"></span></div>
+                  <span class="hc-pct">26%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="hc-turns">
+              <div class="hc-turn">
+                <div class="hc-turn-head">
+                  <span class="hc-turn-sp"><span class="hc-sp-dot" style="background:#38BDF8"></span>Speaker 1</span>
+                  <span class="hc-turn-time">12:18 – 12:31</span>
+                </div>
+                <div class="hc-turn-txt">We lock the Q3 enterprise SKU today and route billing inquiries through <span class="hc-mini-pill pii">[REDACTED_EMAIL]</span>.</div>
+                <div class="hc-turn-tr"><span>EN → ES</span><span>Cerramos hoy el SKU empresarial del T3 y canalizamos facturación.</span></div>
+              </div>
+
+              <div class="hc-turn overlap">
+                <div class="hc-turn-head">
+                  <span class="hc-turn-sp"><span class="hc-sp-dot" style="background:#2DD4BF"></span>Speaker 2 &amp; <span class="hc-sp-dot" style="background:#FBBF24"></span>Speaker 3</span>
+                  <span class="hc-turn-time">12:31 – 12:44</span>
+                </div>
+                <div class="hc-turn-txt"><strong>Speaker 2:</strong> Final onboarding copy lands Friday. <strong>Speaker 3:</strong> Amira sends the revised budget before Thursday’s review.</div>
+                <div class="hc-pill-row">
+                  <span class="hc-mini-pill ov">at the same time · overlapping speech separated</span>
+                  <span class="hc-mini-pill ctx">Domain prompt: Q3 SKU, Amira</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="hc-foot">
+            <span>Ask this meeting · Settings → Beta (off by default)</span>
+            <span>Local vLLM / NIM / OpenAI-compatible <kbd class="hud-kbd">⌘</kbd><kbd class="hud-kbd">↵</kbd></span>
+          </div>
         </div>
       </aside>
     </section>
@@ -1225,8 +1311,18 @@ a{color:inherit;text-decoration:none}
   <section class="pricing" id="pricing">
     <div class="container">
       <div class="pricing-head">
+        <div class="confetti" aria-hidden="true">
+          <span style="left:8%;top:18%;background:#3B6EF5"></span>
+          <span style="left:17%;top:62%;background:#F5A524"></span>
+          <span style="left:28%;top:22%;background:#9B7BF7"></span>
+          <span style="left:38%;top:72%;background:#2EC27E"></span>
+          <span style="left:62%;top:20%;background:#E5534B"></span>
+          <span style="left:72%;top:68%;background:#3B6EF5"></span>
+          <span style="left:83%;top:26%;background:#F5A524"></span>
+          <span style="left:92%;top:60%;background:#2EC27E"></span>
+        </div>
         <span class="sec-eyebrow">Transparent Licensing</span>
-        <h2 class="big-h" style="margin-top:12px">Choose the plan.</h2>
+        <h2 class="big-h" style="margin-top:12px">Choose the plan.<span class="caret-h" aria-hidden="true"></span></h2>
       </div>
       <div class="grid3">
         <article class="card">
@@ -1349,6 +1445,7 @@ a{color:inherit;text-decoration:none}
       </ul>
     </nav>
   </div>
+  <div class="foot-word" aria-hidden="true">mityu</div>
   <div class="container foot-bottom">
     <span class="foot-brand">© 2026 bluedev · mityu</span>
     <div class="foot-links">
@@ -1421,6 +1518,7 @@ a{color:inherit;text-decoration:none}
 </script>
 
 <script>
+/* ===== Hero Typewriter & Cluely 2D Harmonic Wave Visualizer ===== */
 (function () {
   var doc = document;
   var typed = doc.getElementById('typed');
@@ -1428,31 +1526,118 @@ a{color:inherit;text-decoration:none}
   try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
 
   var phrases = [
+    'AI you approve, line by line.',
     'Meetings, captured locally.',
     '8 speakers, separated live.',
-    'AI you approve, line by line.'
+    'Your voice stays on your device.'
   ];
 
-  if (!typed) { return; }
-  typed.textContent = phrases[0];
-  if (reduce) { return; }
-
-  var pi = 0;
-  function cycle() {
-    pi = (pi + 1) % phrases.length;
-    typed.textContent = phrases[pi];
-    window.setTimeout(cycle, 4200);
+  if (typed) {
+    typed.textContent = phrases[0];
+    if (!reduce) {
+      var pi = 0, ci = phrases[0].length, deleting = false;
+      function stepType() {
+        var current = phrases[pi];
+        if (!deleting) {
+          ci++;
+          typed.textContent = current.slice(0, ci);
+          if (ci >= current.length) {
+            deleting = true;
+            window.setTimeout(stepType, 2600);
+            return;
+          }
+          window.setTimeout(stepType, 44);
+        } else {
+          ci--;
+          typed.textContent = current.slice(0, ci);
+          if (ci <= 0) {
+            deleting = false;
+            pi = (pi + 1) % phrases.length;
+            window.setTimeout(stepType, 260);
+            return;
+          }
+          window.setTimeout(stepType, 22);
+        }
+      }
+      window.setTimeout(function () { deleting = true; stepType(); }, 2800);
+    }
   }
-  window.setTimeout(cycle, 4200);
+
+  /* Deterministic Multi-Speaker Harmonic Waveform Canvas in Hero HUD */
+  var canvas = doc.getElementById('nemotronWaveCanvas');
+  if (canvas && canvas.getContext) {
+    var ctx = canvas.getContext('2d');
+    var W = canvas.width, H = canvas.height;
+    var speakers = [
+      { color: '#38BDF8', freq: 0.024, speed: 2.2, amp: 15, phase: 0.0 },
+      { color: '#2DD4BF', freq: 0.031, speed: -1.8, amp: 12, phase: 1.4 },
+      { color: '#FBBF24', freq: 0.019, speed: 1.5, amp: 10, phase: 2.8 },
+      { color: '#A78BFA', freq: 0.037, speed: -2.4, amp: 9,  phase: 4.1 }
+    ];
+    function drawWave(t) {
+      ctx.clearRect(0, 0, W, H);
+      var mid = H * 0.5;
+      for (var s = 0; s < speakers.length; s++) {
+        var sp = speakers[s];
+        ctx.beginPath();
+        ctx.strokeStyle = sp.color;
+        ctx.lineWidth = 1.8;
+        ctx.globalAlpha = 0.82;
+        for (var x = 0; x <= W; x += 4) {
+          var env = Math.sin((x / W) * Math.PI);
+          var y = mid + Math.sin(x * sp.freq + t * sp.speed + sp.phase) * sp.amp * env
+                      + Math.cos(x * (sp.freq * 1.7) - t * 1.1 + s) * (sp.amp * 0.35) * env;
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    drawWave(0.8);
+    if (!reduce) {
+      var animStart = performance.now();
+      var hudVisible = true;
+      try {
+        var hudIo = new IntersectionObserver(function (es) {
+          es.forEach(function (e) { hudVisible = e.isIntersecting; });
+        }, { threshold: 0.05 });
+        hudIo.observe(canvas);
+      } catch (e) {}
+      function loopWave(now) {
+        if (hudVisible) {
+          drawWave((now - animStart) * 0.001);
+        }
+        window.requestAnimationFrame(loopWave);
+      }
+      window.requestAnimationFrame(loopWave);
+    }
+  }
+
+  /* React Bits SpotlightCard cursor tracker on Bento & Pricing cards */
+  var cards = doc.querySelectorAll('.bento-card, .card');
+  cards.forEach(function (card) {
+    card.addEventListener('pointermove', function (e) {
+      var r = card.getBoundingClientRect();
+      card.style.setProperty('--mouse-x', (e.clientX - r.left).toFixed(1) + 'px');
+      card.style.setProperty('--mouse-y', (e.clientY - r.top).toFixed(1) + 'px');
+      card.style.setProperty('--spotlight-opacity', '1');
+    });
+    card.addEventListener('pointerleave', function () {
+      card.style.setProperty('--spotlight-opacity', '0');
+    });
+  });
 })();
 </script>
 
 <script>
-/* ===== Learning Loop: integrated flow cycle ===== */
+/* ===== 4-Zone Desktop Shell (#loop): Scroll-Grow 3D Stage + 5-Step Loop ===== */
 (function () {
   var screen = document.getElementById('screen');
   if (!screen) return;
-  var liveDot = document.getElementById('liveDot'),
+  var section = document.getElementById('loop'),
+      runway = section.querySelector('.loop-runway'),
+      eyebrow = document.getElementById('loopEyebrow'),
+      liveDot = document.getElementById('liveDot'),
       statusTxt = document.getElementById('statusTxt'),
       aiChip = document.getElementById('aiChip'),
       recallQ = document.getElementById('recallQ'),
@@ -1468,7 +1653,7 @@ a{color:inherit;text-decoration:none}
 
   if (wave) {
     var html = '';
-    for (var b = 0; b < 18; b++) { html += '<i style="animation-delay:-' + ((b * 57) % 1050) + 'ms"></i>'; }
+    for (var b = 0; b < 18; b++) { html += '<i style="animation-delay:-' + (((b * 57) % 1050) / 1000).toFixed(2) + 's"></i>'; }
     wave.innerHTML = html;
   }
 
@@ -1509,10 +1694,50 @@ a{color:inherit;text-decoration:none}
   function start() { if (running || reduce) return; running = true; go(2); timer = setTimeout(tick, DUR.draft); }
   function stop() { running = false; clearAll(); }
 
+  /* Allow interactive clicking on any stage node */
+  steps.forEach(function (st, k) {
+    st.addEventListener('click', function () {
+      clearAll();
+      if (k < 3) screen.classList.remove('is-approved');
+      if (k >= 3) { screen.classList.add('is-approved'); if (aiChip) aiChip.textContent = AI_DONE; }
+      go(k);
+      if (running && !reduce) { timer = setTimeout(tick, DUR[STAGES[k].id]); }
+    });
+  });
+
   function typeQuery(q) {
     if (!recallQ) return;
     recallQ.textContent = ''; var i = 0;
     (function t() { if (!running) return; recallQ.textContent = q.slice(0, ++i); if (i < q.length) subTimer = setTimeout(t, 72); })();
+  }
+
+  /* Scroll-driven grow: 0.56 -> 1.0 over the first half of the 260vh runway */
+  function startScale() { return window.innerWidth <= 760 ? 1 : 0.56; }
+  function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1 - Math.pow(1 - t, 3); }
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return; ticking = true;
+    window.requestAnimationFrame(function () {
+      ticking = false;
+      if (window.innerWidth <= 760) {
+        screen.style.transform = '';
+        if (eyebrow) { eyebrow.style.opacity = ''; eyebrow.style.transform = ''; }
+        return;
+      }
+      var r = runway.getBoundingClientRect();
+      var total = r.height - window.innerHeight;
+      var p = total > 0 ? (-r.top) / total : 0; p = p < 0 ? 0 : p > 1 ? 1 : p;
+      var s0 = startScale();
+      var growP = ease(p / 0.52);
+      var s = s0 + (1 - s0) * growP; if (s > 1) s = 1;
+      var rx = (1 - growP) * 7;
+      screen.style.transform = 'perspective(1400px) rotateX(' + rx.toFixed(2) + 'deg) scale(' + s.toFixed(3) + ')';
+      if (eyebrow) {
+        var fade = 1 - ease((p - 0.12) / 0.36);
+        eyebrow.style.opacity = String(fade);
+        eyebrow.style.transform = 'translateY(' + (-18 * (1 - fade)).toFixed(1) + 'px)';
+      }
+    });
   }
 
   if (reduce) {
@@ -1524,6 +1749,10 @@ a{color:inherit;text-decoration:none}
     return;
   }
 
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+  onScroll();
+
   try {
     var io = new IntersectionObserver(function (es) {
       es.forEach(function (e) { if (e.isIntersecting) start(); else stop(); });
@@ -1534,11 +1763,12 @@ a{color:inherit;text-decoration:none}
 </script>
 
 <script>
-/* ===== The learning loop: self-playing correct→learn→approve→apply ===== */
+/* ===== The learning loop (#learn): Scroll-Grow + self-playing correct→learn→approve→apply ===== */
 (function () {
   var demo = document.getElementById('learnDemo');
   if (!demo) return;
   var section = document.getElementById('learn'),
+      runway = section.querySelector('.learn-runway'),
       cap = document.getElementById('ldCap'),
       addEl = document.getElementById('ldAdd'),
       rulesPill = document.getElementById('ldRules'),
@@ -1588,12 +1818,36 @@ a{color:inherit;text-decoration:none}
   function start() { if (running || reduce) return; running = true; go(1); timer = setTimeout(tick, DUR.learn); }
   function stop() { running = false; clearAll(); }
 
+  /* Scroll-driven slide-up + grow: 0.74 -> 1.0 over the first half of the 200vh runway */
+  function startScale() { return window.innerWidth <= 720 ? 1 : 0.74; }
+  function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1 - Math.pow(1 - t, 3); }
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return; ticking = true;
+    window.requestAnimationFrame(function () {
+      ticking = false;
+      if (window.innerWidth <= 720) { demo.style.transform = ''; return; }
+      var r = runway.getBoundingClientRect();
+      var total = r.height - window.innerHeight;
+      var p = total > 0 ? (-r.top) / total : 0; p = p < 0 ? 0 : p > 1 ? 1 : p;
+      var s0 = startScale();
+      var growP = ease(p / 0.5);
+      var s = s0 + (1 - s0) * growP; if (s > 1) s = 1;
+      var ty = (1 - growP) * 52;
+      demo.style.transform = 'translateY(' + ty.toFixed(1) + 'px) scale(' + s.toFixed(3) + ')';
+    });
+  }
+
   if (reduce) {
     applyStep('approve'); demo.classList.add('approved'); setRules(1);
     if (addEl) addEl.textContent = ADD;
     if (cap) cap.textContent = 'Learned from your edits — applied automatically, always editable';
     return;
   }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+  onScroll();
 
   try {
     var io = new IntersectionObserver(function (es) {

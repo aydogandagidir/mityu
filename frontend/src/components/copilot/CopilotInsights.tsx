@@ -37,6 +37,8 @@ import type {
   LiveAction,
   LiveInsightOutcome,
 } from '@/types/copilot';
+import { cn } from '@/lib/utils';
+import { focusRing } from '@/components/ui/focus-ring';
 
 /** Where the region is in its request cycle. */
 export type InsightState =
@@ -97,10 +99,10 @@ export function AiDisclosure() {
     <div
       role="region"
       aria-label="AI disclosure"
-      className="flex items-start gap-2 border-b border-border bg-muted/50 px-3 py-2"
+      className="flex items-start gap-2 border-b border-ai-border bg-ai-surface px-3 py-2"
     >
-      <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
-      <p className="flex-1 text-caption leading-snug text-muted-foreground">
+      <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-ai-ink" aria-hidden />
+      <p className="flex-1 text-caption leading-snug text-ai-ink">
         You are interacting with an AI assistant. Everything it offers is a draft built from this
         conversation&apos;s transcript — check it before you rely on it.
       </p>
@@ -108,7 +110,10 @@ export function AiDisclosure() {
         type="button"
         onClick={acknowledge}
         aria-label="Acknowledge the AI disclosure"
-        className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className={cn(
+          'rounded-xs p-0.5 text-ai-ink transition-colors duration-fast ease-out hover:bg-ai/10',
+          focusRing('ai-surface')
+        )}
       >
         <X className="h-3 w-3" />
       </button>
@@ -131,7 +136,7 @@ export function AiMarking() {
     <p
       role="note"
       aria-label="AI-generated content notice"
-      className="flex items-center gap-1 px-3 pb-1 pt-2 text-caption leading-snug text-muted-foreground"
+      className="mx-3 my-1.5 flex items-center gap-1.5 rounded-md border border-ai-border bg-ai-surface px-2.5 py-1 text-caption font-medium leading-snug text-ai-ink"
     >
       <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
       AI-generated · verify before you rely on it
@@ -201,46 +206,52 @@ function Claims({
           const pinId = claimPinId(claim);
           const pinned = pinnedIds.includes(pinId);
           return (
-          <li
-            key={pinId}
-            className="rounded-md border border-border px-2 py-1.5 text-[12px] leading-snug text-foreground"
-          >
-            {claim.text}
-            <span className="mt-1 flex items-center gap-1 text-caption text-muted-foreground">
-              <Quote className="h-2.5 w-2.5 shrink-0" aria-hidden />
-              {/* The stamp comes from the cited segment, never from the model. */}
-              said at {claim.timestamp}
-              <button
-                type="button"
-                onClick={() => (pinned ? onUnpin(pinId) : onPin(claim, outcome.action))}
-                aria-pressed={pinned}
-                aria-label={pinned ? `Unpin: ${claim.text}` : `Pin to notes: ${claim.text}`}
-                className="ml-auto inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-caption transition-colors hover:bg-muted"
-              >
-                {pinned ? (
-                  <>
-                    <PinOff className="h-2.5 w-2.5 shrink-0" aria-hidden /> Pinned
-                  </>
-                ) : (
-                  <>
-                    <Pin className="h-2.5 w-2.5 shrink-0" aria-hidden /> Pin to notes
-                  </>
-                )}
-              </button>
-            </span>
-          </li>
+            <li
+              key={pinId}
+              className="rounded-md border border-border bg-surface-2/40 px-2.5 py-2 text-caption leading-snug text-foreground"
+            >
+              {claim.text}
+              <span className="mt-1.5 flex items-center gap-1 text-caption tabular-nums text-muted-foreground">
+                <Quote className="h-2.5 w-2.5 shrink-0" aria-hidden />
+                {/* The stamp comes from the cited segment, never from the model. */}
+                said at {claim.timestamp}
+                <button
+                  type="button"
+                  onClick={() => (pinned ? onUnpin(pinId) : onPin(claim, outcome.action))}
+                  aria-pressed={pinned}
+                  aria-label={pinned ? `Unpin: ${claim.text}` : `Pin to notes: ${claim.text}`}
+                  className={cn(
+                    'ml-auto inline-flex min-h-[28px] items-center gap-1 rounded-md border px-2 py-1 text-caption font-medium transition-colors duration-fast ease-out',
+                    pinned
+                      ? 'border-verified-border bg-verified-surface text-verified-ink hover:bg-verified-surface/80'
+                      : 'border-border bg-card text-foreground hover:bg-muted',
+                    focusRing('card')
+                  )}
+                >
+                  {pinned ? (
+                    <>
+                      <PinOff className="h-2.5 w-2.5 shrink-0" aria-hidden /> Pinned
+                    </>
+                  ) : (
+                    <>
+                      <Pin className="h-2.5 w-2.5 shrink-0" aria-hidden /> Pin to notes
+                    </>
+                  )}
+                </button>
+              </span>
+            </li>
           );
         })}
       </ol>
       {/* Filtering is stated, not hidden: a shortened answer looks complete. */}
       {outcome.dropped.length > 0 && (
-        <p className="px-3 pb-1 text-caption text-muted-foreground">
+        <p className="px-3 pb-1 text-caption tabular-nums text-muted-foreground">
           {outcome.dropped.length} {outcome.dropped.length === 1 ? 'suggestion' : 'suggestions'} was
           dropped for citing something that was not said in this window.
         </p>
       )}
       {outcome.turnsOmitted > 0 && (
-        <p className="px-3 pb-1 text-caption text-muted-foreground">
+        <p className="px-3 pb-1 text-caption tabular-nums text-muted-foreground">
           Built from the most recent {outcome.turnsConsidered} segments; {outcome.turnsOmitted}{' '}
           older ones in the window were left out.
         </p>
@@ -298,7 +309,7 @@ export function CopilotInsights({
   const ordered = ACTION_ORDER.filter((a) => actions.includes(a));
 
   return (
-    <section aria-label="Copilot insights" className="shrink-0 border-t border-border">
+    <section aria-label="Copilot insights" className="shrink-0 border-t border-border bg-card">
       <AiDisclosure />
 
       {modeName && (
@@ -308,14 +319,17 @@ export function CopilotInsights({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-1 px-3 pb-1 pt-2">
+      <div className="flex flex-wrap gap-1.5 px-3 pb-1 pt-2">
         {ordered.map((action) => (
           <button
             key={action}
             type="button"
             onClick={() => onRequest(action)}
             disabled={disabled || busy}
-            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            className={cn(
+              'inline-flex min-h-[28px] items-center gap-1 rounded-md border border-border bg-surface-2 px-2.5 py-1 text-caption font-medium text-foreground shadow-elev-0 transition-colors duration-fast ease-out hover:border-border-strong hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50',
+              focusRing('card')
+            )}
           >
             {ACTION_LABELS[action]}
           </button>
@@ -331,14 +345,14 @@ export function CopilotInsights({
           out of I3b (ADR-0041); telling the user their note is safe before
           that would be the same false promise in the UI. */}
       {pendingPins > 0 && (
-        <p className="flex items-center gap-1 px-3 pb-1 text-caption text-muted-foreground">
+        <p className="flex items-center gap-1 px-3 pb-1 text-caption tabular-nums text-muted-foreground">
           <Pin className="h-2.5 w-2.5 shrink-0" aria-hidden />
           {pendingPins} {pendingPins === 1 ? 'note' : 'notes'} pinned. They are written into the
           meeting&apos;s summary when you save it, each as a draft you review.
         </p>
       )}
       {pinError && (
-        <p className="flex items-start gap-1 px-3 pb-1 text-caption text-muted-foreground">
+        <p className="flex items-start gap-1 px-3 pb-1 text-caption text-destructive-ink">
           <AlertTriangle className="mt-0.5 h-2.5 w-2.5 shrink-0" aria-hidden />
           {pinError}
         </p>
@@ -354,7 +368,7 @@ export function CopilotInsights({
         )}
 
         {state.phase === 'loading' && (
-          <div className="flex items-center gap-2 px-3 py-2">
+          <div className="flex items-center gap-2 px-3 py-2" role="status">
             <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" aria-hidden />
             <span className="flex-1 text-caption text-muted-foreground">
               Reading the last few minutes for “{ACTION_LABELS[state.action]}”…
@@ -362,7 +376,10 @@ export function CopilotInsights({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded-md border border-border px-2 py-0.5 text-caption transition-colors hover:bg-muted"
+              className={cn(
+                'min-h-[28px] rounded-md border border-border bg-card px-2 py-0.5 text-caption font-medium text-foreground transition-colors duration-fast ease-out hover:bg-muted',
+                focusRing('card')
+              )}
             >
               Cancel
             </button>

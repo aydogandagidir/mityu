@@ -47,6 +47,8 @@ const SECTIONS = [
 function Shell({ active }: { active: string }) {
   const [notify, setNotify] = useState(true);
   const [reminder, setReminder] = useState(true);
+  const [redactPii, setRedactPii] = useState(true);
+  const [analyticsOptIn, setAnalyticsOptIn] = useState(false);
   const [transcriptConfig, setTranscriptConfig] = useState<TranscriptModelProps>({
     provider: 'nemotron',
     model: JSON.stringify({
@@ -66,7 +68,7 @@ function Shell({ active }: { active: string }) {
     <div
       className={cn(
         'flex flex-col overflow-hidden rounded-lg border border-border bg-background',
-        active === 'transcription' ? 'h-[860px]' : 'h-[560px]'
+        active === 'transcription' ? 'h-[900px]' : 'h-[640px]'
       )}
     >
       <PageHeader eyebrow="Settings" title={current.label} />
@@ -137,12 +139,26 @@ function Shell({ active }: { active: string }) {
                   </Notice>
                 </SettingsCard>
                 <SettingsCard>
-                  <SwitchRow
-                    label="Participant reminder"
-                    description="Show the reminder to inform participants when a recording starts."
-                    checked={reminder}
-                    onCheckedChange={setReminder}
-                  />
+                  <div className="divide-y [&>*+*]:border-t-border">
+                    <SwitchRow
+                      label="Participant reminder"
+                      description="Show the reminder to inform participants when a recording starts."
+                      checked={reminder}
+                      onCheckedChange={setReminder}
+                    />
+                    <SwitchRow
+                      label="Redact sensitive content"
+                      description="Replace personal emails, phone numbers, and IDs with [REDACTED_*] tokens before summaries or exports leave the transcript."
+                      checked={redactPii}
+                      onCheckedChange={setRedactPii}
+                    />
+                    <SwitchRow
+                      label="Usage analytics is off by default"
+                      description="No telemetry is sent unless you explicitly opt in. Meeting audio and transcripts are never included."
+                      checked={analyticsOptIn}
+                      onCheckedChange={setAnalyticsOptIn}
+                    />
+                  </div>
                 </SettingsCard>
                 <SettingsCard
                   title="Where your data is stored"

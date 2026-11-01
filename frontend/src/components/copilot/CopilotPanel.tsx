@@ -34,6 +34,7 @@ import type { CopilotStatus } from '@/types/copilot';
 import { CopilotInsights, type InsightState } from './CopilotInsights';
 import type { TranscriptUpdate } from '@/types';
 import { cn } from '@/lib/utils';
+import { focusRing } from '@/components/ui/focus-ring';
 
 /** One line in the panel's transcript tail. */
 export interface PanelLine {
@@ -91,10 +92,10 @@ function ProtectionChip({ status }: { status: CopilotStatus }) {
   if (!status.config.contentProtection) {
     return (
       <span
-        className="inline-flex items-center gap-1 text-caption text-muted-foreground"
+        className="mt-1 inline-flex items-center gap-1 rounded-full border border-warning-border bg-warning-surface px-2 py-0.5 text-micro font-medium text-warning-ink"
         title="Hiding the panel from screen shares is switched off. Turn it on in Settings → Beta → Live copilot."
       >
-        <Eye className="h-3 w-3 shrink-0" />
+        <Eye className="h-3 w-3 shrink-0" aria-hidden />
         <span className="truncate">Visible in screen shares</span>
       </span>
     );
@@ -104,17 +105,20 @@ function ProtectionChip({ status }: { status: CopilotStatus }) {
   const Icon = level === 'enforced' ? ShieldCheck : level === 'bestEffort' ? ShieldAlert : EyeOff;
   const tone =
     level === 'enforced'
-      ? 'text-emerald-600 dark:text-emerald-400'
+      ? 'border-success-border bg-success-surface text-success-ink'
       : level === 'bestEffort'
-        ? 'text-warning-ink'
-        : 'text-muted-foreground';
+        ? 'border-warning-border bg-warning-surface text-warning-ink'
+        : 'border-border bg-surface-2 text-muted-foreground';
 
   return (
     <span
-      className={`inline-flex items-center gap-1 text-caption ${tone}`}
+      className={cn(
+        'mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-medium',
+        tone
+      )}
       title={status.protection.detail}
     >
-      <Icon className="h-3 w-3 shrink-0" />
+      <Icon className="h-3 w-3 shrink-0" aria-hidden />
       <span className="truncate">{headline}</span>
     </span>
   );
@@ -173,15 +177,15 @@ export function CopilotPanel({
   );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-card text-card-foreground">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-card/95 text-card-foreground shadow-elev-3 backdrop-blur-md">
       {/* The whole header is the drag handle: the window is frameless, so
           without this the panel could not be moved. */}
       <header
         data-tauri-drag-region
-        className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2"
+        className="flex shrink-0 items-center gap-2 border-b border-border bg-surface-2/50 px-3 py-2.5"
       >
         <div data-tauri-drag-region className="min-w-0 flex-1">
-          <div data-tauri-drag-region className="text-[13px] font-semibold leading-tight">
+          <div data-tauri-drag-region className="text-label font-semibold leading-tight text-foreground">
             Mityu copilot
           </div>
           {status && <ProtectionChip status={status} />}
@@ -191,7 +195,10 @@ export function CopilotPanel({
             type="button"
             onClick={onClose}
             aria-label="Close the copilot panel"
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className={cn(
+              'rounded-md p-1 text-muted-foreground transition-colors duration-fast ease-out hover:bg-muted hover:text-foreground',
+              focusRing('card')
+            )}
           >
             <X className="h-4 w-4" />
           </button>
@@ -200,14 +207,17 @@ export function CopilotPanel({
 
       <div className="flex min-h-0 flex-1 flex-col">
         {error && (
-          <p role="alert" className="border-b border-border px-3 py-2 text-[12px] text-destructive">
+          <p
+            role="alert"
+            className="border-b border-destructive-border bg-destructive-surface px-3 py-2 text-caption text-destructive-ink"
+          >
             {error}
           </p>
         )}
 
         {recording ? (
           <>
-            <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border/60 bg-surface-2/30 px-3 py-2 tabular-nums">
               <span className="inline-flex items-center gap-1.5 text-caption font-medium text-foreground">
                 {/* `bg-warning-surface0` used to sit here — a token that does not
                     exist, assembled inside a template literal where Tailwind's scanner
@@ -229,7 +239,10 @@ export function CopilotPanel({
                       <button
                         type="button"
                         onClick={onResume}
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted"
+                        className={cn(
+                          'inline-flex min-h-[28px] items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-caption font-medium text-foreground shadow-elev-0 transition-colors duration-fast ease-out hover:bg-muted',
+                          focusRing('card')
+                        )}
                       >
                         <Play className="h-3 w-3" /> Resume
                       </button>
@@ -238,7 +251,10 @@ export function CopilotPanel({
                       <button
                         type="button"
                         onClick={onPause}
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted"
+                        className={cn(
+                          'inline-flex min-h-[28px] items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-caption font-medium text-foreground shadow-elev-0 transition-colors duration-fast ease-out hover:bg-muted',
+                          focusRing('card')
+                        )}
                       >
                         <Pause className="h-3 w-3" /> Pause
                       </button>
@@ -249,7 +265,10 @@ export function CopilotPanel({
                   <button
                     type="button"
                     onClick={onOpenMainWindow}
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted"
+                    className={cn(
+                      'inline-flex min-h-[28px] items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-caption font-medium text-foreground shadow-elev-0 transition-colors duration-fast ease-out hover:bg-muted',
+                      focusRing('card')
+                    )}
                   >
                     <Monitor className="h-3 w-3" /> Open Mityu
                   </button>
@@ -257,14 +276,17 @@ export function CopilotPanel({
               </div>
             </div>
 
-            <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-3">
+            <ol className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-2.5">
               {lines.length === 0 ? (
-                <li className="pt-6 text-center text-[12px] text-muted-foreground">
+                <li className="pt-6 text-center text-caption text-muted-foreground">
                   Listening. Transcribed speech appears here within a few seconds.
                 </li>
               ) : (
                 lines.map((line) => (
-                  <li key={line.id} className="text-[12px] leading-snug text-foreground">
+                  <li
+                    key={line.id}
+                    className="rounded-md border border-border/60 bg-surface-2/40 px-2.5 py-1.5 text-caption leading-snug text-foreground"
+                  >
                     {line.text}
                   </li>
                 ))
@@ -272,16 +294,21 @@ export function CopilotPanel({
             </ol>
           </>
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-            <Mic className="h-5 w-5 text-muted-foreground" aria-hidden />
-            <p className="text-[12px] text-muted-foreground">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-6 text-center">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground">
+              <Mic className="h-4 w-4" aria-hidden />
+            </div>
+            <p className="text-caption text-muted-foreground">
               The copilot follows a recording you start in Mityu. It never records on its own.
             </p>
             {onOpenMainWindow && (
               <button
                 type="button"
                 onClick={onOpenMainWindow}
-                className="mt-1 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-caption transition-colors hover:bg-muted"
+                className={cn(
+                  'mt-1 inline-flex min-h-[28px] items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-caption font-medium text-foreground shadow-elev-0 transition-colors duration-fast ease-out hover:bg-muted',
+                  focusRing('card')
+                )}
               >
                 <Monitor className="h-3 w-3" /> Open Mityu
               </button>
@@ -306,9 +333,9 @@ export function CopilotPanel({
         />
       )}
 
-      <footer className="shrink-0 border-t border-border px-3 py-2">
+      <footer className="shrink-0 border-t border-border bg-surface-2/40 px-3 py-2">
         <p className="text-caption leading-snug text-muted-foreground">
-          <Eye className="mr-1 inline h-3 w-3 align-[-2px]" />
+          <Eye className="mr-1 inline h-3 w-3 align-[-2px]" aria-hidden />
           {/* "Nothing it offers is saved" stopped being true when pinning
               shipped (ADR-0046): a pinned answer is written into the meeting's
               summary as a draft when the meeting is saved. Two adjacent

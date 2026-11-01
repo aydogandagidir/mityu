@@ -20,6 +20,7 @@
  */
 
 import { Users } from 'lucide-react';
+import { focusRing } from '@/components/ui/focus-ring';
 
 /**
  * Megabytes actually fetched over the network, not what lands on disk: the
@@ -37,19 +38,32 @@ import {
   talkTime,
 } from '@/lib/speakerTurns';
 
+const DEFAULT_SPEAKER_ORDER = [
+  'Speaker 1',
+  'Speaker 2',
+  'Speaker 3',
+  'Speaker 4',
+  'Speaker 5',
+  'Speaker 6',
+  'Speaker 7',
+  'Speaker 8',
+];
+
 /**
- * Stable, deliberately flat colours: they identify a speaker across the page,
- * they do not rank. No red/green, nothing that reads as good or bad.
+ * Stable, deliberately flat semantic colours: they identify up to 8 speakers
+ * across the page (matching Nemotron 3.5 Transcribe's 8-speaker attribution),
+ * they do not rank. Per DESIGN_SYSTEM.md §4.4.7, series tokens are used on
+ * dots and bar fills while label text stays in `text-foreground`.
  */
 const SWATCHES = [
-  { dot: 'bg-sky-500', bar: 'bg-sky-500/70', text: 'text-sky-700 dark:text-sky-300' },
-  { dot: 'bg-violet-500', bar: 'bg-violet-500/70', text: 'text-violet-700 dark:text-violet-300' },
-  { dot: 'bg-amber-500', bar: 'bg-amber-500/70', text: 'text-amber-700 dark:text-amber-300' },
-  { dot: 'bg-teal-500', bar: 'bg-teal-500/70', text: 'text-teal-700 dark:text-teal-300' },
-  { dot: 'bg-pink-500', bar: 'bg-pink-500/70', text: 'text-pink-700 dark:text-pink-300' },
-  { dot: 'bg-lime-600', bar: 'bg-lime-600/70', text: 'text-lime-700 dark:text-lime-300' },
-  { dot: 'bg-indigo-500', bar: 'bg-indigo-500/70', text: 'text-indigo-700 dark:text-indigo-300' },
-  { dot: 'bg-cyan-600', bar: 'bg-cyan-600/70', text: 'text-cyan-700 dark:text-cyan-300' },
+  { dot: 'bg-chart-1', bar: 'bg-chart-1', text: 'text-foreground' },
+  { dot: 'bg-chart-2', bar: 'bg-chart-2', text: 'text-foreground' },
+  { dot: 'bg-chart-3', bar: 'bg-chart-3', text: 'text-foreground' },
+  { dot: 'bg-chart-4', bar: 'bg-chart-4', text: 'text-foreground' },
+  { dot: 'bg-chart-5', bar: 'bg-chart-5', text: 'text-foreground' },
+  { dot: 'bg-chart-6', bar: 'bg-chart-6', text: 'text-foreground' },
+  { dot: 'bg-primary', bar: 'bg-primary', text: 'text-foreground' },
+  { dot: 'bg-ai', bar: 'bg-ai', text: 'text-foreground' },
 ];
 
 /**
@@ -57,12 +71,47 @@ const SWATCHES = [
  * everywhere on the page. Falls back to a neutral swatch past the palette
  * rather than repeating one and implying two speakers are the same.
  */
-export function swatchFor(label: string, order: string[]) {
+export function swatchFor(label: string, order: string[] = DEFAULT_SPEAKER_ORDER) {
   const i = order.indexOf(label);
   if (i < 0 || i >= SWATCHES.length) {
     return { dot: 'bg-muted-foreground', bar: 'bg-muted-foreground/60', text: 'text-muted-foreground' };
   }
   return SWATCHES[i];
+}
+
+export const speakerSwatch = swatchFor;
+
+/**
+ * Inline badge for decode-time PII redaction tokens (`[REDACTED]`, `[REDACTED_EMAIL]`, etc.)
+ * emitted by Nemotron 3.5 Transcribe when inline PII guard is active.
+ */
+export function InlinePiiBadge({ token }: { token: string }) {
+  return (
+    <span
+      className="mx-0.5 inline-flex items-center rounded-xs border border-ai-border bg-ai-surface px-1.5 py-0.5 font-mono text-micro font-medium text-ai-ink align-baseline"
+      title="Redacted inline at decode time by Nemotron 3.5 Transcribe PII guard"
+    >
+      {token}
+    </span>
+  );
+}
+
+/**
+ * Renders transcript text while highlighting any inline `[REDACTED*]` markers as semantic chips.
+ */
+export function RedactedText({ text }: { text: string }) {
+  const parts = text.split(/(\[REDACTED(?:_[A-Z0-9_]+)?\])/g);
+  return (
+    <>
+      {parts.map((part, idx) =>
+        /^\[REDACTED(?:_[A-Z0-9_]+)?\]$/.test(part) ? (
+          <InlinePiiBadge key={`${idx}-${part}`} token={part} />
+        ) : (
+          <span key={idx}>{part}</span>
+        )
+      )}
+    </>
+  );
 }
 
 /**
@@ -90,25 +139,25 @@ export function SpeakerChips({
 }) {
   if (speakers.length === 0) return null;
   return (
-    <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+    <span className="inline-flex flex-wrap items-center gap-1.5 align-middle">
       {speakers.map((label) => {
         const s = swatchFor(label, order);
         return (
           <span
             key={label}
-            className={`inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium ${s.text}`}
+            className={`inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-micro font-medium tabular-nums ${s.text}`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} aria-hidden />
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.dot}`} aria-hidden="true" />
             {label}
           </span>
         );
       })}
       {crosstalk && speakers.length > 1 && (
         <span
-          className="text-[10px] text-muted-foreground"
-          title="Two speakers were talking at the same time here"
+          className="inline-flex items-center gap-1 rounded-full border border-warning-border bg-warning-surface px-2 py-0.5 text-micro font-medium text-warning-ink"
+          title="Overlap · Simultaneous speech — two speakers were talking at the same time here"
         >
-          at the same time
+          Overlap · at the same time
         </span>
       )}
     </span>
@@ -120,18 +169,20 @@ function TalkTimeRow({ row, order }: { row: SpeakerTalkTime; order: string[] }) 
   const percent = Math.round(row.shareOfSpeech * 100);
   return (
     <li className="flex items-center gap-3">
-      <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} aria-hidden />
-      <span className="w-24 shrink-0 truncate text-sm font-medium">{row.label}</span>
-      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} aria-hidden="true" />
+      <span className="w-24 shrink-0 truncate text-label font-medium tabular-nums text-foreground">
+        {row.label}
+      </span>
+      <span className="h-2 flex-1 overflow-hidden rounded-full border border-border/60 bg-muted/70">
         <span
-          className={`block h-full rounded-full ${s.bar}`}
+          className={`block h-full rounded-full transition-all duration-base ease-out ${s.bar}`}
           style={{ width: `${Math.max(row.shareOfSpeech * 100, 1)}%` }}
         />
       </span>
-      <span className="w-14 shrink-0 text-right text-sm tabular-nums">
+      <span className="w-14 shrink-0 text-right font-mono text-caption tabular-nums text-foreground">
         {formatTalkTime(row.ms)}
       </span>
-      <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+      <span className="w-12 shrink-0 text-right font-mono text-micro tabular-nums text-muted-foreground">
         {percent}%
       </span>
     </li>
@@ -153,8 +204,8 @@ function Frame({ children, actions }: { children: React.ReactNode; actions?: Rea
   return (
     <section className="rounded-xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="inline-flex items-center gap-2 text-sm font-semibold">
-          <Users className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <h3 className="inline-flex items-center gap-2 text-title-sm text-foreground">
+          <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           Speakers
         </h3>
         {actions}
@@ -186,7 +237,7 @@ export function TalkTimePanel({
   if (state.kind === 'noAudio') {
     return (
       <Frame>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           This meeting kept no audio, so speakers cannot be separated. Recordings saved as
           transcripts only have nothing left to analyse.
         </p>
@@ -203,14 +254,14 @@ export function TalkTimePanel({
               type="button"
               onClick={onGetModels}
               disabled={busy}
-              className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-60"
+              className={`rounded-md border border-border bg-surface-2 px-2.5 py-1 text-caption font-medium text-foreground transition-colors duration-fast hover:bg-surface-3 disabled:opacity-60 ${focusRing('card')}`}
             >
               {busy ? 'Downloading…' : `Download models (${MODEL_DOWNLOAD_MB} MB)`}
             </button>
           )
         }
       >
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           Separating speakers needs two small models that are not on this machine yet. They are
           downloaded once and then run entirely on-device.
         </p>
@@ -227,14 +278,14 @@ export function TalkTimePanel({
               type="button"
               onClick={onRun}
               disabled={busy}
-              className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-60"
+              className={`rounded-md border border-border bg-surface-2 px-2.5 py-1 text-caption font-medium text-foreground transition-colors duration-fast hover:bg-surface-3 disabled:opacity-60 ${focusRing('card')}`}
             >
               {busy ? 'Analysing…' : 'Identify speakers'}
             </button>
           )
         }
       >
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           Speakers have not been separated for this meeting yet. The pass runs on-device over the
           saved recording and does not change the transcript.
         </p>
@@ -248,7 +299,7 @@ export function TalkTimePanel({
   if (rows.length === 0) {
     return (
       <Frame>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           Analysed on {state.diarizedAt.slice(0, 10)} and no distinct speakers were separated. That
           is the expected result for a single-voice recording, and can also happen when voices are
           too similar or the audio is too noisy to tell apart.
@@ -265,9 +316,9 @@ export function TalkTimePanel({
           <TalkTimeRow key={row.label} row={row} order={order} />
         ))}
       </ul>
-      <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
+      <p className="mt-3 border-t border-border pt-3 text-caption leading-relaxed text-muted-foreground">
         {count} {count === 1 ? 'voice' : 'voices'} separated on-device, listed in the order they
-        first spoke. This is a <strong className="font-medium">best-effort estimate</strong>: how
+        first spoke. This is a <strong className="font-medium text-foreground">best-effort estimate</strong>: how
         often it gets the speakers right has not been measured on recordings like yours, so check it
         before relying on it. Percentages are each speaker&apos;s share of the <em>speech</em>, not of the
         meeting — people talk over each other, so shares of the meeting would add up to more than
