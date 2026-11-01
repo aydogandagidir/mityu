@@ -25,6 +25,7 @@ import {
 import { PageHeader } from '@/components/shell/PageHeader';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SwitchRow } from '@/components/settings/SwitchRow';
+import { TranscriptSettings, type TranscriptModelProps } from '@/components/TranscriptSettings';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
@@ -46,10 +47,28 @@ const SECTIONS = [
 function Shell({ active }: { active: string }) {
   const [notify, setNotify] = useState(true);
   const [reminder, setReminder] = useState(true);
+  const [transcriptConfig, setTranscriptConfig] = useState<TranscriptModelProps>({
+    provider: 'nemotron',
+    model: JSON.stringify({
+      model: 'nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B',
+      endpoint: 'http://127.0.0.1:8000/v1',
+      speaker_attribution: true,
+      inline_pii_redaction: true,
+      target_language: 'Turkish',
+      context_prompt: 'Mityu, SQLCipher, Sortformer, KVKK, Q3',
+    }),
+    apiKey: null,
+    hasApiKey: true,
+  });
   const current = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
 
   return (
-    <div className="flex h-[560px] flex-col overflow-hidden rounded-lg border border-border bg-background">
+    <div
+      className={cn(
+        'flex flex-col overflow-hidden rounded-lg border border-border bg-background',
+        active === 'transcription' ? 'h-[860px]' : 'h-[560px]'
+      )}
+    >
       <PageHeader eyebrow="Settings" title={current.label} />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <nav
@@ -84,7 +103,12 @@ function Shell({ active }: { active: string }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl space-y-4 p-gutter">
-            {active === 'general' ? (
+            {active === 'transcription' ? (
+              <TranscriptSettings
+                transcriptModelConfig={transcriptConfig}
+                setTranscriptModelConfig={setTranscriptConfig}
+              />
+            ) : active === 'general' ? (
               <>
                 <SettingsCard
                   title="Appearance"
@@ -152,6 +176,10 @@ function Panel({ theme }: { theme: 'light' | 'dark' }) {
             component state and a nine-card General dump.
           </p>
         </header>
+        <section className="space-y-2">
+          <h2 className="text-title">Transcription — NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE)</h2>
+          <Shell active="transcription" />
+        </section>
         <section className="space-y-2">
           <h2 className="text-title">General</h2>
           <Shell active="general" />

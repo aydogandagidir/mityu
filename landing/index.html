@@ -4,246 +4,532 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>Mityu — meetings captured locally on your device.</title>
-<meta name="description" content="Mityu records and transcribes meetings on your machine, with local reporting by default. No bots. No audio uploads. No account.">
-<meta name="theme-color" content="#ffffff">
+<title>Mityu — Local-First Meeting Intelligence &amp; Multi-Speaker Transcription</title>
+<meta name="description" content="Mityu records and transcribes meetings on your machine with Whisper, Parakeet, and NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE). Live 8-speaker attribution, overlapping speech separation, 40-language ASR, and source-linked reports you approve line by line.">
+<meta name="theme-color" content="#FAFAFA">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Mityu — meetings captured locally on your device.">
-<meta property="og:description" content="Mityu records and transcribes meetings on your machine, with local reporting by default. No bots. No audio uploads. No account.">
+<meta property="og:title" content="Mityu — Local-First Meeting Intelligence &amp; Multi-Speaker Transcription">
+<meta property="og:description" content="Mityu records and transcribes meetings on your machine with Whisper, Parakeet, and NVIDIA Nemotron 3.5 Transcribe. No bots. No audio uploads. No account.">
 <meta name="twitter:card" content="summary">
 <meta property="og:url" content="https://mityu.bluedev.dev/">
 <link rel="canonical" href="https://mityu.bluedev.dev/">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' rx='30' fill='%231E56FF'/%3E%3Ccircle cx='38' cy='40' r='9' fill='%23fff'/%3E%3Cpolygon points='52,30 70,30 92,86 74,86' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' rx='28' fill='%232563EB'/%3E%3Ccircle cx='38' cy='40' r='9' fill='%23fff'/%3E%3Cpolygon points='52,30 70,30 92,86 74,86' fill='%23fff'/%3E%3C/svg%3E">
 <style>
 @font-face{font-family:'DM Sans';font-style:normal;font-weight:100 900;font-display:swap;src:url(fonts/dm-sans.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 
+/* ==================== DESIGN_SYSTEM.md v1.2 Semantic Tokens ==================== */
 :root{
-  --ink:#0B0B0F;
-  --gray:#5F6368;
-  --hair:#E5E7EB;
-  --soft:#F4F5F7;
-  --blue:#1E56FF;
-  --blue-bg:#E9F0FF;
-  --div:#E0E0E0;
+  --canvas:#FAFAFA;
+  --surface:#FFFFFF;
+  --elevated:#F4F4F5;
+  --ink:#09090B;
+  --ink-2:#27272A;
+  --muted:#52525B;
+  --subtle:#71717A;
+  --hair:#E4E4E7;
+  --hair-strong:#D4D4D8;
+  --blue:#2563EB;
+  --blue-dark:#1D4ED8;
+  --blue-bg:#EFF6FF;
+  --blue-border:#BFDBFE;
+  --violet:#6D28D9;
+  --violet-bg:#F5F3FF;
+  --violet-border:#DDD6FE;
+  --emerald:#047857;
+  --emerald-bg:#ECFDF5;
+  --emerald-border:#A7F3D0;
+  --amber:#B45309;
+  --amber-bg:#FFFBEB;
+  --amber-border:#FDE68A;
+  --gray:#52525B;
+  --soft:#F4F4F5;
+  --div:#E4E4E7;
 }
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
-body{margin:0;background:#FFFFFF;color:var(--ink);font-family:'DM Sans',system-ui,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
-h1,h2,h3,p,ul{margin:0}
+body{
+  margin:0;
+  background:var(--canvas);
+  color:var(--ink);
+  font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,p,ul{margin:0}
 ul{padding:0;list-style:none}
 a{color:inherit;text-decoration:none}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.skip{position:absolute;left:16px;top:-56px;z-index:100;background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;font-size:14px}
+.skip{position:absolute;left:16px;top:-56px;z-index:100;background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600}
 .skip:focus{top:12px}
-.container{max-width:1200px;margin:0 auto;padding-left:24px;padding-right:24px}
-#loop,#learn,#pricing,#faq{scroll-margin-top:72px}
+.container{max-width:1280px;margin:0 auto;padding-left:24px;padding-right:24px}
+#architecture,#loop,#learn,#pricing,#faq{scroll-margin-top:76px}
 
-/* ---------- buttons ---------- */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 20px;border-radius:999px;font-size:14px;font-weight:500;white-space:nowrap;transition:background .15s ease}
-.btn-black{background:var(--ink);color:#fff}
-.btn-black:hover{background:#26262E}
-.btn-gray{background:#F1F3F4;color:var(--ink)}
-.btn-gray:hover{background:#E8EAED}
-.btn-gray2{background:#E8EAED;color:var(--ink)}
-.btn-gray2:hover{background:#DDE0E4}
-.btn-sm{height:36px;padding:0 18px;font-size:13px}
+/* ---------- Buttons (v1.2 Crisp Architectural Controls) ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  height:40px;padding:0 18px;border-radius:8px;
+  font-size:13.5px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;
+  transition:background .15s ease,border-color .15s ease,transform .15s ease;
+  cursor:pointer;border:1px solid transparent;
+}
+.btn-black{background:var(--ink);color:#fff;box-shadow:0 1px 2px rgba(9,9,11,.12)}
+.btn-black:hover{background:#18181B}
+.btn-primary{background:var(--blue);color:#fff;box-shadow:0 1px 2px rgba(37,99,235,.2)}
+.btn-primary:hover{background:var(--blue-dark)}
+.btn-gray{background:var(--surface);color:var(--ink);border-color:var(--hair)}
+.btn-gray:hover{background:var(--elevated);border-color:var(--hair-strong)}
+.btn-sm{height:34px;padding:0 14px;font-size:12.5px;border-radius:7px}
 .btn svg{flex:none}
 
-/* ---------- nav ---------- */
-.nav{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid transparent;transition:border-color .2s ease}
-.nav.scrolled{border-bottom-color:var(--hair)}
-.nav-inner{max-width:1280px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;gap:44px}
+/* ---------- Top Navigation Bar ---------- */
+.nav{
+  position:sticky;top:0;z-index:50;
+  background:rgba(250,250,250,.88);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--hair);
+}
+.nav-inner{
+  max-width:1280px;margin:0 auto;padding:0 24px;height:60px;
+  display:flex;align-items:center;gap:28px;
+}
 .brand{display:inline-flex;align-items:center;gap:10px}
-.brand svg{display:block}
-.wordmark{font-size:17px;font-weight:500;letter-spacing:-.01em;color:var(--ink)}
-.nav-links{display:flex;gap:28px}
-.nav-links a{color:var(--gray);font-size:14px}
+.brand svg{display:block;border-radius:7px}
+.wordmark{font-size:16px;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.brand-pill{
+  display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;
+  border-radius:6px;background:var(--elevated);border:1px solid var(--hair);
+  font-size:11px;font-weight:600;color:var(--muted);
+}
+.brand-pill i{width:6px;height:6px;border-radius:50%;background:var(--emerald);display:inline-block}
+.nav-links{display:flex;gap:22px;margin-left:8px}
+.nav-links a{color:var(--muted);font-size:13px;font-weight:500;transition:color .15s ease}
 .nav-links a:hover{color:var(--ink)}
-.nav-cta{margin-left:auto}
-@media (max-width:719px){.nav-links{display:none}}
+.nav-cta{margin-left:auto;display:flex;align-items:center;gap:10px}
+@media (max-width:860px){.nav-links,.brand-pill{display:none}}
 
-/* ---------- hero ---------- */
-.hero{padding:clamp(90px,15vh,170px) 24px clamp(80px,12vh,130px);padding-left:max(24px,15%)}
-@media (max-width:600px){.hero{padding-left:24px}}
-.headline{font-size:clamp(3.5rem,8vw,6.5rem);font-weight:500;letter-spacing:-.035em;line-height:1.05;min-height:3.3em}
-@media (min-width:520px){.headline{min-height:2.2em}}
+/* ---------- Architectural Hero (Split 2-Column Minimalist Layout) ---------- */
+.hero-wrap{
+  position:relative;
+  border-bottom:1px solid var(--hair);
+  background:
+    radial-gradient(900px 420px at 80% 15%,rgba(37,99,235,.06),transparent 65%),
+    radial-gradient(700px 380px at 15% 80%,rgba(109,40,217,.05),transparent 65%),
+    var(--surface);
+}
+.hero{
+  max-width:1280px;margin:0 auto;
+  padding:clamp(48px,7vh,84px) 24px clamp(52px,7vh,88px);
+  display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
+  gap:clamp(28px,4vw,56px);align-items:center;
+}
+@media (max-width:1024px){
+  .hero{grid-template-columns:1fr}
+}
+.hero-eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  height:28px;padding:0 11px;border-radius:999px;
+  background:var(--violet-bg);border:1px solid var(--violet-border);
+  color:var(--violet);font-size:11.5px;font-weight:600;letter-spacing:.01em;
+  margin-bottom:20px;
+}
+.hero-eyebrow .p-dot{width:6px;height:6px;border-radius:50%;background:var(--violet)}
+.headline{
+  font-size:clamp(2.5rem,4.6vw,4.1rem);
+  font-weight:600;letter-spacing:-.035em;line-height:1.06;
+  color:var(--ink);min-height:2.15em;
+}
 .typed{white-space:pre-wrap}
-.caret{display:inline-block;width:6px;height:.82em;margin-left:.07em;border-radius:3px;background:linear-gradient(180deg,#1E56FF 0%,#4B78FF 55%,#9BB6FF 100%);vertical-align:-.08em;animation:blink 1.12s steps(1,end) infinite}
+.caret{
+  display:inline-block;width:4px;height:.82em;margin-left:.06em;border-radius:2px;
+  background:var(--blue);vertical-align:-.08em;animation:blink 1.1s steps(1,end) infinite;
+}
 @keyframes blink{0%,55%{opacity:1}56%,100%{opacity:0}}
-.hero-sub{margin-top:44px;max-width:620px}
-.sub{color:var(--gray);font-size:clamp(1.05rem,1.5vw,1.25rem);line-height:1.65;max-width:560px}
-.hero-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
-.platforms{margin-top:18px;color:var(--gray);font-size:13px}
-.js .hero-sub{opacity:0;transform:translateY(10px);transition:opacity .7s ease,transform .7s ease}
-.js .hero-sub.show{opacity:1;transform:none}
+.hero-sub{margin-top:20px}
+.sub{
+  color:var(--muted);font-size:clamp(1rem,1.2vw,1.12rem);
+  line-height:1.65;max-width:58ch;
+}
+.hero-badges{
+  display:flex;flex-wrap:wrap;gap:8px;margin-top:20px;
+}
+.h-chip{
+  display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;
+  border-radius:6px;background:var(--elevated);border:1px solid var(--hair);
+  font-size:11.5px;font-weight:600;color:var(--ink-2);font-variant-numeric:tabular-nums;
+}
+.h-chip svg{width:13px;height:13px;color:var(--blue)}
+.hero-ctas{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.platforms{margin-top:16px;color:var(--subtle);font-size:12px;line-height:1.55;max-width:62ch}
+.platforms+.platforms{margin-top:8px;font-size:11.5px}
 
+/* ---------- Hero Right: Live Nemotron 3.5 Multi-Speaker & Engine Card ---------- */
+.hero-card{
+  background:var(--surface);
+  border:1px solid var(--hair);
+  border-radius:12px;
+  box-shadow:0 20px 50px -24px rgba(9,9,11,.12),0 4px 12px -4px rgba(9,9,11,.05);
+  overflow:hidden;
+  display:flex;flex-direction:column;
+}
+.hc-top{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 16px;background:var(--elevated);border-bottom:1px solid var(--hair);
+  flex-wrap:wrap;
+}
+.hc-title{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}
+.hc-title .rec-dot{width:8px;height:8px;border-radius:50%;background:#DC2626;box-shadow:0 0 0 3px rgba(220,38,38,.18)}
+.hc-engine-pill{
+  display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;
+  border-radius:999px;background:var(--violet-bg);border:1px solid var(--violet-border);
+  color:var(--violet);font-size:11px;font-weight:600;
+}
+.hc-body{padding:16px;display:flex;flex-direction:column;gap:12px}
 
-/* ---------- soft cards (features + pricing) ---------- */
-.features{margin-top:150px}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-@media (max-width:940px){.grid3{grid-template-columns:1fr;max-width:560px;margin-left:auto;margin-right:auto}}
-.card{background:var(--soft);border-radius:24px;padding:28px;display:flex;flex-direction:column}
-.badge{align-self:flex-start;display:inline-flex;align-items:center;height:24px;padding:0 12px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:500}
-.card h3{margin-top:18px;font-size:26px;font-weight:500;letter-spacing:-.02em;line-height:1.15}
-.desc{margin-top:12px;color:var(--gray);font-size:14px;line-height:1.6}
-.divider{height:1px;background:var(--div);margin:22px 0 18px}
-.features .desc{margin-bottom:8px}
-.features .divider{margin-top:auto}
-.includes-label{font-size:13px;font-weight:600}
-.checks{display:grid;gap:10px}
-.includes-label+.checks{margin-top:12px}
-.checks li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--gray);line-height:1.5}
-.ck{color:var(--ink);font-weight:600;flex:none}
+/* Engine selector strip inside hero card */
+.hc-engines{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;
+  padding:4px;background:var(--elevated);border:1px solid var(--hair);border-radius:8px;
+}
+.hc-eng{
+  padding:7px 9px;border-radius:6px;display:flex;flex-direction:column;gap:2px;
+  font-size:11px;color:var(--muted);
+}
+.hc-eng.active{
+  background:var(--surface);color:var(--ink);
+  border:1px solid var(--hair);box-shadow:0 1px 2px rgba(9,9,11,.06);
+}
+.hc-eng-name{font-weight:600;color:inherit;display:flex;align-items:center;justify-content:space-between;gap:4px}
+.hc-eng-sub{font-size:10px;color:var(--subtle);font-variant-numeric:tabular-nums}
+.hc-eng.active .hc-eng-sub{color:var(--violet);font-weight:600}
+
+/* 8-speaker multi-track timeline inside hero card */
+.hc-diar{
+  background:var(--canvas);border:1px solid var(--hair);border-radius:8px;padding:11px 12px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.hc-diar-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px}
+.hc-diar-head strong{font-weight:600;color:var(--ink)}
+.hc-diar-head span{color:var(--violet);font-weight:600;font-size:10.5px}
+.hc-tracks{display:flex;flex-direction:column;gap:5px}
+.hc-track{display:grid;grid-template-columns:74px 1fr 42px;align-items:center;gap:8px;font-size:10.5px;font-variant-numeric:tabular-nums}
+.hc-sp-label{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--ink-2)}
+.hc-sp-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.hc-bar-bg{height:6px;border-radius:999px;background:var(--hair);position:relative;overflow:hidden}
+.hc-bar-fill{position:absolute;top:0;bottom:0;border-radius:999px}
+.hc-pct{text-align:right;color:var(--subtle);font-weight:500}
+
+/* Live overlapping speech turns inside hero card */
+.hc-turns{display:flex;flex-direction:column;gap:7px}
+.hc-turn{
+  padding:9px 11px;border-radius:8px;background:var(--surface);border:1px solid var(--hair);
+  display:flex;flex-direction:column;gap:4px;font-size:11.5px;
+}
+.hc-turn.overlap{background:#FFFBEB;border-color:#FDE68A}
+.hc-turn-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.hc-turn-sp{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ink);font-size:11px}
+.hc-turn-time{font-size:10.5px;color:var(--subtle);font-variant-numeric:tabular-nums}
+.hc-turn-txt{color:var(--ink-2);line-height:1.45}
+.hc-turn-tr{
+  margin-top:2px;padding-top:4px;border-top:1px dashed var(--hair);
+  font-size:10.5px;color:var(--blue-dark);display:flex;align-items:center;gap:6px;
+}
+.hc-pill-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
+.hc-mini-pill{
+  display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:4px;
+  font-size:10px;font-weight:600;
+}
+.hc-mini-pill.ov{background:#FEF3C7;color:#B45309;border:1px solid #FDE68A}
+.hc-mini-pill.pii{background:var(--emerald-bg);color:var(--emerald);border:1px solid var(--emerald-border)}
+.hc-mini-pill.ctx{background:var(--blue-bg);color:var(--blue-dark);border:1px solid var(--blue-border)}
+.hc-foot{
+  padding:10px 16px;background:var(--elevated);border-top:1px solid var(--hair);
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-size:11px;color:var(--muted);flex-wrap:wrap;
+}
+
+/* ---------- Section Headers ---------- */
+.sec-head{
+  max-width:68ch;margin:0 auto 36px;text-align:center;
+}
+.sec-eyebrow{
+  display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;
+  border-radius:999px;background:var(--blue-bg);border:1px solid var(--blue-border);
+  color:var(--blue-dark);font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+}
+.sec-head h2{
+  margin-top:12px;font-size:clamp(1.75rem,3vw,2.5rem);
+  font-weight:600;letter-spacing:-.03em;line-height:1.12;color:var(--ink);
+}
+.sec-head p{
+  margin-top:10px;color:var(--muted);font-size:clamp(.95rem,1.2vw,1.06rem);line-height:1.6;
+}
+
+/* ---------- Architectural Bento Grid (#architecture) ---------- */
+.arch-sec{padding:clamp(56px,8vh,96px) 0;border-bottom:1px solid var(--hair);background:var(--canvas)}
+.bento-grid{
+  display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;
+}
+.bento-card{
+  background:var(--surface);border:1px solid var(--hair);border-radius:12px;
+  padding:22px;display:flex;flex-direction:column;gap:12px;
+  box-shadow:0 1px 2px rgba(9,9,11,.03);
+}
+.bento-6{grid-column:span 6}
+.bento-4{grid-column:span 4}
+@media (max-width:960px){
+  .bento-6,.bento-4{grid-column:span 12}
+}
+.b-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.badge{
+  align-self:flex-start;display:inline-flex;align-items:center;height:22px;padding:0 9px;
+  border-radius:6px;background:var(--blue-bg);border:1px solid var(--blue-border);
+  color:var(--blue-dark);font-size:11px;font-weight:600;
+}
+.badge.violet{background:var(--violet-bg);border-color:var(--violet-border);color:var(--violet)}
+.badge.emerald{background:var(--emerald-bg);border-color:var(--emerald-border);color:var(--emerald)}
+.badge.amber{background:var(--amber-bg);border-color:var(--amber-border);color:var(--amber)}
+.b-meta{font-size:11px;font-weight:600;color:var(--subtle);font-variant-numeric:tabular-nums}
+.bento-card h3{font-size:19px;font-weight:600;letter-spacing:-.02em;line-height:1.2;color:var(--ink)}
+.desc{color:var(--muted);font-size:13.5px;line-height:1.6}
+.b-visual{
+  margin-top:4px;padding:12px;border-radius:8px;background:var(--canvas);border:1px solid var(--hair);
+  display:flex;flex-direction:column;gap:8px;
+}
+.b-swatch-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.b-sw{
+  padding:6px 8px;border-radius:6px;background:var(--surface);border:1px solid var(--hair);
+  display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--ink-2);
+}
+.b-prompt-box{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:11px;color:var(--ink-2);line-height:1.5;
+  background:var(--surface);border:1px solid var(--hair);border-radius:6px;padding:8px 10px;
+}
+.divider{height:1px;background:var(--hair);margin:6px 0}
+.includes-label{font-size:12px;font-weight:600;color:var(--ink)}
+.checks{display:grid;gap:8px;margin-top:auto}
+.includes-label+.checks{margin-top:10px}
+.checks li{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--muted);line-height:1.45}
+.ck{color:var(--blue);font-weight:700;flex:none}
 .u{text-decoration:underline;text-underline-offset:3px}
 
-/* ---------- pricing ---------- */
-.pricing{margin-top:160px}
-.pricing-head{position:relative;padding:24px 0 56px}
-.big-h{text-align:center;font-size:clamp(2.4rem,5vw,4rem);font-weight:500;letter-spacing:-.03em;line-height:1.1}
-.caret-h{height:.74em;vertical-align:-.05em;margin-left:.09em}
-.confetti{position:absolute;inset:0;pointer-events:none}
-.confetti i{position:absolute;display:block;border-radius:50%}
-@media (max-width:700px){.confetti{display:none}}
-.price{display:flex;align-items:baseline;gap:8px;margin-top:14px}
-.amount{font-size:38px;font-weight:500;letter-spacing:-.02em;line-height:1.1}
-.per{color:var(--gray);font-size:15px}
+/* ---------- Pricing Section (v1.2 Crisp Cards) ---------- */
+.pricing{padding:clamp(64px,9vh,104px) 0;border-bottom:1px solid var(--hair);background:var(--canvas)}
+.pricing-head{text-align:center;margin-bottom:40px}
+.big-h{font-size:clamp(2rem,3.6vw,3rem);font-weight:600;letter-spacing:-.03em;line-height:1.1}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media (max-width:940px){.grid3{grid-template-columns:1fr;max-width:540px;margin-left:auto;margin-right:auto}}
+.card{
+  background:var(--surface);border:1px solid var(--hair);border-radius:12px;
+  padding:26px;display:flex;flex-direction:column;
+  box-shadow:0 1px 2px rgba(9,9,11,.03);
+}
+.card.featured{
+  border-color:var(--blue);
+  box-shadow:0 12px 32px -16px rgba(37,99,235,.18),0 0 0 1px var(--blue);
+}
+.card h3{margin-top:14px;font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+.price{display:flex;align-items:baseline;gap:8px;margin-top:12px;font-variant-numeric:tabular-nums}
+.amount{font-size:36px;font-weight:600;letter-spacing:-.03em;line-height:1.05;color:var(--ink)}
+.per{color:var(--muted);font-size:14px}
 .pricing .desc{margin-top:8px}
-.cta-stack{display:grid;gap:10px;margin-top:auto;padding-top:26px}
+.cta-stack{display:grid;gap:10px;margin-top:20px;margin-bottom:4px}
 .cta-stack .btn{width:100%}
-.pricing .divider{margin:24px 0 18px}
-.footnote{text-align:center;color:var(--gray);font-size:13px;margin-top:30px}
-.footnote+.footnote{margin-top:10px}
+.pricing .divider{margin:20px 0 16px}
+.footnote{text-align:center;color:var(--subtle);font-size:12.5px;margin-top:28px;max-width:78ch;margin-left:auto;margin-right:auto;line-height:1.55}
+.footnote+.footnote{margin-top:8px}
 
-/* ---------- faq ---------- */
-.faq{margin-top:160px}
-.faq-inner{max-width:840px;margin:0 auto;padding:0 24px}
-.faq-h{font-size:clamp(1.7rem,3vw,2.4rem);font-weight:500;letter-spacing:-.02em;margin-bottom:26px}
+/* ---------- FAQ Section ---------- */
+.faq{padding:clamp(64px,9vh,104px) 0;background:var(--surface);border-bottom:1px solid var(--hair)}
+.faq-inner{max-width:860px;margin:0 auto;padding:0 24px}
+.faq-h{font-size:clamp(1.6rem,2.8vw,2.25rem);font-weight:600;letter-spacing:-.025em;margin-bottom:24px}
 .faq details{border-top:1px solid var(--hair)}
 .faq details:last-of-type{border-bottom:1px solid var(--hair)}
-.faq summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 0;cursor:pointer;font-size:16px;font-weight:500;list-style:none}
+.faq summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;cursor:pointer;font-size:15px;font-weight:600;list-style:none;color:var(--ink)}
 .faq summary::-webkit-details-marker{display:none}
-.faq summary::after{content:"+";flex:none;color:var(--gray);font-size:22px;font-weight:300;line-height:1;transition:transform .18s ease}
+.faq summary::after{content:"+";flex:none;color:var(--subtle);font-size:20px;font-weight:400;line-height:1;transition:transform .18s ease}
 .faq details[open] summary::after{transform:rotate(45deg)}
-.faq .a{padding:0 0 22px;color:var(--gray);font-size:14.5px;line-height:1.65;max-width:64ch}
+.faq .a{padding:0 0 20px;color:var(--muted);font-size:14px;line-height:1.65;max-width:68ch}
 
-/* ---------- footer ---------- */
-.footer{margin-top:170px}
-.foot-top{display:flex;justify-content:space-between;align-items:flex-start;gap:44px;flex-wrap:wrap}
-.foot-line{font-size:clamp(2rem,4vw,3.4rem);font-weight:500;letter-spacing:-.03em;line-height:1.1}
-.foot-cols{display:flex;gap:72px}
-.foot-cols a{display:inline-block;color:var(--gray);font-size:14px;padding:5px 0}
+/* ---------- Footer ---------- */
+.footer{padding:56px 0 36px;background:var(--canvas)}
+.foot-top{display:flex;justify-content:space-between;align-items:flex-start;gap:40px;flex-wrap:wrap;padding-bottom:36px;border-bottom:1px solid var(--hair)}
+.foot-line{font-size:clamp(1.5rem,2.6vw,2.2rem);font-weight:600;letter-spacing:-.025em;line-height:1.15;color:var(--ink)}
+.foot-sub{margin-top:8px;font-size:13px;color:var(--muted);max-width:46ch}
+.foot-cols{display:flex;gap:56px}
+.foot-cols a{display:inline-block;color:var(--muted);font-size:13.5px;font-weight:500;padding:4px 0}
 .foot-cols a:hover{color:var(--ink)}
-.foot-word-wrap{overflow-x:clip;overflow-y:visible;margin-top:56px}
-.foot-word{font-size:25vw;font-weight:500;letter-spacing:-.04em;line-height:1.08;text-align:center;white-space:nowrap;margin:0;color:var(--ink)}
-.foot-bottom{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding-top:18px;padding-bottom:26px}
-.foot-brand{font-size:14px;font-weight:500}
-.foot-links{display:flex;align-items:center;gap:10px;color:var(--gray);font-size:13px}
-.foot-links a{color:var(--gray)}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding-top:22px}
+.foot-brand{font-size:13px;font-weight:600;color:var(--ink)}
+.foot-links{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.foot-links a{color:var(--muted)}
 .foot-links a:hover{color:var(--ink)}
 
 @media (prefers-reduced-motion:reduce){
   .caret{animation:none}
-  .js .hero-sub{transition:none;transform:none}
   .nav,.btn,.faq summary::after{transition:none}
 }
 </style>
 <style id="loop-styles">
-/* ===================== Learning Loop showpiece ===================== */
-/* A dark stage (Antigravity-style) framing ONE white "screen" that slides up +
-   grows to fill; the Capture→Transcribe→Draft→Approve→Recall flow lives inside
-   the screen's own toolbar, so it reads as a single video screen. */
-.loop{position:relative;background:#0A0A0F}
-.loop-runway{position:relative;height:260vh}
-.loop-stage{position:sticky;top:0;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(1200px 680px at 50% 45%,rgba(40,96,255,.20),rgba(10,10,15,0) 60%)}
-.loop-eyebrow{position:absolute;top:clamp(46px,9vh,102px);left:0;right:0;text-align:center;padding:0 24px;pointer-events:none;will-change:opacity;z-index:2}
-.loop-eyebrow .k{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:#7CA0FF}
-.loop-eyebrow .k::before{content:"";width:6px;height:6px;border-radius:50%;background:#7CA0FF;box-shadow:0 0 12px rgba(124,160,255,.9)}
-.loop-eyebrow h2{margin-top:14px;font-size:clamp(1.5rem,3.2vw,2.6rem);font-weight:500;letter-spacing:-.03em;line-height:1.12;color:#fff}
-.loop-eyebrow p{margin:12px auto 0;max-width:50ch;color:rgba(255,255,255,.6);font-size:clamp(.95rem,1.35vw,1.1rem);line-height:1.6}
+/* ===================== 4-Zone Desktop Shell Showpiece (#loop) ===================== */
+.loop{
+  position:relative;
+  background:var(--elevated);
+  border-bottom:1px solid var(--hair);
+  padding:clamp(56px,8vh,88px) 0;
+}
+.loop-runway{position:relative;height:auto}
+.loop-stage{
+  position:relative;min-height:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:0 16px;overflow:visible;
+}
+.loop-eyebrow{position:relative;text-align:center;padding:0 24px;margin-bottom:28px;z-index:2}
+.loop-eyebrow .k{
+  display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 10px;
+  border-radius:999px;background:var(--surface);border:1px solid var(--hair);
+  font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--blue);
+}
+.loop-eyebrow .k::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
+.loop-eyebrow h2{margin-top:12px;font-size:clamp(1.65rem,3vw,2.45rem);font-weight:600;letter-spacing:-.03em;line-height:1.12;color:var(--ink)}
+.loop-eyebrow p{margin:10px auto 0;max-width:60ch;color:var(--muted);font-size:clamp(.95rem,1.2vw,1.05rem);line-height:1.6}
 
-/* the ONE growing screen — a white app surface that fills as it grows */
-.screen{position:relative;width:min(1360px,94vw);aspect-ratio:16/9;max-height:86vh;border-radius:18px;overflow:hidden;background:#fff;display:flex;flex-direction:column;box-shadow:0 50px 130px -30px rgba(34,90,255,.42),0 40px 90px -40px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.06);transform:scale(.5);transform-origin:center center;will-change:transform}
+/* Full-size v1.2 application shell */
+.screen{
+  position:relative;width:min(1260px,95vw);border-radius:12px;overflow:hidden;
+  background:#FAFAFA;display:flex;flex-direction:column;
+  border:1px solid var(--hair-strong);
+  box-shadow:0 24px 60px -24px rgba(9,9,11,.14),0 4px 16px -4px rgba(9,9,11,.06);
+}
 
 /* toolbar — the flow, integrated into the one screen */
-.app-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:clamp(9px,1.05vw,14px) clamp(13px,1.5vw,22px);border-bottom:1px solid var(--hair);flex:none}
-.stepper{display:flex;align-items:center;gap:clamp(4px,.8vw,12px);min-width:0;overflow:hidden}
-.step{display:inline-flex;align-items:center;gap:8px;min-width:0}
-.step .s-dot{width:26px;height:26px;flex:none;border-radius:50%;background:#fff;border:1.5px solid var(--hair);display:grid;place-items:center;color:#AEB4BE;transition:border-color .35s ease,background .35s ease,color .35s ease,box-shadow .35s ease}
-.step .s-dot svg{width:13px;height:13px}
-.step .s-label{font-size:clamp(11px,1.05vw,13px);font-weight:500;color:var(--gray);white-space:nowrap;letter-spacing:-.01em;transition:color .35s ease}
-.step.active .s-dot{border-color:var(--blue);color:var(--blue);box-shadow:0 0 0 4px rgba(30,86,255,.14)}
-.step.active .s-label{color:var(--ink);font-weight:600}
-.step.done .s-dot{border-color:var(--blue);background:var(--blue);color:#fff}
-.sep{flex:none;width:clamp(9px,1.5vw,26px);height:2px;border-radius:2px;background:var(--hair);transition:background .4s ease}
-.sep.on{background:linear-gradient(90deg,#1E56FF,#5B84FF)}
-.local-badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 11px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:11px;font-weight:600;white-space:nowrap;flex:none}
+.app-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 18px;background:#FFFFFF;border-bottom:1px solid #E4E4E7;flex:none;flex-wrap:wrap}
+.stepper{display:flex;align-items:center;gap:clamp(4px,.75vw,10px);min-width:0;overflow:hidden}
+.step{display:inline-flex;align-items:center;gap:7px;min-width:0}
+.step .s-dot{width:24px;height:24px;flex:none;border-radius:50%;background:#fff;border:1.5px solid #E4E4E7;display:grid;place-items:center;color:#71717A;transition:border-color .35s ease,background .35s ease,color .35s ease,box-shadow .35s ease}
+.step .s-dot svg{width:12px;height:12px}
+.step .s-label{font-size:12px;font-weight:500;color:#52525B;white-space:nowrap;letter-spacing:-.01em;transition:color .35s ease}
+.step.active .s-dot{border-color:#2563EB;color:#2563EB;box-shadow:0 0 0 4px rgba(37,99,235,.14)}
+.step.active .s-label{color:#09090B;font-weight:600}
+.step.done .s-dot{border-color:#2563EB;background:#2563EB;color:#fff}
+.sep{flex:none;width:clamp(8px,1.2vw,20px);height:2px;border-radius:2px;background:#E4E4E7;transition:background .4s ease}
+.sep.on{background:linear-gradient(90deg,#2563EB,#60A5FA)}
+.bar-badges{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nemotron-badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;background:#F5F3FF;border:1px solid #DDD6FE;color:#6D28D9;font-size:11px;font-weight:600;white-space:nowrap}
+.nemotron-badge .n-dot{width:6px;height:6px;border-radius:50%;background:#6D28D9}
+.local-badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 11px;border-radius:999px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1D4ED8;font-size:11px;font-weight:600;white-space:nowrap;flex:none}
 .local-badge svg{width:12px;height:12px}
 
 /* per-stage status line */
-.app-status{display:flex;align-items:center;gap:9px;padding:clamp(7px,.85vw,11px) clamp(13px,1.5vw,22px);border-bottom:1px solid var(--hair);font-size:clamp(11px,1.1vw,13px);font-weight:500;color:var(--ink);flex:none}
-.app-status .live{width:8px;height:8px;border-radius:50%;background:var(--blue);flex:none;animation:lpulse 1.9s ease-out infinite}
-.app-status .live.rec{background:#EA4335;animation:rpulse 1.9s ease-out infinite}
+.app-status{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 18px;background:#F4F4F5;border-bottom:1px solid #E4E4E7;font-size:12px;font-weight:500;color:#18181B;flex:none;flex-wrap:wrap}
+.app-status-left{display:flex;align-items:center;gap:9px;min-width:0}
+.app-status .live{width:8px;height:8px;border-radius:50%;background:#2563EB;flex:none;animation:lpulse 1.9s ease-out infinite}
+.app-status .live.rec{background:#DC2626;animation:rpulse 1.9s ease-out infinite}
 .app-status .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-@keyframes lpulse{0%{box-shadow:0 0 0 0 rgba(30,86,255,.45)}70%{box-shadow:0 0 0 8px rgba(30,86,255,0)}100%{box-shadow:0 0 0 0 rgba(30,86,255,0)}}
-@keyframes rpulse{0%{box-shadow:0 0 0 0 rgba(234,67,53,.45)}70%{box-shadow:0 0 0 8px rgba(234,67,53,0)}100%{box-shadow:0 0 0 0 rgba(234,67,53,0)}}
+.wave{display:inline-flex;align-items:center;gap:2px;height:16px;margin-left:6px}
+.wave i{width:2.5px;height:100%;background:#2563EB;border-radius:2px;transform:scaleY(.35);animation:wv 1.05s ease-in-out infinite}
+@keyframes lpulse{0%{box-shadow:0 0 0 0 rgba(37,99,235,.45)}70%{box-shadow:0 0 0 8px rgba(37,99,235,0)}100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}}
+@keyframes rpulse{0%{box-shadow:0 0 0 0 rgba(220,38,38,.45)}70%{box-shadow:0 0 0 8px rgba(220,38,38,0)}100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}}
 
-.app-panes{position:relative;flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr}
-.pane{padding:clamp(11px,1.6vw,19px);min-width:0;overflow:hidden;display:flex;flex-direction:column}
-.pane.left{border-right:1px solid var(--hair)}
-.pane-h{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--gray);margin-bottom:11px;flex:none}
+/* Real Mityu 4-Zone Desktop Shell: AppRail + MeetingsPane + Workspace + EvidenceDrawer */
+.app-panes{position:relative;flex:1;min-height:520px;display:grid;grid-template-columns:52px 210px minmax(0,1fr) 310px;background:#FAFAFA}
 
-.wave{display:flex;align-items:center;gap:3px;height:clamp(44px,6vw,62px);opacity:0;transition:opacity .4s ease}
-.wave i{flex:1;min-width:2px;height:100%;background:linear-gradient(180deg,#6E93FF,#1E56FF);border-radius:2px;transform:scaleY(.16)}
-.cap-note{margin-top:12px;color:var(--gray);font-size:clamp(11px,1.15vw,12.5px);line-height:1.5;max-width:34ch;opacity:0;transition:opacity .4s ease}
-.screen[data-stage="capture"] .wave{opacity:1}
-.screen[data-stage="capture"] .cap-note{opacity:1;transition-delay:.15s}
-.screen[data-stage="capture"] .wave i{animation:wv 1.05s ease-in-out infinite}
+/* 1. AppRail (52px) */
+.v-rail{background:#F4F4F5;border-right:1px solid #E4E4E7;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:8px}
+.v-rail-logo{width:32px;height:32px;border-radius:8px;background:#2563EB;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;margin-bottom:6px}
+.v-rail-btn{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;color:#52525B}
+.v-rail-btn.active{background:#FFFFFF;color:#09090B;box-shadow:0 1px 2px rgba(15,23,42,.08);border:1px solid #E4E4E7}
+.v-rail-btn svg{width:16px;height:16px}
+.v-rail-spacer{flex:1}
 
-.tlines{display:flex;flex-direction:column;gap:2px}
-.tline{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;padding:6px 8px;border-radius:10px;font-size:clamp(11px,1.13vw,13px);line-height:1.48;opacity:0;transform:translateY(7px);transition:opacity .5s ease,transform .5s ease,background .4s ease}
-.tline p{margin:0}
-.tline .tt{flex:none;color:var(--gray);font-variant-numeric:tabular-nums;font-size:11px;padding-top:1px}
-.tline .tag{display:block;margin-top:3px;font-size:10px;font-weight:600;color:var(--blue)}
-.tline>div{min-width:0;flex:1}
-.tlines .tline:nth-child(1){transition-delay:.05s}
-.tlines .tline:nth-child(2){transition-delay:.32s}
-.tlines .tline:nth-child(3){transition-delay:.6s}
-.tlines .tline:nth-child(4){transition-delay:.88s}
-.screen[data-stage="transcribe"] .tline,.screen[data-stage="draft"] .tline,.screen[data-stage="approve"] .tline,.screen[data-stage="recall"] .tline{opacity:1;transform:none}
-.screen[data-stage="draft"] .tline.linked,.screen[data-stage="approve"] .tline.linked,.screen[data-stage="recall"] .tline.linked{background:var(--blue-bg)}
+/* 2. MeetingsPane (210px) */
+.v-library{background:#F4F4F5;border-right:1px solid #E4E4E7;padding:12px 10px;display:flex;flex-direction:column;gap:10px}
+.v-lib-head{display:flex;align-items:center;justify-content:space-between;padding:0 4px}
+.v-lib-title{font-size:12px;font-weight:600;color:#09090B}
+.v-lib-count{font-size:10.5px;color:#71717A;font-variant-numeric:tabular-nums}
+.v-lib-search{height:28px;padding:0 9px;border-radius:6px;background:#FFFFFF;border:1px solid #E4E4E7;display:flex;align-items:center;gap:6px;font-size:11px;color:#71717A}
+.v-lib-group{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#71717A;padding:4px 4px 2px}
+.v-lib-item{padding:8px 9px;border-radius:8px;display:flex;flex-direction:column;gap:3px;border:1px solid transparent}
+.v-lib-item.active{background:#FFFFFF;border-color:#E4E4E7;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.v-lib-item-title{font-size:11.5px;font-weight:600;color:#09090B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v-lib-item-meta{display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:#71717A;font-variant-numeric:tabular-nums}
+.v-pill{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px;border-radius:999px;font-size:10px;font-weight:600}
+.v-pill.ok{background:#ECFDF5;color:#047857}
+.v-pill.warn{background:#FFFBEB;color:#B45309}
+.v-pill.ai{background:#F5F3FF;color:#6D28D9}
 
-.rep{display:flex;flex-direction:column;height:100%;min-height:0}
-.chips{display:flex;flex-wrap:wrap;gap:6px;opacity:0;transform:translateY(7px);transition:.5s ease}
-.chips .c{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:var(--soft);color:var(--gray);font-size:11px;white-space:nowrap}
-.sum{margin-top:13px;opacity:0;transform:translateY(7px);transition:.5s ease}
-.sum-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.sum-h h4{font-size:13px;font-weight:600;margin:0}
-.ai-chip{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:10.5px;font-weight:600;white-space:nowrap}
-.sum>p{margin:8px 0 0;color:var(--gray);font-size:clamp(11px,1.1vw,12px);line-height:1.5}
-.acts{margin-top:12px;opacity:0;transform:translateY(7px);transition:.5s ease}
-.acts h4{font-size:13px;font-weight:600;margin:0 0 6px}
-.act{display:flex;gap:8px;align-items:flex-start;margin-top:7px;font-size:clamp(11px,1.1vw,12px);line-height:1.45}
-.act p{margin:0}
-.act .bx{flex:none;width:15px;height:15px;border:1.5px solid #C6CAD1;border-radius:4px;margin-top:1px;display:grid;place-items:center;color:#fff;transition:background .3s ease,border-color .3s ease}
+/* 3. Center Workspace */
+.v-main{background:#FFFFFF;padding:16px 20px;display:flex;flex-direction:column;gap:12px;min-width:0;overflow:hidden}
+.v-page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid #E4E4E7}
+.v-eyebrow{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#71717A}
+.v-h1{font-size:16px;font-weight:600;color:#09090B;letter-spacing:-.015em;margin-top:2px}
+.v-head-actions{display:flex;align-items:center;gap:6px;flex:none}
+.v-btn-ghost{height:28px;padding:0 10px;border-radius:6px;border:1px solid #E4E4E7;background:#FFFFFF;color:#18181B;font-size:11.5px;font-weight:500;display:inline-flex;align-items:center;gap:5px}
+.v-btn-primary{height:28px;padding:0 11px;border-radius:6px;background:#2563EB;color:#FFFFFF;font-size:11.5px;font-weight:500;display:inline-flex;align-items:center;gap:5px}
+
+/* StatTile 4-column grid */
+.chips{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.stat-tile{background:#F4F4F5;border:1px solid #E4E4E7;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.stat-k{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#71717A}
+.stat-v{font-size:14px;font-weight:600;color:#09090B;font-variant-numeric:tabular-nums}
+.stat-s{font-size:10.5px;color:#52525B}
+
+/* TalkTimePanel (8-speaker live Nemotron attribution) */
+.v-talk{background:#FAFAFA;border:1px solid #E4E4E7;border-radius:8px;padding:9px 11px;display:flex;flex-direction:column;gap:7px}
+.v-talk-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.v-talk-title{font-size:11px;font-weight:600;color:#09090B}
+.v-talk-sub{font-size:10.5px;color:#6D28D9;font-weight:600}
+.v-talk-bar{height:7px;border-radius:999px;background:#E4E4E7;overflow:hidden;display:flex;gap:1px}
+.v-talk-legend{display:flex;flex-wrap:wrap;gap:10px;font-size:10.5px;color:#52525B;font-variant-numeric:tabular-nums}
+.v-sp-chip{display:inline-flex;align-items:center;gap:5px;font-weight:500;color:#18181B}
+.v-sp-dot{width:7px;height:7px;border-radius:50%;flex:none}
+
+/* Art. 50 AI-generated Notice */
+.v-notice-ai{background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:8px 11px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.v-notice-txt{font-size:11px;color:#4C1D95;line-height:1.4}
+.ai-chip{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;background:#EDE9FE;color:#6D28D9;font-size:10.5px;font-weight:600;white-space:nowrap;flex:none}
+
+/* SectionCards (Summary & Action items) */
+.sum,.acts{background:#FFFFFF;border:1px solid #E4E4E7;border-radius:8px;padding:10px 12px}
+.sum-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sum-h h4,.acts h4{font-size:12.5px;font-weight:600;color:#09090B;margin:0}
+.sum>p{margin:6px 0 0;color:#3F3F46;font-size:11.5px;line-height:1.5}
+.v-cite-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.srcx{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:5px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1D4ED8;font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.act{display:flex;gap:8px;align-items:flex-start;margin-top:7px;font-size:11.5px;color:#18181B;line-height:1.45}
+.act p{margin:0;flex:1}
+.act .bx{flex:none;width:15px;height:15px;border:1.5px solid #A1A1AA;border-radius:4px;margin-top:1px;display:grid;place-items:center;color:#fff;transition:background .3s ease,border-color .3s ease}
 .act .bx svg{width:10px;height:10px;opacity:0;transition:opacity .3s ease}
-.srcx{color:var(--blue);font-weight:500;white-space:nowrap}
-.approve{margin-top:auto;display:flex;align-items:center;gap:11px;padding-top:12px;border-top:1px solid var(--hair);opacity:0;transition:opacity .5s ease}
-.btn-mini{height:30px;padding:0 15px;border-radius:999px;background:var(--ink);color:#fff;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:6px}
-.approve .done{display:none;align-items:center;gap:7px;color:#1a7f37;font-size:12px;font-weight:600}
-.approve .done svg{width:15px;height:15px}
-.screen[data-stage="draft"] .chips,.screen[data-stage="approve"] .chips,.screen[data-stage="recall"] .chips{opacity:1;transform:none}
-.screen[data-stage="draft"] .sum,.screen[data-stage="approve"] .sum,.screen[data-stage="recall"] .sum{opacity:1;transform:none;transition-delay:.15s}
-.screen[data-stage="draft"] .acts,.screen[data-stage="approve"] .acts,.screen[data-stage="recall"] .acts{opacity:1;transform:none;transition-delay:.3s}
-.screen[data-stage="approve"] .approve,.screen[data-stage="recall"] .approve{opacity:1}
+.approve{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:11px;padding-top:8px;border-top:1px solid #E4E4E7}
+.btn-mini{height:26px;padding:0 12px;border-radius:6px;background:#09090B;color:#fff;font-size:11.5px;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.approve .done{display:none;align-items:center;gap:6px;color:#047857;font-size:11.5px;font-weight:600}
+.approve .done svg{width:14px;height:14px}
 .screen.is-approved .btn-mini{display:none}
 .screen.is-approved .approve .done{display:inline-flex}
-.screen.is-approved .act .bx{background:var(--blue);border-color:var(--blue)}
+.screen.is-approved .act .bx{background:#2563EB;border-color:#2563EB}
 .screen.is-approved .act .bx svg{opacity:1}
 
+/* 4. Right EvidenceDrawer (310px) */
+.v-evidence{background:#FAFAFA;border-left:1px solid #E4E4E7;padding:14px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.v-ev-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding-bottom:8px;border-bottom:1px solid #E4E4E7}
+.v-ev-title{font-size:12px;font-weight:600;color:#09090B}
+.v-ev-meta{font-size:10.5px;color:#2563EB;font-weight:600;font-variant-numeric:tabular-nums}
+.cap-note{margin:0;color:#52525B;font-size:11px;line-height:1.45;padding:6px 8px;background:#FFFFFF;border:1px solid #E4E4E7;border-radius:6px}
+.tlines{display:flex;flex-direction:column;gap:6px}
+.tline{display:flex;flex-direction:column;gap:4px;padding:8px 9px;border-radius:8px;background:#FFFFFF;border:1px solid #E4E4E7;font-size:11.2px;line-height:1.45;color:#18181B;transition:background .3s ease,border-color .3s ease}
+.tline.linked{background:#EFF6FF;border-color:#93C5FD;box-shadow:0 0 0 2px rgba(37,99,235,.10)}
+.tline-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.tline-sp{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#09090B}
+.tline .tt{color:#71717A;font-variant-numeric:tabular-nums;font-size:10.5px}
+.tline p{margin:0;color:#27272A}
+.tline-badges{display:flex;align-items:center;gap:5px;margin-top:2px;flex-wrap:wrap}
+.tline .tag{display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:4px;background:#DBEAFE;font-size:10px;font-weight:600;color:#1D4ED8}
+.tline .overlap-tag{display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:4px;background:#FEF3C7;border:1px solid #FDE68A;font-size:10px;font-weight:600;color:#B45309}
+
 /* recall overlay */
-.recall{position:absolute;inset:0;display:flex;flex-direction:column;gap:13px;align-items:center;justify-content:center;padding:clamp(14px,3vw,28px);background:linear-gradient(180deg,rgba(248,250,253,.9),rgba(233,240,255,.92));opacity:0;pointer-events:none;transition:opacity .45s ease}
+.recall{position:absolute;inset:0;display:flex;flex-direction:column;gap:13px;align-items:center;justify-content:center;padding:clamp(14px,3vw,28px);background:linear-gradient(180deg,rgba(248,250,253,.94),rgba(233,240,255,.95));opacity:0;pointer-events:none;transition:opacity .45s ease}
 .screen[data-stage="recall"] .recall{opacity:1}
 .recall-bar{width:min(430px,92%);display:flex;align-items:center;gap:10px;height:42px;padding:0 15px;background:#fff;border:1px solid var(--hair);border-radius:999px;box-shadow:0 12px 26px -16px rgba(11,11,15,.22)}
 .recall-bar .rc-ic{color:var(--gray);display:grid;place-items:center}
@@ -252,7 +538,7 @@ a{color:inherit;text-decoration:none}
 .rc-caret{width:2px;height:16px;background:var(--blue);animation:blink 1.12s steps(1,end) infinite}
 .recall-res{width:min(430px,92%);display:flex;flex-direction:column;gap:12px;opacity:0;transform:translateY(9px);transition:.5s ease}
 .screen[data-stage="recall"] .recall-res{opacity:1;transform:none;transition-delay:.95s}
-.rc-card{background:#fff;border:1px solid var(--hair);border-radius:14px;padding:13px 16px;box-shadow:0 14px 32px -20px rgba(11,11,15,.22)}
+.rc-card{background:#fff;border:1px solid var(--hair);border-radius:12px;padding:13px 16px;box-shadow:0 14px 32px -20px rgba(11,11,15,.22)}
 .rc-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .rc-title{font-size:13px;font-weight:600}
 .rc-badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;border-radius:999px;background:#E7F6EC;color:#1a7f37;font-size:11px;font-weight:600;white-space:nowrap}
@@ -262,137 +548,118 @@ a{color:inherit;text-decoration:none}
 .rc-plus svg{width:14px;height:14px;flex:none}
 .screen[data-stage="recall"] .rc-plus{opacity:1;transform:none;transition-delay:1.55s}
 
-.app-statusbar{display:flex;align-items:center;gap:8px;padding:clamp(7px,.85vw,11px) clamp(13px,1.5vw,22px);border-top:1px solid var(--hair);color:var(--gray);font-size:clamp(10px,1vw,12px);font-weight:500;flex:none}
-.app-statusbar .sb-lock{display:grid;place-items:center;color:var(--blue);flex:none}
+.app-statusbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 18px;background:#F4F4F5;border-top:1px solid #E4E4E7;color:#52525B;font-size:11.5px;font-weight:500;flex:none;flex-wrap:wrap}
+.app-statusbar-left{display:flex;align-items:center;gap:8px}
+.app-statusbar .sb-lock{display:grid;place-items:center;color:#2563EB;flex:none}
 .app-statusbar .sb-lock svg{width:13px;height:13px}
 
-@keyframes wv{0%,100%{transform:scaleY(.16)}50%{transform:scaleY(1)}}
+@keyframes wv{0%,100%{transform:scaleY(.22)}50%{transform:scaleY(1)}}
 
-/* tablet */
-@media (max-width:1024px){.screen{transform:scale(.66)}}
-
-/* mobile: drop the pin/scale, static full-width screen (stepper shows icons only) */
-@media (max-width:720px){
-  .loop-runway{height:auto}
-  .loop-stage{position:static;height:auto;flex-direction:column;padding:44px 0;overflow:visible;background:radial-gradient(900px 520px at 50% 28%,rgba(40,96,255,.18),rgba(10,10,15,0) 60%)}
-  .loop-eyebrow{position:static;opacity:1!important;margin-bottom:26px;max-width:34ch;margin-left:auto;margin-right:auto}
-  .screen{transform:none!important;width:94vw;aspect-ratio:auto;max-height:none;height:748px;border-radius:16px}
+@media (max-width:1080px){
+  .app-panes{grid-template-columns:48px 1fr 280px}
+  .v-library{display:none}
+}
+@media (max-width:760px){
+  .screen{width:95vw;border-radius:12px}
   .step .s-label{display:none}
   .app-panes{grid-template-columns:1fr}
-  .pane.left{border-right:0;border-bottom:1px solid var(--hair)}
+  .v-rail,.v-library{display:none}
+  .v-evidence{border-left:0;border-top:1px solid #E4E4E7}
+  .chips{grid-template-columns:repeat(2,1fr)}
 }
-
-/* reduced motion: static, full size, resolved (approved) frame */
 @media (prefers-reduced-motion:reduce){
-  .loop-runway{height:auto}
-  .loop-stage{position:static;height:auto;flex-direction:column;padding:56px 0;overflow:visible}
-  .loop-eyebrow{position:static;opacity:1!important;margin-bottom:28px}
-  .screen{transform:none!important}
-  .app-status .live{animation:none}
-  .screen[data-stage] .wave i{animation:none}
-  .sep,.step .s-dot,.tline,.chips,.sum,.acts,.approve,.recall,.recall-res,.rc-plus{transition:none}
+  .app-status .live,.wave i{animation:none}
+  .sep,.step .s-dot,.tline,.recall,.recall-res,.rc-plus{transition:none}
 }
 </style>
 <style id="learn-styles">
-/* ============ The learning loop — how Mityu learns from your edits ============ */
-/* Contained, self-playing demo: fix a draft -> Mityu proposes a plain-language
-   rule -> you approve -> the next report follows it. Local + human-approved. */
-.learn{position:relative;background:linear-gradient(180deg,#FFFFFF 0%,#EDF2FF 50%,#FFFFFF 100%)}
-.learn-runway{position:relative;height:200vh}
-.learn-stage{position:sticky;top:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:clamp(60px,10vh,120px) 24px}
+/* ============ The Learning Loop (#learn) ============ */
+.learn{
+  position:relative;
+  background:var(--surface);
+  border-bottom:1px solid var(--hair);
+  padding:clamp(60px,9vh,100px) 24px;
+}
+.learn-runway{position:relative;height:auto}
+.learn-stage{position:relative;min-height:0;display:flex;align-items:center;justify-content:center}
 .learn-wrap{max-width:880px;margin:0 auto;width:100%}
 .learn-head{text-align:center;max-width:60ch;margin:0 auto}
-.learn-k{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--blue)}
+.learn-k{
+  display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 10px;
+  border-radius:999px;background:var(--blue-bg);border:1px solid var(--blue-border);
+  font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--blue-dark);
+}
 .learn-k::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
-.learn-head h2{margin-top:14px;font-size:clamp(1.8rem,3.6vw,2.9rem);font-weight:500;letter-spacing:-.03em;line-height:1.1;color:var(--ink)}
-.learn-head p{margin:16px auto 0;max-width:56ch;color:var(--gray);font-size:clamp(1rem,1.4vw,1.15rem);line-height:1.65}
+.learn-head h2{margin-top:12px;font-size:clamp(1.75rem,3vw,2.5rem);font-weight:600;letter-spacing:-.03em;line-height:1.1;color:var(--ink)}
+.learn-head p{margin:12px auto 0;max-width:56ch;color:var(--muted);font-size:clamp(.95rem,1.2vw,1.06rem);line-height:1.65}
 
-.learn-demo{position:relative;max-width:720px;margin:clamp(34px,5vw,54px) auto 0;background:#fff;border:1px solid var(--hair);border-radius:22px;box-shadow:0 44px 100px -50px rgba(30,86,255,.4),0 18px 44px -26px rgba(11,11,15,.16);display:flex;flex-direction:column;overflow:hidden;transform:scale(.72);transform-origin:center center;will-change:transform}
-
-.ld-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:clamp(11px,1.5vw,15px) clamp(15px,2vw,22px);border-bottom:1px solid var(--hair)}
+.learn-demo{
+  position:relative;max-width:760px;margin:32px auto 0;
+  background:var(--surface);border:1px solid var(--hair-strong);border-radius:12px;
+  box-shadow:0 18px 44px -22px rgba(9,9,11,.12);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.ld-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid #E4E4E7;background:#FAFAFA}
 .ld-title{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--ink)}
 .ld-title .dot{width:8px;height:8px;border-radius:50%;background:var(--blue);animation:lpulse 1.9s ease-out infinite}
 .ld-rules-pill{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 12px;border-radius:999px;background:var(--soft);color:var(--gray);font-size:12px;font-weight:500;white-space:nowrap;transition:background .45s ease,color .45s ease}
 .ld-rules-pill.has{background:var(--blue-bg);color:var(--blue);font-weight:600}
 .ld-rules-pill svg{width:13px;height:13px}
 
-.ld-cap{display:flex;align-items:center;gap:9px;padding:clamp(12px,1.6vw,16px) clamp(15px,2vw,24px) 0;font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--blue);min-height:16px}
+.ld-cap{display:flex;align-items:center;gap:9px;padding:14px 20px 0;font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--blue);min-height:16px}
 .ld-cap::before{content:"";width:16px;height:1.5px;border-radius:2px;background:var(--blue);flex:none}
 
-.ld-body{position:relative;padding:clamp(13px,1.8vw,18px) clamp(15px,2vw,24px) clamp(16px,2.2vw,24px);min-height:clamp(276px,33vw,326px)}
-
-.ld-item{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;border:1px solid var(--hair);border-radius:14px;background:#fff}
-.ld-item .bx{flex:none;width:17px;height:17px;border:1.6px solid #C6CAD1;border-radius:5px;margin-top:2px;display:grid;place-items:center}
-.ld-item .bx.on{background:#1a7f37;border-color:#1a7f37;color:#fff}
+.ld-body{position:relative;padding:14px 20px 20px;min-height:260px}
+.ld-item{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;border:1px solid var(--hair);border-radius:8px;background:#fff}
+.ld-item .bx{flex:none;width:17px;height:17px;border:1.6px solid #C6CAD1;border-radius:4px;margin-top:2px;display:grid;place-items:center}
+.ld-item .bx.on{background:#047857;border-color:#047857;color:#fff}
 .ld-item .bx svg{width:11px;height:11px}
-.it-text{font-size:clamp(13px,1.3vw,14.5px);line-height:1.55;color:var(--ink)}
+.it-text{font-size:13.5px;line-height:1.55;color:var(--ink)}
 .it-text .add{color:var(--blue);font-weight:600;white-space:nowrap}
 .ld-caret{display:inline-block;width:2px;height:1em;background:var(--blue);vertical-align:-.15em;margin-left:1px;opacity:0;animation:blink 1.12s steps(1,end) infinite}
 .learn-demo[data-step="correct"] .ld-caret{opacity:1}
-.ld-edited-chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;margin-top:12px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:11px;font-weight:600;opacity:0;transform:translateY(4px);transition:opacity .4s ease,transform .4s ease}
+.ld-edited-chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;margin-top:10px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:11px;font-weight:600}
 .ld-edited-chip svg{width:12px;height:12px}
 
-.ld-rule{margin-top:15px;border:1px solid var(--hair);border-radius:14px;background:linear-gradient(180deg,#FBFCFE,#F3F7FF);padding:14px 15px;opacity:0;transform:translateY(12px);transition:opacity .55s ease,transform .55s ease,border-color .5s ease,background .5s ease}
+.ld-rule{margin-top:12px;border:1px solid var(--hair);border-radius:8px;background:var(--canvas);padding:13px 15px;transition:border-color .5s ease,background .5s ease}
 .ld-rule-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .ld-rule-h .spark{color:var(--blue);display:grid;place-items:center}
 .ld-rule-h .spark svg{width:15px;height:15px}
 .r-title{font-size:12.5px;font-weight:600;color:var(--ink)}
 .ld-tag{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 9px;border-radius:999px;background:var(--blue-bg);color:var(--blue);font-size:10.5px;font-weight:600}
-.ld-tag.active{display:none;background:#E7F6EC;color:#1a7f37}
+.ld-tag.active{display:none;background:#ECFDF5;color:#047857}
 .ld-tag.active svg{width:11px;height:11px}
-.ld-rule-text{margin:10px 0 0;font-size:clamp(13px,1.3vw,14.5px);font-weight:600;color:var(--ink);line-height:1.45}
-.ld-rule-meta{margin:7px 0 0;font-size:11.5px;color:var(--gray);line-height:1.45}
+.ld-rule-text{margin:8px 0 0;font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.45}
+.ld-rule-meta{margin:6px 0 0;font-size:11.5px;color:var(--gray);line-height:1.45}
 
-.ld-applied{position:absolute;inset:0;padding:clamp(13px,1.8vw,18px) clamp(15px,2vw,24px);opacity:0;transform:translateY(12px);transition:opacity .55s ease,transform .55s ease;pointer-events:none}
-.ld-applied .ld-item{border-color:#CDE7D6;background:#FBFEFC}
-.ld-applied-tag{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;margin-top:12px;border-radius:999px;background:#E7F6EC;color:#1a7f37;font-size:11px;font-weight:600}
+.ld-applied{position:absolute;inset:0;padding:14px 20px;opacity:0;transform:translateY(12px);transition:opacity .55s ease,transform .55s ease;pointer-events:none}
+.ld-applied .ld-item{border-color:#A7F3D0;background:#ECFDF5}
+.ld-applied-tag{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;margin-top:12px;border-radius:999px;background:#ECFDF5;color:#047857;font-size:11px;font-weight:600}
 .ld-applied-tag svg{width:12px;height:12px}
-.ld-metric{display:flex;align-items:center;gap:8px;margin-top:18px;font-size:12.5px;color:var(--gray);line-height:1.4}
-.ld-metric b{color:#1a7f37;font-weight:600}
-.ld-metric .mdot{width:7px;height:7px;border-radius:50%;background:#1a7f37;flex:none}
+.ld-metric{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12.5px;color:var(--gray);line-height:1.4}
+.ld-metric b{color:#047857;font-weight:600}
+.ld-metric .mdot{width:7px;height:7px;border-radius:50%;background:#047857;flex:none}
 
-/* ---- step gating ---- */
 .ld-editing{transition:opacity .5s ease,transform .5s ease}
-.learn-demo[data-step="learn"] .ld-rule,.learn-demo[data-step="approve"] .ld-rule{opacity:1;transform:none}
-.learn-demo[data-step="learn"] .ld-edited-chip,.learn-demo[data-step="approve"] .ld-edited-chip{opacity:1;transform:none}
 .learn-demo[data-step="apply"] .ld-editing{opacity:0;transform:translateY(-10px)}
 .learn-demo[data-step="apply"] .ld-applied{opacity:1;transform:none}
 .learn-demo.approved .ld-tag:not(.active){display:none}
 .learn-demo.approved .ld-tag.active{display:inline-flex}
-.learn-demo.approved .ld-rule{border-color:#CDE7D6;background:linear-gradient(180deg,#FBFEFC,#EFF9F2)}
+.learn-demo.approved .ld-rule{border-color:#A7F3D0;background:#ECFDF5}
 
-.ld-foot{display:flex;align-items:center;gap:8px;padding:clamp(10px,1.4vw,13px) clamp(15px,2vw,22px);border-top:1px solid var(--hair);color:var(--gray);font-size:clamp(11px,1.05vw,12px);font-weight:500}
+.ld-foot{display:flex;align-items:center;gap:8px;padding:10px 18px;border-top:1px solid #E4E4E7;background:#FAFAFA;color:var(--gray);font-size:11.5px;font-weight:500}
 .ld-foot .lk{color:var(--blue);display:grid;place-items:center}
 .ld-foot .lk svg{width:13px;height:13px}
 
-.learn-cycle{display:flex;align-items:center;justify-content:center;gap:clamp(5px,.9vw,11px);margin-top:clamp(24px,3.4vw,36px);flex-wrap:wrap}
-.lc-step{display:inline-flex;align-items:center;gap:7px;font-size:clamp(11px,1.15vw,13px);font-weight:500;color:var(--gray);transition:color .35s ease}
-.lc-step .lc-dot{width:9px;height:9px;border-radius:50%;background:var(--hair);transition:background .35s ease,box-shadow .35s ease}
+.learn-cycle{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:24px;flex-wrap:wrap}
+.lc-step{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;color:var(--gray);transition:color .35s ease}
+.lc-step .lc-dot{width:8px;height:8px;border-radius:50%;background:var(--hair-strong);transition:background .35s ease,box-shadow .35s ease}
 .lc-step.active{color:var(--ink);font-weight:600}
-.lc-step.active .lc-dot{background:var(--blue);box-shadow:0 0 0 4px rgba(30,86,255,.14)}
+.lc-step.active .lc-dot{background:var(--blue);box-shadow:0 0 0 4px rgba(37,99,235,.14)}
 .lc-step.done .lc-dot{background:var(--blue)}
-.lc-arrow{color:#C6CAD1;font-size:13px}
+.lc-arrow{color:#A1A1AA;font-size:13px}
 .lc-loop{display:inline-flex;color:var(--blue);margin-left:2px}
 .lc-loop svg{width:16px;height:16px}
-
-@media (max-width:720px){
-  .learn-runway{height:auto}
-  .learn-stage{position:static;min-height:0;padding:clamp(56px,10vh,120px) 24px}
-  .learn-demo{transform:none!important}
-}
-@media (max-width:640px){
-  .learn-demo{max-width:100%}
-  .ld-body{min-height:308px}
-  .learn-cycle{gap:5px}
-}
-@media (prefers-reduced-motion:reduce){
-  .learn-runway{height:auto}
-  .learn-stage{position:static;min-height:0;padding:56px 24px}
-  .learn-demo{transform:none!important}
-  .ld-title .dot{animation:none}
-  .ld-item,.ld-rule,.ld-applied,.ld-edited-chip,.ld-editing,.lc-step .lc-dot,.ld-rules-pill{transition:none}
-  .ld-caret{display:none}
-}
 </style>
 </head>
 <body>
@@ -402,109 +669,372 @@ a{color:inherit;text-decoration:none}
   <div class="nav-inner">
     <a class="brand" href="#" aria-label="Mityu home">
       <svg width="26" height="26" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
-        <rect width="120" height="120" rx="30" fill="#1E56FF"/><circle cx="38" cy="40" r="9" fill="#fff"/><polygon points="52,30 70,30 92,86 74,86" fill="#fff"/>
+        <rect width="120" height="120" rx="28" fill="#2563EB"/><circle cx="38" cy="40" r="9" fill="#fff"/><polygon points="52,30 70,30 92,86 74,86" fill="#fff"/>
       </svg>
       <span class="wordmark">mityu</span>
     </a>
+    <span class="brand-pill"><i></i>Local-First AI Workstation</span>
     <nav class="nav-links" aria-label="Primary">
-      <a href="#loop">How it works</a>
+      <a href="#architecture">Architecture &amp; Nemotron 3.5</a>
+      <a href="#loop">4-Zone Workspace</a>
+      <a href="#learn">Learning Loop</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </nav>
-    <a class="btn btn-black nav-cta" href="/download">Download</a>
+    <div class="nav-cta">
+      <a class="btn btn-gray btn-sm" href="#pricing">Pricing</a>
+      <a class="btn btn-primary btn-sm" href="/download">Download for Windows</a>
+    </div>
   </div>
 </header>
 
 <main id="main">
 
-  <!-- ================= hero ================= -->
-  <section class="hero" aria-label="Introduction">
-    <h1 class="headline">
-      <span class="sr-only">Meetings, captured locally.</span>
-      <span aria-hidden="true"><span class="typed" id="typed">Meetings, captured locally.</span><span class="caret"></span></span>
-    </h1>
-    <div class="hero-sub" id="heroSub">
-      <p class="sub">Mityu records and transcribes meetings on your machine, with local reporting by default. No bots. No audio uploads. No account.</p>
-      <div class="hero-ctas">
-        <a class="btn btn-black" href="/download">Download for Windows</a>
-        <a class="btn btn-gray" href="#pricing">See pricing</a>
+  <!-- ================= Redesigned Split Architectural Hero ================= -->
+  <div class="hero-wrap">
+    <section class="hero" aria-label="Introduction">
+      <div class="hero-left">
+        <div class="hero-eyebrow">
+          <span class="p-dot"></span>
+          <span>Whisper · Parakeet · NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE)</span>
+        </div>
+        <h1 class="headline">
+          <span class="sr-only">Meetings, captured locally.</span>
+          <span aria-hidden="true"><span class="typed" id="typed">Meetings, captured locally.</span><span class="caret"></span></span>
+        </h1>
+        <div class="hero-sub" id="heroSub">
+          <p class="sub">Mityu records and transcribes meetings on your machine, with local reporting by default, live 8-speaker attribution on overlapping speech, 40-language ASR, and source-linked notes you approve line by line. No bots. No audio uploads. No account.</p>
+          <div class="hero-badges">
+            <span class="h-chip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Up to 8 speakers · overlap-aware
+            </span>
+            <span class="h-chip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              40-lang ASR · 31-lang translation
+            </span>
+            <span class="h-chip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              Inline PII redaction · SQLCipher
+            </span>
+          </div>
+          <div class="hero-ctas">
+            <a class="btn btn-primary" href="/download">Download for Windows</a>
+            <a class="btn btn-gray" href="#loop">Inspect 4-Zone Shell</a>
+            <a class="btn btn-gray" href="#pricing">See pricing</a>
+          </div>
+          <p class="platforms">Windows 10/11 (64-bit), processor with AVX2 · macOS in development</p>
+          <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. Target-environment validation and the human pilot have not been performed; review important output against its source audio. Speaker separation is a best-effort estimate — available live with NVIDIA Nemotron 3.5 Transcribe (up to eight anonymous speakers) or after recording via the local diarization pass — and speaker labels stay anonymous; Mityu never attaches a name to a voice, because storing which voice belongs to whom would be biometric data. The live copilot is a beta: off by default, and not yet checked against a real model. Raw meeting audio remains local until you delete the meeting.</p>
+        </div>
       </div>
-      <p class="platforms">Windows 10/11 (64-bit), processor with AVX2 · macOS in development</p>
-      <p class="platforms">Accuracy varies by language, microphone, overlap, and noise. Target-environment validation and the human pilot have not been performed; review important output against its source audio. Speaker separation is a best-effort estimate, runs after the recording ends rather than live, and takes roughly a quarter of the recording&rsquo;s length; speaker labels stay anonymous and Mityu never attaches a name to a voice, because storing which voice belongs to whom would be biometric data. The live copilot is a beta: off by default, and not yet checked against a real model. Raw meeting audio remains local until you delete the meeting.</p>
-    </div>
-  </section>
 
-  <!-- ================= learning loop showpiece ================= -->
-  <section class="loop" id="loop" aria-label="How Mityu works — the private learning loop">
+      <!-- Right Column: Live Multi-Speaker & Engine Architecture Preview -->
+      <aside class="hero-card" aria-label="NVIDIA Nemotron 3.5 Transcribe Live Multi-Speaker Attribution Preview">
+        <div class="hc-top">
+          <span class="hc-title"><span class="rec-dot"></span>Live Session · Multi-Speaker Audio Stream</span>
+          <span class="hc-engine-pill">Nemotron 3.5 Transcribe · 30B-A4B MoE</span>
+        </div>
+        <div class="hc-body">
+          <div class="hc-engines" aria-label="Supported Local Transcription Engines">
+            <div class="hc-eng">
+              <span class="hc-eng-name">Whisper large-v3</span>
+              <span class="hc-eng-sub">GGML · On-device</span>
+            </div>
+            <div class="hc-eng">
+              <span class="hc-eng-name">Parakeet</span>
+              <span class="hc-eng-sub">ONNX · Fast CPU</span>
+            </div>
+            <div class="hc-eng active">
+              <span class="hc-eng-name">Nemotron 3.5</span>
+              <span class="hc-eng-sub">30B MoE · ~4B active</span>
+            </div>
+          </div>
+
+          <div class="hc-diar">
+            <div class="hc-diar-head">
+              <strong>Parallel Expert Encoder + Sortformer</strong>
+              <span>8-Speaker Attribution · Crosstalk Resolved</span>
+            </div>
+            <div class="hc-tracks">
+              <div class="hc-track">
+                <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#2563EB"></span>Speaker 1</span>
+                <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:0;width:36%;background:#2563EB"></span><span class="hc-bar-fill" style="left:58%;width:22%;background:#2563EB"></span></div>
+                <span class="hc-pct">32%</span>
+              </div>
+              <div class="hc-track">
+                <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#0D9488"></span>Speaker 2</span>
+                <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:18%;width:34%;background:#0D9488"></span><span class="hc-bar-fill" style="left:72%;width:18%;background:#0D9488"></span></div>
+                <span class="hc-pct">24%</span>
+              </div>
+              <div class="hc-track">
+                <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#D97706"></span>Speaker 3</span>
+                <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:32%;width:28%;background:#D97706"></span></div>
+                <span class="hc-pct">18%</span>
+              </div>
+              <div class="hc-track">
+                <span class="hc-sp-label"><span class="hc-sp-dot" style="background:#7C3AED"></span>Spk 4–8</span>
+                <div class="hc-bar-bg"><span class="hc-bar-fill" style="left:44%;width:48%;background:#7C3AED"></span></div>
+                <span class="hc-pct">26%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hc-turns">
+            <div class="hc-turn">
+              <div class="hc-turn-head">
+                <span class="hc-turn-sp"><span class="hc-sp-dot" style="background:#2563EB"></span>Speaker 1</span>
+                <span class="hc-turn-time">12:18 – 12:31</span>
+              </div>
+              <div class="hc-turn-txt">We lock the Q3 enterprise SKU today and route billing inquiries through <span class="hc-mini-pill pii">[REDACTED_EMAIL]</span>.</div>
+              <div class="hc-turn-tr"><span>EN → ES</span><span>Cerramos hoy el SKU empresarial del T3 y canalizamos facturación.</span></div>
+            </div>
+
+            <div class="hc-turn overlap">
+              <div class="hc-turn-head">
+                <span class="hc-turn-sp"><span class="hc-sp-dot" style="background:#0D9488"></span>Speaker 2 &amp; <span class="hc-sp-dot" style="background:#D97706"></span>Speaker 3</span>
+                <span class="hc-turn-time">12:31 – 12:44</span>
+              </div>
+              <div class="hc-turn-txt"><strong>Speaker 2:</strong> Final onboarding copy lands Friday. <strong>Speaker 3:</strong> Amira sends the revised budget before Thursday’s review.</div>
+              <div class="hc-pill-row">
+                <span class="hc-mini-pill ov">at the same time · overlapping speech separated</span>
+                <span class="hc-mini-pill ctx">Domain prompt: Q3 SKU, Amira</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="hc-foot">
+          <span>Up to 1-hour continuous context · 8 distinct speaker swatches</span>
+          <span>Local vLLM / NIM / OpenAI-compatible</span>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <!-- ================= 4-Zone Desktop Shell Showpiece (#loop) ================= -->
+  <section class="loop" id="loop" aria-label="How Mityu works — the 4-Zone Desktop Shell and private learning loop">
     <div class="loop-runway">
       <div class="loop-stage">
         <div class="loop-eyebrow" id="loopEyebrow">
-          <span class="k">The loop</span>
-          <h2>One private loop, from voice to knowledge.</h2>
-          <p>Capture, transcribe, draft, approve, recall — every step runs on your device, and each meeting you approve makes your local memory sharper.</p>
+          <span class="k">4-Zone Desktop Shell · One Private Loop</span>
+          <h2>One calm workspace, from live voice to verified knowledge.</h2>
+          <p>AppRail, Meetings library, report workspace, and source-linked Evidence Drawer — every step runs on your device, and every AI-drafted claim links to its exact transcript timestamp.</p>
         </div>
 
-        <div class="screen" id="screen" data-stage="capture" role="img"
-             aria-label="Animated demo: Mityu captures a meeting from your microphone and system audio, transcribes it on-device, drafts a source-linked summary and action items, waits for your approval, then saves the meeting to searchable local memory — and loops back to the next conversation.">
+        <div class="screen" id="screen" data-stage="draft" role="img"
+             aria-label="Interactive 4-Zone Desktop Shell: Mityu captures microphone and system audio, transcribes with Whisper, Parakeet, or NVIDIA Nemotron 3.5 Transcribe with 8-speaker attribution, drafts a source-linked summary and action items, waits for your approval, and indexes into local memory.">
 
           <!-- toolbar: the flow, integrated into the one screen -->
           <div class="app-bar">
             <div class="stepper" aria-hidden="true">
-              <div class="step" data-node="capture"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4"/></svg></span><span class="s-label">Capture</span></div>
-              <span class="sep"></span>
-              <div class="step" data-node="transcribe"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h9"/></svg></span><span class="s-label">Transcribe</span></div>
-              <span class="sep"></span>
-              <div class="step" data-node="draft"><span class="s-dot"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4l1.75 4.85L18.6 9l-4.85 1.75L12 15.6l-1.75-4.85L5.4 9l4.85-1.75z"/></svg></span><span class="s-label">Draft</span></div>
+              <div class="step done" data-node="capture"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4"/></svg></span><span class="s-label">Capture</span></div>
+              <span class="sep on"></span>
+              <div class="step done" data-node="transcribe"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h9"/></svg></span><span class="s-label">Transcribe</span></div>
+              <span class="sep on"></span>
+              <div class="step active" data-node="draft"><span class="s-dot"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4l1.75 4.85L18.6 9l-4.85 1.75L12 15.6l-1.75-4.85L5.4 9l4.85-1.75z"/></svg></span><span class="s-label">Draft</span></div>
               <span class="sep"></span>
               <div class="step" data-node="approve"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span class="s-label">Approve</span></div>
               <span class="sep"></span>
               <div class="step" data-node="recall"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.5 16.5"/></svg></span><span class="s-label">Recall</span></div>
             </div>
-            <span class="local-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Local</span>
+            <div class="bar-badges">
+              <span class="nemotron-badge"><span class="n-dot"></span>NVIDIA Nemotron 3.5 Transcribe · 30B-A4B MoE</span>
+              <span class="local-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Local · On-device</span>
+            </div>
           </div>
 
           <!-- per-stage status -->
-          <div class="app-status"><span class="live rec" id="liveDot"></span><span class="txt" id="statusTxt">Recording — mic + system, on your device</span></div>
-
-          <!-- panes -->
-          <div class="app-panes">
-            <div class="pane left">
-              <p class="pane-h">Transcript</p>
-              <div class="wave" id="wave"></div>
-              <p class="cap-note">Listening to your mic and the meeting audio. No bot joins the call.</p>
-              <div class="tlines">
-                <div class="tline"><span class="tt">12:04</span><p>Okay, let’s lock the launch. I’d rather slip a week than ship the old onboarding.</p></div>
-                <div class="tline"><span class="tt">12:19</span><p>Design can’t finish until the final copy lands. Friday is the real deadline.</p></div>
-                <div class="tline linked"><span class="tt">12:42</span><div><p>Amira will send the revised budget to finance before Thursday’s review.</p><span class="tag">Linked source</span></div></div>
-                <div class="tline"><span class="tt">13:05</span><p>Then we confirm the new date with vendors and move the check-in to Thursday.</p></div>
-              </div>
+          <div class="app-status">
+            <div class="app-status-left">
+              <span class="live" id="liveDot"></span>
+              <span class="txt" id="statusTxt">Drafting summary — AI, every line source-linked</span>
+              <span class="wave" id="wave" aria-hidden="true"></span>
             </div>
-            <div class="pane right">
-              <p class="pane-h">Report</p>
-              <div class="rep">
-                <div class="chips">
-                  <span class="c">Duration 42:18</span><span class="c">Words 6,204</span><span class="c">Segments 87</span>
+            <span class="v-pill ai">40 languages · 8-speaker attribution · overlapping speech</span>
+          </div>
+
+          <!-- Real Mityu 4-Zone Desktop Shell -->
+          <div class="app-panes">
+            <!-- 1. AppRail (52px) -->
+            <aside class="v-rail" aria-hidden="true">
+              <div class="v-rail-logo">m</div>
+              <div class="v-rail-btn active" title="Meetings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+              </div>
+              <div class="v-rail-btn" title="Record">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+              </div>
+              <div class="v-rail-btn" title="Search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              </div>
+              <div class="v-rail-spacer"></div>
+              <div class="v-rail-btn" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>
+              </div>
+            </aside>
+
+            <!-- 2. MeetingsPane (210px) -->
+            <aside class="v-library" aria-hidden="true">
+              <div class="v-lib-head">
+                <span class="v-lib-title">Meetings</span>
+                <span class="v-lib-count">24 local</span>
+              </div>
+              <div class="v-lib-search">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                <span>Search meetings…</span>
+              </div>
+              <div class="v-lib-group">Today</div>
+              <div class="v-lib-item active">
+                <span class="v-lib-item-title">Q3 pricing &amp; packaging</span>
+                <div class="v-lib-item-meta"><span>14:00 · 84m</span><span class="v-pill warn">Draft</span></div>
+              </div>
+              <div class="v-lib-item">
+                <span class="v-lib-item-title">Customer discovery — Acme</span>
+                <div class="v-lib-item-meta"><span>11:30 · 42m</span><span class="v-pill ok">Approved</span></div>
+              </div>
+              <div class="v-lib-group">This week</div>
+              <div class="v-lib-item">
+                <span class="v-lib-item-title">Design review — onboarding</span>
+                <div class="v-lib-item-meta"><span>Fri · 55m</span><span class="v-pill ok">Approved</span></div>
+              </div>
+              <div class="v-lib-item">
+                <span class="v-lib-item-title">Weekly engineering sync</span>
+                <div class="v-lib-item-meta"><span>Thu · 30m</span><span class="v-pill ok">Approved</span></div>
+              </div>
+            </aside>
+
+            <!-- 3. Center Workspace -->
+            <div class="v-main">
+              <div class="v-page-head">
+                <div>
+                  <div class="v-eyebrow">Meeting report · Today, 14:00</div>
+                  <div class="v-h1">Q3 pricing and packaging</div>
                 </div>
-                <div class="sum">
-                  <div class="sum-h"><h4>Summary</h4><span class="ai-chip" id="aiChip">AI-generated · review required</span></div>
-                  <p>The team agreed to move the launch to March 21, pending vendor confirmation. The revised budget goes to finance this week; design is blocked on final copy until Friday.</p>
+                <div class="v-head-actions">
+                  <span class="v-btn-ghost">Export</span>
+                  <span class="v-btn-primary">Approve all</span>
                 </div>
-                <div class="acts">
+              </div>
+
+              <!-- StatTile 4-column grid -->
+              <div class="chips">
+                <div class="stat-tile"><span class="stat-k">Duration</span><span class="stat-v">1h 24m</span><span class="stat-s">Recorded locally</span></div>
+                <div class="stat-tile"><span class="stat-k">Words</span><span class="stat-v">9,312</span><span class="stat-s">148 segments</span></div>
+                <div class="stat-tile"><span class="stat-k">Speakers</span><span class="stat-v">8</span><span class="stat-s">Nemotron 3.5 live</span></div>
+                <div class="stat-tile"><span class="stat-k">Approved</span><span class="stat-v">3 / 7</span><span class="stat-s">4 drafts left</span></div>
+              </div>
+
+              <!-- TalkTimePanel (8-speaker live Nemotron attribution) -->
+              <div class="v-talk">
+                <div class="v-talk-top">
+                  <span class="v-talk-title">Speakers &amp; talk time (anonymous labels)</span>
+                  <span class="v-talk-sub">NVIDIA Nemotron 3.5 Transcribe · 8-speaker live attribution</span>
+                </div>
+                <div class="v-talk-bar" aria-hidden="true">
+                  <span style="width:32%;background:#2563EB"></span>
+                  <span style="width:24%;background:#0D9488"></span>
+                  <span style="width:18%;background:#D97706"></span>
+                  <span style="width:11%;background:#DB2777"></span>
+                  <span style="width:6%;background:#7C3AED"></span>
+                  <span style="width:4%;background:#0284C7"></span>
+                  <span style="width:3%;background:#16A34A"></span>
+                  <span style="width:2%;background:#EA580C"></span>
+                </div>
+                <div class="v-talk-legend">
+                  <span class="v-sp-chip"><span class="v-sp-dot" style="background:#2563EB"></span>Speaker 1 · 32%</span>
+                  <span class="v-sp-chip"><span class="v-sp-dot" style="background:#0D9488"></span>Speaker 2 · 24%</span>
+                  <span class="v-sp-chip"><span class="v-sp-dot" style="background:#D97706"></span>Speaker 3 · 18%</span>
+                  <span class="v-sp-chip"><span class="v-sp-dot" style="background:#DB2777"></span>Speaker 4 · 11%</span>
+                  <span class="v-sp-chip"><span class="v-sp-dot" style="background:#7C3AED"></span>Speakers 5–8 · 15%</span>
+                </div>
+              </div>
+
+              <!-- Art. 50 AI-generated Notice -->
+              <div class="v-notice-ai">
+                <span class="v-notice-txt">Every summary section and action item is drafted from this meeting’s transcript and linked to its exact source timestamp.</span>
+                <span class="ai-chip" id="aiChip">AI-generated · review required</span>
+              </div>
+
+              <!-- Summary SectionCard -->
+              <div class="sum">
+                <div class="sum-h">
+                  <h4>Summary</h4>
+                  <span class="v-pill ok">Approved</span>
+                </div>
+                <p>The team agreed to move the launch to March 21, pending vendor confirmation. The revised budget goes to finance this week; design is blocked on final copy until Friday.</p>
+                <div class="v-cite-row">
+                  <span class="srcx">Source · 12:04</span>
+                  <span class="srcx">Source · 12:19</span>
+                  <span class="srcx">Source · 12:42</span>
+                </div>
+              </div>
+
+              <!-- Action Items SectionCard -->
+              <div class="acts">
+                <div class="sum-h">
                   <h4>Action items</h4>
-                  <div class="act"><span class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><p>Send the revised budget to finance — Amira <span class="srcx">→ 12:42 source</span></p></div>
-                  <div class="act"><span class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><p>Confirm the new launch date with vendors <span class="srcx">→ 13:05 source</span></p></div>
+                  <span class="v-pill warn">Draft · 2 items</span>
                 </div>
-                <div class="approve">
+                <div class="act"><span class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><p>Send the revised budget to finance — Amira <span class="srcx">→ 12:42 source</span></p></div>
+                <div class="act"><span class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><p>Confirm the new launch date with vendors <span class="srcx">→ 13:05 source</span></p></div>
+              </div>
+
+              <div class="approve">
+                <span style="font-size:11px;color:#52525B">Nothing is final until you sign it off.</span>
+                <div>
                   <span class="btn-mini" id="approveBtn">Approve summary</span>
                   <span class="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Approved by you</span>
                 </div>
               </div>
             </div>
+
+            <!-- 4. Right EvidenceDrawer (310px) -->
+            <aside class="v-evidence">
+              <div class="v-ev-head">
+                <span class="v-ev-title">Evidence · Transcript</span>
+                <span class="v-ev-meta">12:04 – 13:05</span>
+              </div>
+              <p class="cap-note">Listening to your mic and the meeting audio. No bot joins the call.</p>
+              <div class="tlines">
+                <div class="tline">
+                  <div class="tline-top">
+                    <span class="tline-sp"><span class="v-sp-dot" style="background:#2563EB"></span>Speaker 1</span>
+                    <span class="tt">12:04 – 12:18</span>
+                  </div>
+                  <p>Okay, let’s lock the launch. I’d rather slip a week than ship the old onboarding.</p>
+                </div>
+                <div class="tline">
+                  <div class="tline-top">
+                    <span class="tline-sp"><span class="v-sp-dot" style="background:#0D9488"></span>Speaker 2</span>
+                    <span class="tt">12:19 – 12:41</span>
+                  </div>
+                  <p>Design can’t finish until the final copy lands. Friday is the real deadline.</p>
+                </div>
+                <div class="tline linked">
+                  <div class="tline-top">
+                    <span class="tline-sp"><span class="v-sp-dot" style="background:#D97706"></span>Speaker 3</span>
+                    <span class="tt">12:42 – 13:01</span>
+                  </div>
+                  <p>Amira will send the revised budget to finance before Thursday’s review.</p>
+                  <div class="tline-badges">
+                    <span class="tag">Linked source · 12:42</span>
+                    <span class="overlap-tag">at the same time · overlap resolved</span>
+                  </div>
+                </div>
+                <div class="tline">
+                  <div class="tline-top">
+                    <span class="tline-sp"><span class="v-sp-dot" style="background:#DB2777"></span>Speaker 4</span>
+                    <span class="tt">13:05 – 13:19</span>
+                  </div>
+                  <p>Then we confirm the new date with vendors and move the check-in to Thursday.</p>
+                </div>
+              </div>
+            </aside>
+
             <div class="recall" id="recall" aria-hidden="true">
               <div class="recall-bar"><span class="rc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.5 16.5"/></svg></span><span class="rc-q" id="recallQ"></span><span class="rc-caret"></span></div>
               <div class="recall-res">
                 <div class="rc-card">
-                  <div class="rc-top"><span class="rc-title">Q1 Launch Sync</span><span class="rc-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Approved · local</span></div>
+                  <div class="rc-top"><span class="rc-title">Q3 pricing and packaging</span><span class="rc-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Approved · local</span></div>
                   <p class="rc-line">“Amira will send the revised budget to finance…” <span class="srcx">→ 12:42</span></p>
                 </div>
                 <span class="rc-plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Added to your local memory</span>
@@ -513,53 +1043,124 @@ a{color:inherit;text-decoration:none}
           </div>
 
           <!-- bottom statusbar -->
-          <div class="app-statusbar"><span class="sb-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span><span>Everything on your device — no upload, no account.</span></div>
+          <div class="app-statusbar">
+            <div class="app-statusbar-left">
+              <span class="sb-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span>
+              <span>Everything on your device — no upload, no account.</span>
+            </div>
+            <span>Engines: Whisper large-v3 · Parakeet · NVIDIA Nemotron 3.5 Transcribe</span>
+          </div>
 
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ================= features ================= -->
-  <section class="features container" aria-label="Why Mityu">
-    <h2 class="sr-only">Why Mityu</h2>
-    <div class="grid3">
-      <article class="card">
-        <span class="badge">On-device</span>
-        <h3>Transcription that never leaves.</h3>
-        <p class="desc">Recording and transcription run locally with Whisper large-v3 or Parakeet — no network needed, from capture to finished report.</p>
-        <div class="divider"></div>
-        <ul class="checks">
-          <li><span class="ck">✓</span><span>Whisper large-v3 &amp; Parakeet, fully offline</span></li>
-          <li><span class="ck">✓</span><span>Speaker separation and talk time, on-device</span></li>
-          <li><span class="ck">✓</span><span>SQLCipher when secure OS key storage is available</span></li>
-          <li><span class="ck">✓</span><span>Opt-in PII redaction</span></li>
-        </ul>
-      </article>
-      <article class="card">
-        <span class="badge">Any meeting app</span>
-        <h3>No bot joins your call.</h3>
-        <p class="desc">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Meet, or Teams without joining the meeting.</p>
-        <div class="divider"></div>
-        <ul class="checks">
-          <li><span class="ck">✓</span><span>Zoom, Google Meet, Microsoft Teams</span></li>
-          <li><span class="ck">✓</span><span>Windows 10/11 (64-bit), AVX2 processor</span></li>
-          <li><span class="ck">✓</span><span>macOS support in development</span></li>
-        </ul>
-      </article>
-      <article class="card">
-        <span class="badge">Human-approved</span>
-        <h3>Drafts until you approve.</h3>
-        <p class="desc">Every AI-generated line is a labeled draft linked to its source in the transcript. Nothing is final until you sign it off — and a question you ask a meeting afterwards is answered from that transcript alone.</p>
-        <div class="divider"></div>
-        <ul class="checks">
-          <li><span class="ck">✓</span><span>“AI-generated” label on every draft</span></li>
-          <li><span class="ck">✓</span><span>Source links to exact timestamps</span></li>
-          <li><span class="ck">✓</span><span>Ask this meeting: answers cite the transcript, or refuse</span></li>
-          <li><span class="ck">✓</span><span>Export approved notes to PDF, Word or Markdown</span></li>
-          <li><span class="ck">✓</span><span>BYOK: Ollama, OpenAI, Anthropic, Groq, OpenRouter</span></li>
-        </ul>
-      </article>
+  <!-- ================= Architectural Bento Grid (#architecture) ================= -->
+  <section class="arch-sec" id="architecture" aria-label="Speech and Intelligence Architecture">
+    <div class="container">
+      <div class="sec-head">
+        <span class="sec-eyebrow">Speech &amp; Intelligence Architecture</span>
+        <h2>Built for complex rooms, overlapping voices, and strict privacy.</h2>
+        <p>Combine fast on-device Whisper and Parakeet engines with NVIDIA Nemotron 3.5 Transcribe — a promptable 30B MoE audio-language model with ~4B active parameters.</p>
+      </div>
+
+      <div class="bento-grid">
+        <!-- Bento 1: Nemotron 3.5 Transcribe 30B-A4B MoE (6 cols) -->
+        <article class="bento-card bento-6">
+          <div class="b-top">
+            <span class="badge violet">NVIDIA Nemotron 3.5 Transcribe</span>
+            <span class="b-meta">30B Total · ~4B Active MoE</span>
+          </div>
+          <h3>One checkpoint for ASR, diarization, and translation.</h3>
+          <p class="desc">Powered by a Parallel Expert Encoder (Canary-1B ASR + Sortformer diarization) and a Nemotron-3-Nano MoE decoder, delivering 40-language transcription, 31-language translation, and up to 1-hour continuous audio context.</p>
+          <div class="b-visual">
+            <div class="b-swatch-grid">
+              <div class="b-sw"><span class="v-sp-dot" style="background:#2563EB"></span>Speaker 1</div>
+              <div class="b-sw"><span class="v-sp-dot" style="background:#0D9488"></span>Speaker 2</div>
+              <div class="b-sw"><span class="v-sp-dot" style="background:#D97706"></span>Speaker 3</div>
+              <div class="b-sw"><span class="v-sp-dot" style="background:#DB2777"></span>Speaker 4</div>
+              <div class="b-sw"><span class="v-sp-dot" style="background:#7C3AED"></span>Speaker 5</div>
+              <div class="b-sw"><span class="v-sp-dot" style="background:#0284C7"></span>Speaker 6</div>
+              <div class="b-sw"><span class="v-sp-dot" style="background:#16A34A"></span>Speaker 7</div>
+              <div class="b-sw"><span class="v-sp-dot" style="background:#EA580C"></span>Speaker 8</div>
+            </div>
+          </div>
+          <ul class="checks">
+            <li><span class="ck">✓</span><span>Tracks up to 8 anonymous speakers even when participants talk at once</span></li>
+            <li><span class="ck">✓</span><span>Simultaneous translation across 31 target languages during live or post-meeting passes</span></li>
+          </ul>
+        </article>
+
+        <!-- Bento 2: Contextual Prompting & Inline PII Redaction (6 cols) -->
+        <article class="bento-card bento-6">
+          <div class="b-top">
+            <span class="badge emerald">Promptable Audio Intelligence</span>
+            <span class="b-meta">Domain Context · PII Guard</span>
+          </div>
+          <h3>Steer domain vocabulary and redact PII inline.</h3>
+          <p class="desc">Pass project codenames, technical acronyms, and participant roles directly into the transcription prompt, and strip sensitive emails, phone numbers, or card details before segments hit disk.</p>
+          <div class="b-visual">
+            <div class="b-prompt-box">
+              <strong>Prompt:</strong> Transcribe with speaker labels. Context: Mityu, SQLCipher, AVX2, Amira. Redact PII.<br>
+              <strong>Output:</strong> [Speaker 1] Send the contract to <span style="color:#047857;font-weight:600">[REDACTED_EMAIL]</span> before Friday.
+            </div>
+          </div>
+          <ul class="checks">
+            <li><span class="ck">✓</span><span>Custom vocabulary and domain context prompt per meeting</span></li>
+            <li><span class="ck">✓</span><span>Opt-in inline PII redaction plus regex pre-storage masking</span></li>
+          </ul>
+        </article>
+
+        <!-- Bento 3: On-device Multi-Engine Stack (4 cols) -->
+        <article class="bento-card bento-4">
+          <div class="b-top">
+            <span class="badge">On-device</span>
+            <span class="b-meta">Zero Audio Upload</span>
+          </div>
+          <h3>Transcription that never leaves.</h3>
+          <p class="desc">Recording and transcription run locally with Whisper large-v3, Parakeet, or NVIDIA Nemotron 3.5 Transcribe — no network needed from capture to finished report.</p>
+          <div class="divider"></div>
+          <ul class="checks">
+            <li><span class="ck">✓</span><span>Whisper large-v3, Parakeet &amp; NVIDIA Nemotron 3.5 Transcribe</span></li>
+            <li><span class="ck">✓</span><span>SQLCipher when secure OS key storage is available</span></li>
+            <li><span class="ck">✓</span><span>Retranscribe or import recordings anytime</span></li>
+          </ul>
+        </article>
+
+        <!-- Bento 4: Zero-Bot System Audio Capture (4 cols) -->
+        <article class="bento-card bento-4">
+          <div class="b-top">
+            <span class="badge amber">Any meeting app</span>
+            <span class="b-meta">WASAPI Loopback + Mic</span>
+          </div>
+          <h3>No bot joins your call.</h3>
+          <p class="desc">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Google Meet, or Microsoft Teams without joining the meeting.</p>
+          <div class="divider"></div>
+          <ul class="checks">
+            <li><span class="ck">✓</span><span>Zoom, Google Meet, Microsoft Teams</span></li>
+            <li><span class="ck">✓</span><span>Windows 10/11 (64-bit), AVX2 processor</span></li>
+            <li><span class="ck">✓</span><span>macOS support in development</span></li>
+          </ul>
+        </article>
+
+        <!-- Bento 5: Human-Approved Reports & Evidence (4 cols) -->
+        <article class="bento-card bento-4">
+          <div class="b-top">
+            <span class="badge">Human-approved</span>
+            <span class="b-meta">Art. 50 Provenance</span>
+          </div>
+          <h3>Drafts until you approve.</h3>
+          <p class="desc">Every AI-generated line is a labeled draft linked to its source in the transcript. Nothing is final until you sign it off — and questions are answered from that transcript alone.</p>
+          <div class="divider"></div>
+          <ul class="checks">
+            <li><span class="ck">✓</span><span>“AI-generated” label on every draft</span></li>
+            <li><span class="ck">✓</span><span>Source links to exact timestamps in Evidence Drawer</span></li>
+            <li><span class="ck">✓</span><span>Export approved notes to PDF, Word or Markdown</span></li>
+            <li><span class="ck">✓</span><span>BYOK: Ollama, OpenAI, Anthropic, Groq, OpenRouter</span></li>
+          </ul>
+        </article>
+      </div>
     </div>
   </section>
 
@@ -621,78 +1222,65 @@ a{color:inherit;text-decoration:none}
   </section>
 
   <!-- ================= pricing ================= -->
-  <section class="pricing container" id="pricing">
-    <div class="pricing-head">
-      <div class="confetti" aria-hidden="true">
-        <i style="left:5%;top:12%;width:5px;height:5px;background:#1E56FF;opacity:.5"></i>
-        <i style="left:11%;top:64%;width:4px;height:4px;background:#EA4335;opacity:.45"></i>
-        <i style="left:17%;top:30%;width:3px;height:3px;background:#FBBC05;opacity:.55"></i>
-        <i style="left:23%;top:82%;width:4px;height:4px;background:#34A853;opacity:.5"></i>
-        <i style="left:29%;top:6%;width:3px;height:3px;background:#EA4335;opacity:.4"></i>
-        <i style="left:40%;top:2%;width:4px;height:4px;background:#1E56FF;opacity:.45"></i>
-        <i style="left:55%;top:0;width:3px;height:3px;background:#34A853;opacity:.5"></i>
-        <i style="left:66%;top:8%;width:4px;height:4px;background:#FBBC05;opacity:.45"></i>
-        <i style="left:73%;top:28%;width:5px;height:5px;background:#FBBC05;opacity:.5"></i>
-        <i style="left:79%;top:74%;width:4px;height:4px;background:#1E56FF;opacity:.55"></i>
-        <i style="left:85%;top:16%;width:3px;height:3px;background:#EA4335;opacity:.45"></i>
-        <i style="left:90%;top:58%;width:6px;height:6px;background:#34A853;opacity:.4"></i>
-        <i style="left:94%;top:32%;width:4px;height:4px;background:#FBBC05;opacity:.5"></i>
-        <i style="left:97%;top:76%;width:3px;height:3px;background:#1E56FF;opacity:.5"></i>
+  <section class="pricing" id="pricing">
+    <div class="container">
+      <div class="pricing-head">
+        <span class="sec-eyebrow">Transparent Licensing</span>
+        <h2 class="big-h" style="margin-top:12px">Choose the plan.</h2>
       </div>
-      <h2 class="big-h">Choose the plan.<span class="caret caret-h" aria-hidden="true"></span></h2>
+      <div class="grid3">
+        <article class="card">
+          <span class="badge">Get a taste</span>
+          <h3>Trial</h3>
+          <p class="price"><span class="amount">$0</span> <span class="per">— 14 days</span></p>
+          <p class="desc">Everything, free for 14 days.</p>
+          <div class="cta-stack">
+            <a class="btn btn-gray" href="/download">Download free</a>
+          </div>
+          <div class="divider"></div>
+          <p class="includes-label">Plan includes:</p>
+          <ul class="checks">
+            <li><span class="ck">✓</span><span>Every feature</span></li>
+            <li><span class="ck">✓</span><span>Works fully offline</span></li>
+            <li><span class="ck">✓</span><span>No account required</span></li>
+          </ul>
+        </article>
+        <article class="card featured">
+          <span class="badge violet">Most popular</span>
+          <h3>Pro</h3>
+          <p class="price"><span class="amount">$79</span> <span class="per">one-time</span></p>
+          <p class="desc">One license, yours to keep.</p>
+          <div class="cta-stack">
+            <a class="btn btn-primary" href="https://buy.polar.sh/polar_cl_2avDB6eI0svMFbwtJ9hGpkMMpYC1qRopdT34a1jtPQ7">Buy Mityu Pro</a>
+          </div>
+          <div class="divider"></div>
+          <p class="includes-label">Plan includes:</p>
+          <ul class="checks">
+            <li><span class="ck">✓</span><span>2 devices</span></li>
+            <li><span class="ck">✓</span><span>1 year of updates</span></li>
+            <li><span class="ck">✓</span><span>Email support</span></li>
+          </ul>
+        </article>
+        <article class="card">
+          <span class="badge">For teams</span>
+          <h3>Business</h3>
+          <p class="price"><span class="amount">$59</span> <span class="per">/user /year</span></p>
+          <p class="desc">Roll Mityu out across your team.</p>
+          <div class="cta-stack">
+            <a class="btn btn-black" href="mailto:info@bluedev.dev?subject=Mityu%20Business">Contact us</a>
+          </div>
+          <div class="divider"></div>
+          <p class="includes-label">Plan includes:</p>
+          <ul class="checks">
+            <li><span class="ck">✓</span><span>Priority support</span></li>
+            <li><span class="ck">✓</span><span>Volume licensing</span></li>
+            <li><span class="ck">✓</span><span>Team workspace on the roadmap</span></li>
+          </ul>
+        </article>
+      </div>
+      <p class="footnote">Mityu is available now for Windows 10/11 (64-bit) with an AVX2-capable processor (Intel Core 2013+, AMD 2015+; some budget Celeron and Pentium Silver chips are not) — download the free trial or buy a Pro license above. Every plan includes the current release, with the live copilot beta off by default.</p>
+      <p class="footnote">Every purchase comes with a 14-day money-back guarantee.</p>
     </div>
-    <div class="grid3">
-      <article class="card">
-        <span class="badge">Get a taste</span>
-        <h3>Trial</h3>
-        <p class="price"><span class="amount">$0</span> <span class="per">— 14 days</span></p>
-        <p class="desc">Everything, free for 14 days.</p>
-        <div class="cta-stack">
-          <a class="btn btn-black" href="/download">Download free</a>
-        </div>
-        <div class="divider"></div>
-        <p class="includes-label">Plan includes:</p>
-        <ul class="checks">
-          <li><span class="ck">✓</span><span>Every feature</span></li>
-          <li><span class="ck">✓</span><span>Works fully offline</span></li>
-          <li><span class="ck">✓</span><span>No account required</span></li>
-        </ul>
-      </article>
-      <article class="card">
-        <span class="badge">Most popular</span>
-        <h3>Pro</h3>
-        <p class="price"><span class="amount">$79</span> <span class="per">one-time</span></p>
-        <p class="desc">One license, yours to keep.</p>
-        <div class="cta-stack">
-          <a class="btn btn-black" href="https://buy.polar.sh/polar_cl_2avDB6eI0svMFbwtJ9hGpkMMpYC1qRopdT34a1jtPQ7">Buy Mityu Pro</a>
-        </div>
-        <div class="divider"></div>
-        <p class="includes-label">Plan includes:</p>
-        <ul class="checks">
-          <li><span class="ck">✓</span><span>2 devices</span></li>
-          <li><span class="ck">✓</span><span>1 year of updates</span></li>
-          <li><span class="ck">✓</span><span>Email support</span></li>
-        </ul>
-      </article>
-      <article class="card">
-        <span class="badge">For teams</span>
-        <h3>Business</h3>
-        <p class="price"><span class="amount">$59</span> <span class="per">/user /year</span></p>
-        <p class="desc">Roll Mityu out across your team.</p>
-        <div class="cta-stack">
-          <a class="btn btn-black" href="mailto:info@bluedev.dev?subject=Mityu%20Business">Contact us</a>
-        </div>
-        <div class="divider"></div>
-        <p class="includes-label">Plan includes:</p>
-        <ul class="checks">
-          <li><span class="ck">✓</span><span>Priority support</span></li>
-          <li><span class="ck">✓</span><span>Volume licensing</span></li>
-          <li><span class="ck">✓</span><span>Team workspace on the roadmap</span></li>
-        </ul>
-      </article>
-    </div>
-    <p class="footnote">Mityu is available now for Windows 10/11 (64-bit) with an AVX2-capable processor (Intel Core 2013+, AMD 2015+; some budget Celeron and Pentium Silver chips are not) — download the free trial or buy a Pro license above. Every plan includes the current release, with the live copilot beta off by default.</p>
-    <p class="footnote">Every purchase comes with a 14-day money-back guarantee.</p>
   </section>
 
   <!-- ================= faq ================= -->
@@ -721,7 +1309,7 @@ a{color:inherit;text-decoration:none}
       </details>
       <details>
         <summary>Which models and API keys can I use?</summary>
-        <p class="a">Transcription runs locally on Whisper large-v3 or Parakeet. For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Ask this meeting uses that same model choice. The beta live copilot ships restricted to a model running on your device, and will use your cloud provider only if you turn on &ldquo;Allow cloud insights&rdquo; under Settings &rarr; Beta.</p>
+        <p class="a">Transcription runs locally on Whisper large-v3, Parakeet, or NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE, served via a local vLLM or NIM endpoint, or your own OpenAI-compatible audio endpoint). For summaries, use the built-in local model, run one through Ollama, or bring your own key for OpenAI, Anthropic, Groq, or OpenRouter. Ask this meeting uses that same model choice. The beta live copilot ships restricted to a model running on your device, and will use your cloud provider only if you turn on &ldquo;Allow cloud insights&rdquo; under Settings &rarr; Beta.</p>
       </details>
       <details>
         <summary>What is the live copilot, and is it on?</summary>
@@ -743,11 +1331,15 @@ a{color:inherit;text-decoration:none}
 <!-- ================= footer ================= -->
 <footer class="footer">
   <div class="container foot-top">
-    <p class="foot-line">Your audio stays local.</p>
+    <div>
+      <p class="foot-line">Your audio stays local.</p>
+      <p class="foot-sub">On-device capture, multi-speaker transcription, and human-approved meeting intelligence.</p>
+    </div>
     <nav class="foot-cols" aria-label="Footer">
       <ul>
         <li><a href="mailto:info@bluedev.dev?subject=Mityu%20launch%20list">Get notified</a></li>
         <li><a href="https://github.com/aydogandagidir/mityu/releases" target="_blank" rel="noopener">Release notes</a></li>
+        <li><a href="#architecture">Architecture</a></li>
         <li><a href="#pricing">Pricing</a></li>
         <li><a href="#faq">FAQ</a></li>
       </ul>
@@ -757,11 +1349,8 @@ a{color:inherit;text-decoration:none}
       </ul>
     </nav>
   </div>
-  <div class="foot-word-wrap">
-    <div class="foot-word" aria-hidden="true">mityu</div>
-  </div>
   <div class="container foot-bottom">
-    <span class="foot-brand">© 2026 bluedev</span>
+    <span class="foot-brand">© 2026 bluedev · mityu</span>
     <div class="foot-links">
       <a href="/privacy">Privacy</a>
       <span aria-hidden="true">·</span>
@@ -772,18 +1361,18 @@ a{color:inherit;text-decoration:none}
 
 <!-- ===== anonymous download confirmation modal ===== -->
 <style>
-  .dl-modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(11,11,15,.55);padding:20px}
+  .dl-modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(9,9,11,.55);padding:20px}
   .dl-modal.open{display:flex}
-  .dl-card{background:#fff;border-radius:20px;max-width:440px;width:100%;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.28)}
-  .dl-card h3{font-size:20px;font-weight:600;margin:0 0 6px;color:#0B0B0F}
-  .dl-sub{color:#5F6368;font-size:14px;margin:0 0 18px;line-height:1.5}
-  .dl-notice{font-size:12.5px;color:#5F6368;line-height:1.45;margin:12px 0 2px}
+  .dl-card{background:#fff;border:1px solid #E4E4E7;border-radius:12px;max-width:440px;width:100%;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.22)}
+  .dl-card h3{font-size:19px;font-weight:600;margin:0 0 6px;color:#09090B}
+  .dl-sub{color:#52525B;font-size:13.5px;margin:0 0 16px;line-height:1.5}
+  .dl-notice{font-size:12px;color:#52525B;line-height:1.45;margin:12px 0 2px}
   .dl-hp{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}
-  .dl-err{color:#EA4335;font-size:13px;min-height:18px;margin:6px 0 0}
+  .dl-err{color:#DC2626;font-size:13px;min-height:18px;margin:6px 0 0}
   .dl-actions{display:flex;gap:10px;margin-top:14px}
   .dl-actions .btn{flex:1;justify-content:center}
-  .dl-x{float:right;border:0;background:none;font-size:22px;cursor:pointer;color:#9BA1A9;line-height:1;margin:-4px -4px 0 0}
-  .dl-x:hover{color:#0B0B0F}
+  .dl-x{float:right;border:0;background:none;font-size:22px;cursor:pointer;color:#71717A;line-height:1;margin:-4px -4px 0 0}
+  .dl-x:hover{color:#09090B}
 </style>
 <div class="dl-modal" id="dlModal" role="dialog" aria-modal="true" aria-labelledby="dlTitle">
   <div class="dl-card">
@@ -796,7 +1385,7 @@ a{color:inherit;text-decoration:none}
       <p class="dl-err" id="dlErr" role="alert"></p>
       <div class="dl-actions">
         <button type="button" class="btn btn-gray" id="dlCancel">Cancel</button>
-        <button type="submit" class="btn btn-black" id="dlSubmit">Download</button>
+        <button type="submit" class="btn btn-primary" id="dlSubmit">Download</button>
       </div>
     </form>
   </div>
@@ -834,69 +1423,36 @@ a{color:inherit;text-decoration:none}
 <script>
 (function () {
   var doc = document;
-  doc.documentElement.classList.add('js');
-
   var typed = doc.getElementById('typed');
-  var sub = doc.getElementById('heroSub');
-  var nav = doc.getElementById('nav');
-
   var reduce = false;
   try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
 
-  function onScroll() { if (nav) { nav.classList.toggle('scrolled', (window.scrollY || 0) > 8); } }
-  window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
-
-  function reveal() { if (sub) { sub.classList.add('show'); } }
-
   var phrases = [
     'Meetings, captured locally.',
-    'Transcribed on your device.',
+    '8 speakers, separated live.',
     'AI you approve, line by line.'
   ];
 
-  if (!typed || reduce) { reveal(); return; }
+  if (!typed) { return; }
+  typed.textContent = phrases[0];
+  if (reduce) { return; }
 
-  var pi = 0, ci = 0, deleting = false, revealed = false;
-  typed.textContent = '';
-
-  function tick() {
-    var p = phrases[pi];
-    if (!deleting) {
-      ci += 1;
-      typed.textContent = p.slice(0, ci);
-      if (ci === p.length) {
-        if (!revealed) { revealed = true; reveal(); }
-        deleting = true;
-        window.setTimeout(tick, 2300);
-      } else {
-        window.setTimeout(tick, 52 + Math.random() * 46);
-      }
-    } else {
-      ci -= 1;
-      typed.textContent = p.slice(0, ci);
-      if (ci === 0) {
-        deleting = false;
-        pi = (pi + 1) % phrases.length;
-        window.setTimeout(tick, 480);
-      } else {
-        window.setTimeout(tick, 26);
-      }
-    }
+  var pi = 0;
+  function cycle() {
+    pi = (pi + 1) % phrases.length;
+    typed.textContent = phrases[pi];
+    window.setTimeout(cycle, 4200);
   }
-  window.setTimeout(tick, 380);
+  window.setTimeout(cycle, 4200);
 })();
 </script>
 
 <script>
-/* ===== Learning Loop: scroll-grow + integrated flow cycle ===== */
+/* ===== Learning Loop: integrated flow cycle ===== */
 (function () {
   var screen = document.getElementById('screen');
   if (!screen) return;
-  var loop = document.getElementById('loop'),
-      runway = loop.querySelector('.loop-runway'),
-      eyebrow = document.getElementById('loopEyebrow'),
-      liveDot = document.getElementById('liveDot'),
+  var liveDot = document.getElementById('liveDot'),
       statusTxt = document.getElementById('statusTxt'),
       aiChip = document.getElementById('aiChip'),
       recallQ = document.getElementById('recallQ'),
@@ -910,16 +1466,15 @@ a{color:inherit;text-decoration:none}
   var AI_DRAFT = 'AI-generated · review required';
   var AI_DONE = 'AI-generated · reviewed by you';
 
-  // build waveform bars
   if (wave) {
     var html = '';
-    for (var b = 0; b < 34; b++) { html += '<i style="animation-delay:-' + ((b * 57) % 1050) + 'ms"></i>'; }
+    for (var b = 0; b < 18; b++) { html += '<i style="animation-delay:-' + ((b * 57) % 1050) + 'ms"></i>'; }
     wave.innerHTML = html;
   }
 
   var STAGES = [
     { id: 'capture',    txt: 'Recording — mic + system, on your device', rec: true },
-    { id: 'transcribe', txt: 'Transcribing — Whisper large-v3, offline' },
+    { id: 'transcribe', txt: 'Transcribing — Whisper, Parakeet & Nemotron 3.5 Transcribe' },
     { id: 'draft',      txt: 'Drafting summary — AI, every line source-linked' },
     { id: 'approve',    txt: 'Ready for your approval' },
     { id: 'recall',     txt: 'Saved locally — searchable in your memory' }
@@ -937,7 +1492,7 @@ a{color:inherit;text-decoration:none}
     seps.forEach(function (sp, k) { sp.classList.toggle('on', k < i); });
   }
 
-  var idx = 0, timer = null, subTimer = null, running = false;
+  var idx = 2, timer = null, subTimer = null, running = false;
   function clearAll() { clearTimeout(timer); clearTimeout(subTimer); }
 
   function go(i) {
@@ -951,7 +1506,7 @@ a{color:inherit;text-decoration:none}
     if (name === 'recall') { typeQuery('budget deadline'); }
   }
   function tick() { go((idx + 1) % STAGES.length); timer = setTimeout(tick, DUR[STAGES[idx].id]); }
-  function start() { if (running || reduce) return; running = true; go(0); timer = setTimeout(tick, DUR.capture); }
+  function start() { if (running || reduce) return; running = true; go(2); timer = setTimeout(tick, DUR.draft); }
   function stop() { running = false; clearAll(); }
 
   function typeQuery(q) {
@@ -960,28 +1515,6 @@ a{color:inherit;text-decoration:none}
     (function t() { if (!running) return; recallQ.textContent = q.slice(0, ++i); if (i < q.length) subTimer = setTimeout(t, 72); })();
   }
 
-  // ---- scroll-driven slide-up + grow (desktop / tablet only) ----
-  function startScale() { return window.innerWidth <= 1024 ? 0.66 : 0.5; }
-  function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1 - Math.pow(1 - t, 3); }
-  var ticking = false;
-  function onScroll() {
-    if (ticking) return; ticking = true;
-    window.requestAnimationFrame(function () {
-      ticking = false;
-      if (window.innerWidth <= 720) return; // mobile: no pin (CSS handles); recomputed on resize
-      var r = runway.getBoundingClientRect();
-      var total = r.height - window.innerHeight;
-      var p = total > 0 ? (-r.top) / total : 0; p = p < 0 ? 0 : p > 1 ? 1 : p;
-      var s0 = startScale();
-      var growP = ease(p / 0.5);
-      var s = s0 + (1 - s0) * growP; if (s > 1) s = 1;
-      var ty = (1 - growP) * 100; // starts lower, slides up as it grows
-      screen.style.transform = 'translateY(' + ty.toFixed(1) + 'px) scale(' + s + ')';
-      if (eyebrow) eyebrow.style.opacity = (1 - Math.min(p / 0.34, 1)).toFixed(3);
-    });
-  }
-
-  // reduced motion -> static resolved (approved) frame, no cycling
   if (reduce) {
     applyStage('approve');
     screen.classList.add('is-approved');
@@ -991,12 +1524,6 @@ a{color:inherit;text-decoration:none}
     return;
   }
 
-  // listeners registered unconditionally so crossing the 720px breakpoint (resize/rotate) re-drives the grow
-  window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', onScroll, { passive: true });
-  onScroll();
-
-  // run the cycle only while the screen is on-screen
   try {
     var io = new IntersectionObserver(function (es) {
       es.forEach(function (e) { if (e.isIntersecting) start(); else stop(); });
@@ -1007,7 +1534,7 @@ a{color:inherit;text-decoration:none}
 </script>
 
 <script>
-/* ===== The learning loop: reveal + self-playing correct→learn→approve→apply ===== */
+/* ===== The learning loop: self-playing correct→learn→approve→apply ===== */
 (function () {
   var demo = document.getElementById('learnDemo');
   if (!demo) return;
@@ -1040,7 +1567,7 @@ a{color:inherit;text-decoration:none}
     cyc.forEach(function (s, k) { s.classList.toggle('active', k === i); s.classList.toggle('done', k < i); });
   }
 
-  var idx = 0, timer = null, subTimer = null, typeTimer = null, running = false;
+  var idx = 1, timer = null, subTimer = null, typeTimer = null, running = false;
   function clearAll() { clearTimeout(timer); clearTimeout(subTimer); clearTimeout(typeTimer); }
 
   function typeAdd() {
@@ -1053,35 +1580,14 @@ a{color:inherit;text-decoration:none}
     idx = i;
     var name = STEPS[i].id;
     if (name === 'correct') { demo.classList.remove('approved'); setRules(0); typeAdd(); }
+    if (name === 'learn') { if (addEl) addEl.textContent = ADD; }
     applyStep(name);
     if (name === 'approve') { subTimer = setTimeout(function () { demo.classList.add('approved'); setRules(1); }, 1200); }
   }
   function tick() { go((idx + 1) % STEPS.length); timer = setTimeout(tick, DUR[STEPS[idx].id]); }
-  function start() { if (running || reduce) return; running = true; go(0); timer = setTimeout(tick, DUR.correct); }
+  function start() { if (running || reduce) return; running = true; go(1); timer = setTimeout(tick, DUR.learn); }
   function stop() { running = false; clearAll(); }
 
-  // ---- scroll-driven slide-up + grow (desktop / tablet), mirroring the hero loop ----
-  var runway = section.querySelector('.learn-runway');
-  function startScale() { return window.innerWidth <= 1024 ? 0.82 : 0.72; }
-  function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1 - Math.pow(1 - t, 3); }
-  var ticking = false;
-  function onScroll() {
-    if (ticking) return; ticking = true;
-    window.requestAnimationFrame(function () {
-      ticking = false;
-      if (window.innerWidth <= 720) return; // mobile: no pin (CSS handles); recomputed on resize
-      var r = runway.getBoundingClientRect();
-      var total = r.height - window.innerHeight;
-      var p = total > 0 ? (-r.top) / total : 0; p = p < 0 ? 0 : p > 1 ? 1 : p;
-      var s0 = startScale();
-      var growP = ease(p / 0.5);
-      var s = s0 + (1 - s0) * growP; if (s > 1) s = 1;
-      var ty = (1 - growP) * 60;
-      demo.style.transform = 'translateY(' + ty.toFixed(1) + 'px) scale(' + s + ')';
-    });
-  }
-
-  // reduced motion -> static resolved frame with an active, learned rule
   if (reduce) {
     applyStep('approve'); demo.classList.add('approved'); setRules(1);
     if (addEl) addEl.textContent = ADD;
@@ -1089,12 +1595,6 @@ a{color:inherit;text-decoration:none}
     return;
   }
 
-  // listeners registered unconditionally so crossing the 720px breakpoint (resize/rotate) re-drives the grow
-  window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', onScroll, { passive: true });
-  onScroll();
-
-  // run the cycle only while the demo is on-screen
   try {
     var io = new IntersectionObserver(function (es) {
       es.forEach(function (e) { if (e.isIntersecting) start(); else stop(); });

@@ -46,6 +46,12 @@ export interface TranscriptUpdate {
   audio_start_time: number; // Seconds from recording start
   audio_end_time: number;   // Seconds from recording start
   duration: number;          // Segment duration in seconds
+  speaker_turns?: Array<{
+    start_ms: number;
+    end_ms: number;
+    speaker_label: string;
+    confidence: number | null;
+  }>;
 }
 
 export interface Block {

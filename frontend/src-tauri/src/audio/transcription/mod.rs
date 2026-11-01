@@ -3,6 +3,7 @@
 // Transcription module: Provider abstraction, engine management, and worker pool.
 
 pub mod engine;
+pub mod nemotron_provider;
 pub mod parakeet_provider;
 pub mod provider;
 pub mod whisper_provider;
@@ -13,6 +14,7 @@ pub use engine::{
     get_or_init_transcription_engine, get_or_init_whisper, validate_transcription_model_ready,
     TranscriptionEngine,
 };
+pub use nemotron_provider::{NemotronConfig, NemotronTranscribeProvider};
 pub use parakeet_provider::ParakeetProvider;
 pub use provider::{TranscriptResult, TranscriptionError, TranscriptionProvider};
 pub use whisper_provider::WhisperProvider;

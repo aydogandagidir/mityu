@@ -16,10 +16,21 @@ export const DEFAULT_WHISPER_MODEL = 'large-v3-turbo';
 export const DEFAULT_PARAKEET_MODEL = 'parakeet-tdt-0.6b-v3-int8';
 
 /**
+ * Default NVIDIA Nemotron 3.5 Transcribe 30B-A4B MoE SALM model.
+ */
+export const DEFAULT_NEMOTRON_MODEL = 'nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B';
+
+/**
+ * Default local OpenAI-compatible vLLM / NIM endpoint for Nemotron 3.5 Transcribe.
+ */
+export const DEFAULT_NEMOTRON_ENDPOINT = 'http://127.0.0.1:8000/v1';
+
+/**
  * Model defaults by provider type
  */
 export const MODEL_DEFAULTS = {
   whisper: DEFAULT_WHISPER_MODEL,
   localWhisper: DEFAULT_WHISPER_MODEL,
   parakeet: DEFAULT_PARAKEET_MODEL,
+  nemotron: DEFAULT_NEMOTRON_MODEL,
 } as const;

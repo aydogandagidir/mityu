@@ -10,28 +10,28 @@
 <link rel="canonical" href="https://mityu.bluedev.dev/privacy">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' rx='30' fill='%231E56FF'/%3E%3Ccircle cx='38' cy='40' r='9' fill='%23fff'/%3E%3Cpolygon points='52,30 70,30 92,86 74,86' fill='%23fff'/%3E%3C/svg%3E">
 <style>
-:root{--ink:#0B0B0F;--gray:#5F6368;--hair:#E5E7EB;--soft:#F4F5F7;--blue:#1E56FF}
+:root{--canvas:#FAFAFA;--surface:#FFFFFF;--elevated:#F4F4F5;--ink:#09090B;--gray:#52525B;--hair:#E4E4E7;--blue:#2563EB;--blue-bg:#EFF6FF;--blue-border:#BFDBFE}
 *,*::before,*::after{box-sizing:border-box}
-body{margin:0;background:#fff;color:var(--ink);font-family:system-ui,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--canvas);color:var(--ink);font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
 a{color:inherit}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
-.nav{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--hair)}
-.nav-inner{max-width:840px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between}
+.nav{position:sticky;top:0;background:rgba(250,250,250,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--hair)}
+.nav-inner{max-width:880px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between}
 .brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none}
-.wordmark{font-size:17px;font-weight:600;letter-spacing:-.01em}
-.back{color:var(--gray);font-size:14px;text-decoration:none}
-.back:hover{color:var(--ink)}
-main{max-width:840px;margin:0 auto;padding:56px 24px 80px}
-h1{font-size:clamp(2rem,4vw,2.8rem);font-weight:600;letter-spacing:-.02em;line-height:1.15;margin:0}
-.updated{color:var(--gray);font-size:14px;margin:12px 0 0}
-h2{font-size:1.25rem;font-weight:600;letter-spacing:-.01em;margin:44px 0 10px}
-p{margin:10px 0;color:#2A2A31;font-size:15.5px;max-width:70ch}
-ul{margin:10px 0;padding-left:22px;color:#2A2A31;font-size:15.5px}
-li{margin:6px 0;max-width:68ch}
-.note{background:var(--soft);border-radius:16px;padding:18px 20px;margin:22px 0}
-.note p{margin:0;color:var(--ink)}
-.footer{border-top:1px solid var(--hair)}
-.foot-inner{max-width:840px;margin:0 auto;padding:22px 24px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;color:var(--gray);font-size:13.5px}
+.wordmark{font-size:16px;font-weight:700;letter-spacing:-.02em}
+.back{color:var(--gray);font-size:13.5px;font-weight:500;text-decoration:none;padding:6px 12px;border-radius:7px;border:1px solid var(--hair);background:var(--surface)}
+.back:hover{color:var(--ink);background:var(--elevated)}
+main{max-width:880px;margin:0 auto;padding:48px 24px 72px}
+h1{font-size:clamp(1.9rem,3.6vw,2.5rem);font-weight:600;letter-spacing:-.03em;line-height:1.15;margin:0}
+.updated{color:var(--gray);font-size:13.5px;margin:10px 0 0}
+h2{font-size:1.15rem;font-weight:600;letter-spacing:-.015em;margin:36px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--hair)}
+p{margin:10px 0;color:#27272A;font-size:14.5px;max-width:72ch}
+ul{margin:10px 0;padding-left:20px;color:#27272A;font-size:14.5px}
+li{margin:7px 0;max-width:70ch}
+.note{background:var(--surface);border:1px solid var(--hair);border-left:3px solid var(--blue);border-radius:10px;padding:16px 18px;margin:22px 0;box-shadow:0 1px 2px rgba(9,9,11,.03)}
+.note p{margin:0;color:var(--ink);font-size:14px}
+.footer{border-top:1px solid var(--hair);background:var(--surface)}
+.foot-inner{max-width:880px;margin:0 auto;padding:22px 24px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;color:var(--gray);font-size:13px}
 .foot-inner a{color:var(--gray)}
 .foot-inner a:hover{color:var(--ink)}
 </style>
@@ -63,14 +63,14 @@ li{margin:6px 0;max-width:68ch}
 
   <h2>2. The app: local-first by design</h2>
   <ul>
-    <li><strong>Recording &amp; transcription</strong> run entirely on your device, using local Whisper or Parakeet models. Your audio never leaves your machine.</li>
+    <li><strong>Recording &amp; transcription</strong> run entirely on your device by default, using local Whisper, Parakeet, or NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE served on `localhost` via vLLM or NVIDIA NIM). Your audio never leaves your machine unless you explicitly configure a non-loopback Nemotron endpoint URL.</li>
     <li><strong>Raw-audio retention (unchanged through v1.2.1):</strong> the recording remains in Mityu-managed local storage until you delete the meeting. Automatic deletion immediately after transcription is not implemented yet.</li>
     <li><strong>Storage</strong> uses SQLCipher when the operating-system credential store can provide the database key. A fresh or already-plaintext database has a documented local-first plaintext fallback if key acquisition or conversion fails; an existing encrypted database is never opened without its key. Recording and export files rely on operating-system and filesystem protection rather than application-level encryption.</li>
     <li><strong>Summaries</strong> are generated locally by default (built-in local model, or your own model via Ollama). If you choose to connect a cloud provider with your own API key, only the transcript text you ask to summarize is sent to that provider — never audio, never your library.</li>
     <li><strong>Ask this meeting</strong> answers a question from one finished meeting&rsquo;s transcript, using the same model choice as summaries. With a local model nothing leaves your device; with a cloud key, your question and the transcript passages retrieved for it go to that provider. Answers are marked AI-generated, and a line the model cannot trace to the transcript is dropped rather than shown.</li>
     <li><strong>Live copilot (beta, off by default).</strong> When you turn it on under Settings → Beta, the panel follows a recording you start: it holds that meeting&rsquo;s transcript in memory while you record, writes nothing to disk on its own, and releases the buffer when the recording stops or the copilot is switched off. An answer you request is built from the last few minutes of transcript text after your redaction rules have run, together with the wording of the meeting mode you selected, which is sent as written and is not redacted. Whether it may reach a cloud provider at all is governed by a separate setting, &ldquo;Allow cloud insights&rdquo;, under Settings &rarr; Beta. It is off by default, and while it is off the copilot answers only with a model running on this device and refuses rather than sending anything away. Turning it on sends that text to the AI provider you configured under Summary with your own key &mdash; on every press of an action button, with no further prompt. Audio is never involved. The only thing the copilot can save is a note you pin, which is written into the meeting&rsquo;s summary as a draft when you save the meeting.</li>
     <li><strong>API keys</strong> you add are stored in the operating system's secure credential store and are only ever sent to the provider they belong to.</li>
-    <li><strong>Speaker separation</strong> runs on your device after a recording ends. It stores anonymous labels and timings only &mdash; Mityu never attaches a name to a voice and keeps no voice print.</li>
+    <li><strong>Speaker separation</strong> runs live with NVIDIA Nemotron 3.5 Transcribe (up to eight anonymous speakers) or on your device after a recording ends. It stores anonymous labels and timings only &mdash; Mityu never attaches a name to a voice and keeps no voice print.</li>
     <li><strong>Models and updates.</strong> Transcription, summarization and speaker-separation models are downloaded only when you ask for them, from Hugging Face and from GitHub; no meeting content is uploaded with those requests. The app may also check the Mityu GitHub release endpoint for signed update metadata.</li>
     <li><strong>Optional redaction</strong> can strip emails, phone numbers, card/ID numbers, and your own custom terms from transcripts before they are stored or sent to a summarization model.</li>
   </ul>

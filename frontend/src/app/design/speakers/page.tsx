@@ -36,6 +36,11 @@ const TURNS: SpeakerTurn[] = [
   turn(58_000, 64_000, 'Speaker 1'),
   turn(62_000, 79_000, 'Speaker 3'),
   turn(79_000, 96_000, 'Speaker 2'),
+  turn(96_000, 108_000, 'Speaker 4'),
+  turn(108_000, 118_000, 'Speaker 5'),
+  turn(118_000, 127_000, 'Speaker 6'),
+  turn(127_000, 135_000, 'Speaker 7'),
+  turn(135_000, 142_000, 'Speaker 8'),
 ];
 
 const ROWS: Array<{ id: string; start?: number; end?: number; text: string; note: string }> = [
@@ -58,7 +63,14 @@ const ROWS: Array<{ id: string; start?: number; end?: number; text: string; note
     start: 60,
     end: 66,
     text: 'We can hold the managed tier — sorry, go ahead — no, you first.',
-    note: 'genuinely simultaneous speech',
+    note: 'genuinely simultaneous speech (Nemotron 3.5 Transcribe Sortformer overlap)',
+  },
+  {
+    id: 'e',
+    start: 97,
+    end: 141,
+    text: 'Engineering, Legal, Finance, Ops, and QA signed off on the 8-speaker live attribution check.',
+    note: 'spans Speakers 4–8 across the 8-colour palette',
   },
   {
     id: 'd',

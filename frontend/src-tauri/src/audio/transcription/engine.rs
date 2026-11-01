@@ -118,13 +118,14 @@ pub(crate) fn decide_readiness(
     let (available, downloading) = match provider {
         "localWhisper" => (models.whisper_available, models.whisper_downloading),
         "parakeet" => (models.parakeet_available, models.parakeet_downloading),
+        "nemotron" => (true, false),
         other => {
             return TranscriptionReadiness {
                 ready: false,
                 provider: other.to_string(),
                 downloading: false,
                 reason: Some(format!(
-                    "'{other}' cannot transcribe on this device. Choose Local Whisper or Parakeet in Settings."
+                    "'{other}' cannot transcribe on this device. Choose Local Whisper, Parakeet, or Nemotron 3.5 Transcribe in Settings."
                 )),
             };
         }
@@ -349,13 +350,34 @@ pub async fn validate_transcription_model_ready<R: Runtime>(
                 }
             }
         }
+        "nemotron" => {
+            info!("🔍 Validating NVIDIA Nemotron 3.5 Transcribe configuration...");
+            let parsed = super::nemotron_provider::NemotronConfig::from_model_string(&config.model);
+            let is_loopback = parsed.endpoint.starts_with("http://127.0.0.1")
+                || parsed.endpoint.starts_with("http://localhost")
+                || parsed.endpoint.starts_with("http://[::1]");
+            if !is_loopback
+                && !config.has_api_key
+                && config.api_key.as_deref().unwrap_or("").trim().is_empty()
+            {
+                return Err(
+                    "NVIDIA Nemotron 3.5 Transcribe remote endpoint requires an API key in Transcription Settings."
+                        .to_string(),
+                );
+            }
+            info!(
+                "✅ Nemotron 3.5 Transcribe validation successful: model='{}', endpoint='{}'",
+                parsed.model, parsed.endpoint
+            );
+            Ok(())
+        }
         other => {
             warn!(
                 "❌ Unsupported transcription provider for local recording: {}",
                 other
             );
             Err(format!(
-                "Provider '{}' is not supported for local transcription. Please select 'localWhisper' or 'parakeet'.",
+                "Provider '{}' is not supported for local transcription. Please select 'localWhisper', 'parakeet', or 'nemotron'.",
                 other
             ))
         }
@@ -433,6 +455,28 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
                         .to_string(),
                 ),
             }
+        }
+        "nemotron" => {
+            info!("🟢 Initializing NVIDIA Nemotron 3.5 Transcribe SALM provider");
+            let mut nemotron_cfg =
+                super::nemotron_provider::NemotronConfig::from_model_string(&config.model);
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                let pool = state.db_manager.pool();
+                let ctx = crate::context::current();
+                if let Ok(Some(key)) =
+                    crate::database::repositories::setting::SettingsRepository::get_transcript_api_key(
+                        pool, &ctx, "nemotron",
+                    )
+                    .await
+                {
+                    if !key.trim().is_empty() {
+                        nemotron_cfg.api_key = Some(key);
+                    }
+                }
+            }
+            super::nemotron_provider::clear_live_speaker_turns();
+            let provider = super::nemotron_provider::NemotronTranscribeProvider::new(nemotron_cfg)?;
+            Ok(TranscriptionEngine::Provider(Arc::new(provider)))
         }
         "localWhisper" | _ => {
             info!("🎤 Initializing Whisper transcription engine");
@@ -822,5 +866,14 @@ mod readiness_tests {
         let r = decide_readiness("localWhisper", &m, None);
         assert!(r.ready);
         assert!(!r.downloading, "a Parakeet download is not a Whisper wait");
+    }
+
+    #[test]
+    fn nemotron_provider_is_ready_without_local_whisper_or_parakeet_weights() {
+        let r = decide_readiness("nemotron", &models(false, false), None);
+        assert!(r.ready);
+        assert_eq!(r.provider, "nemotron");
+        assert!(!r.downloading);
+        assert!(r.reason.is_none());
     }
 }

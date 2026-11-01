@@ -39,7 +39,16 @@ import {
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { StatTile } from '@/components/ui/stat-tile';
-import { Clock, FileText, ListChecks } from 'lucide-react';
+import { SpeakerChips, TalkTimePanel } from '@/components/report/SpeakerTurns';
+import { type SpeakerTurn } from '@/lib/speakerTurns';
+import { Clock, FileText, ListChecks, Users } from 'lucide-react';
+
+const SHELL_TURNS: SpeakerTurn[] = [
+  { start_ms: 0, end_ms: 14_000, speaker_label: 'Speaker 1', confidence: 0.96 },
+  { start_ms: 14_000, end_ms: 42_000, speaker_label: 'Speaker 2', confidence: 0.95 },
+  { start_ms: 40_000, end_ms: 58_000, speaker_label: 'Speaker 3', confidence: 0.94 },
+  { start_ms: 58_000, end_ms: 74_000, speaker_label: 'Speaker 4', confidence: 0.95 },
+];
 
 const MEETINGS: CurrentMeeting[] = [
   { id: 'meeting-0001-ankara', title: 'Ankara site visit — retention policy' },
@@ -163,13 +172,27 @@ function ContentSample() {
         <div className="flex flex-wrap gap-3">
           <StatTile icon={Clock} label="Duration" value="1h 24m" />
           <StatTile icon={FileText} label="Segments" value="146" />
+          <StatTile icon={Users} label="Speakers" value="4" sub="Nemotron 3.5" />
           <StatTile icon={ListChecks} label="Approved" value="3 / 7" />
         </div>
-        <p className="max-w-measure text-read text-muted-foreground">
-          The content pane owns its own scroll and its own header. The rail never moves,
-          and the meetings pane is the user&rsquo;s choice — opening it narrows this pane
-          rather than pushing the window around.
-        </p>
+        <TalkTimePanel
+          state={{ kind: 'done', diarizedAt: '2026-11-01T10:00:00Z', turns: SHELL_TURNS }}
+        />
+        <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-label text-foreground">Live speaker attribution · NVIDIA Nemotron 3.5 Transcribe</span>
+            <SpeakerChips
+              speakers={['Speaker 2', 'Speaker 3']}
+              order={['Speaker 1', 'Speaker 2', 'Speaker 3', 'Speaker 4']}
+              crosstalk
+            />
+          </div>
+          <p className="text-body text-muted-foreground">
+            The content pane owns its own scroll and its own header. The rail never moves,
+            and the meetings pane is the user&rsquo;s choice — opening it narrows this pane
+            rather than pushing the window around.
+          </p>
+        </div>
       </div>
     </div>
   );

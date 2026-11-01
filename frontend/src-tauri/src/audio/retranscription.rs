@@ -1,4 +1,4 @@
-// Retranscription module - allows re-processing stored audio with different settings
+// Retranscription module - allows re-processing stored audio with different settings (Whisper, Parakeet, Nemotron 3.5)
 
 use super::common::{create_transcript_segments, split_segment_at_silence, write_transcripts_json};
 use super::constants::AUDIO_EXTENSIONS;
@@ -118,7 +118,7 @@ pub async fn start_retranscription<R: Runtime>(
     // Reset cancellation flag
     RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
 
-    let use_parakeet = provider.as_deref() == Some("parakeet");
+    let provider_for_unload = provider.clone();
     let result = run_retranscription(
         app.clone(),
         meeting_id.clone(),
@@ -130,7 +130,7 @@ pub async fn start_retranscription<R: Runtime>(
     .await;
 
     // Unload the engine after the batch job (success, failure, or cancellation)
-    super::common::unload_engine_after_batch(use_parakeet).await;
+    super::common::unload_engine_after_batch(provider_for_unload.as_deref()).await;
 
     // Guard will automatically clear flag on drop
     // No need for manual: RETRANSCRIPTION_IN_PROGRESS.store(false, Ordering::SeqCst);
@@ -219,6 +219,7 @@ async fn run_retranscription<R: Runtime>(
 
     // Determine which provider to use (default to whisper)
     let use_parakeet = provider.as_deref() == Some("parakeet");
+    let use_nemotron = provider.as_deref() == Some("nemotron");
 
     info!(
         "Starting retranscription for meeting {} with language {:?}, model {:?}, provider {:?}",
@@ -363,13 +364,42 @@ async fn run_retranscription<R: Runtime>(
     );
 
     // Initialize the appropriate engine once (not per-segment)
-    let whisper_engine = if !use_parakeet {
+    let whisper_engine = if !use_parakeet && !use_nemotron {
         Some(get_or_init_whisper(&app, model.as_deref()).await?)
     } else {
         None
     };
     let parakeet_engine = if use_parakeet {
         Some(get_or_init_parakeet(&app, model.as_deref()).await?)
+    } else {
+        None
+    };
+    let nemotron_provider = if use_nemotron {
+        let raw_model = model
+            .clone()
+            .unwrap_or_else(|| crate::config::DEFAULT_NEMOTRON_MODEL.to_string());
+        let mut cfg =
+            crate::audio::transcription::nemotron_provider::NemotronConfig::from_model_string(
+                &raw_model,
+            );
+        if let Some(state) = app.try_state::<AppState>() {
+            let pool = state.db_manager.pool();
+            let ctx = crate::context::current();
+            if let Ok(Some(key)) =
+                crate::database::repositories::setting::SettingsRepository::get_transcript_api_key(
+                    pool, &ctx, "nemotron",
+                )
+                .await
+            {
+                if !key.trim().is_empty() {
+                    cfg.api_key = Some(key);
+                }
+            }
+        }
+        Some(
+            crate::audio::transcription::nemotron_provider::NemotronTranscribeProvider::new(cfg)
+                .map_err(|e| anyhow!(e))?,
+        )
     } else {
         None
     };
@@ -404,6 +434,8 @@ async fn run_retranscription<R: Runtime>(
 
     // Process each speech segment with progress updates
     let mut all_transcripts: Vec<(String, f64, f64)> = Vec::new(); // (text, start_ms, end_ms)
+    let mut all_speaker_turns: Vec<crate::database::repositories::speaker_turn::SpeakerTurn> =
+        Vec::new();
     let mut total_confidence = 0.0f32;
 
     for (i, segment) in processable_segments.iter().enumerate() {
@@ -439,7 +471,21 @@ async fn run_retranscription<R: Runtime>(
         }
 
         // Transcribe this segment
-        let (text, conf) = if use_parakeet {
+        let (text, conf) = if use_nemotron {
+            use crate::audio::transcription::provider::TranscriptionProvider;
+            let provider = nemotron_provider.as_ref().unwrap();
+            let res = provider
+                .transcribe(segment.samples.clone(), language.clone())
+                .await
+                .map_err(|e| anyhow!("Nemotron transcription failed on segment {}: {}", i, e))?;
+            let offset_ms = segment.start_timestamp_ms.round() as i64;
+            let turns = crate::audio::transcription::nemotron_provider::offset_speaker_turns(
+                &res.speaker_turns,
+                offset_ms,
+            );
+            all_speaker_turns.extend(turns);
+            (res.text, res.confidence.unwrap_or(0.95f32))
+        } else if use_parakeet {
             let engine = parakeet_engine.as_ref().unwrap();
             let text = engine
                 .transcribe_audio(segment.samples.clone())
@@ -549,6 +595,26 @@ async fn run_retranscription<R: Runtime>(
     )
     .await
     .map_err(|e| anyhow!("Failed to replace transcripts: {}", e))?;
+
+    if use_nemotron && !all_speaker_turns.is_empty() {
+        if let Err(e) =
+            crate::database::repositories::speaker_turn::SpeakerTurnsRepository::replace_for_meeting(
+                pool,
+                &ctx,
+                &meeting_id,
+                &all_speaker_turns,
+            )
+            .await
+        {
+            warn!("Failed to persist Nemotron speaker turns during retranscription: {}", e);
+        } else {
+            info!(
+                "Persisted {} Nemotron speaker turn(s) for meeting {}",
+                all_speaker_turns.len(),
+                meeting_id
+            );
+        }
+    }
 
     info!(
         "Updated {} transcripts for meeting {} in transaction",

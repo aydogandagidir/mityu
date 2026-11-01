@@ -31,7 +31,7 @@ export function TranscriptPanel({
   showModal
 }: TranscriptPanelProps) {
   // Contexts
-  const { transcripts, transcriptContainerRef, copyTranscript } = useTranscripts();
+  const { transcripts, liveSpeakerTurns, transcriptContainerRef, copyTranscript } = useTranscripts();
   const { transcriptModelConfig } = useConfig();
   const { isRecording, isPaused } = useRecordingState();
   const { checkPermissions, isChecking, hasSystemAudio, hasMicrophone } = usePermissionCheck();
@@ -70,7 +70,7 @@ export function TranscriptPanel({
                     </span>
                   </Button>
                 )}
-                {transcriptModelConfig.provider === "localWhisper" &&
+                {(transcriptModelConfig.provider === "localWhisper" || transcriptModelConfig.provider === "nemotron") &&
                   <Button
                     variant="outline"
                     size="sm"
@@ -107,6 +107,7 @@ export function TranscriptPanel({
           <div className="w-2/3 max-w-[750px]">
             <VirtualizedTranscriptView
               segments={segments}
+              speakerTurns={liveSpeakerTurns}
               isRecording={isRecording}
               isPaused={isPaused}
               isProcessing={isProcessingStop}
