@@ -24,6 +24,7 @@
  */
 
 import { CopilotPanel, PanelLine } from '@/components/copilot/CopilotPanel';
+import { CopilotOverlay } from '@/components/copilot/CopilotOverlay';
 import type { InsightState } from '@/components/copilot/CopilotInsights';
 import type { CopilotStatus } from '@/types/copilot';
 
@@ -156,13 +157,13 @@ const CLOUD_REFUSED: InsightState = {
 function Frame({ title, note, children }: { title: string; note: string; children: React.ReactNode }) {
   return (
     <figure className="space-y-2">
-      <figcaption>
-        <div className="text-sm font-medium text-foreground">{title}</div>
-        <p className="text-xs text-muted-foreground">{note}</p>
+      <figcaption className="max-w-[380px]">
+        <div className="text-label font-semibold text-foreground">{title}</div>
+        <p className="text-caption text-muted-foreground">{note}</p>
       </figcaption>
       {/* The panel sizes itself to its window; the fixed box here stands in for
           one so every state fits on a single review page. */}
-      <div className="h-[460px] w-[360px] overflow-hidden rounded-xl border border-border shadow-sm">
+      <div className="h-[460px] w-[380px] overflow-hidden rounded-xl border border-border bg-card shadow-elev-3">
         {children}
       </div>
     </figure>
@@ -173,9 +174,9 @@ export default function CopilotDesignRoute() {
   return (
     <main className="min-h-screen bg-background p-8">
       <header className="mb-6 space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">BACKLOG I1</div>
-        <h1 className="text-2xl font-semibold text-foreground">Live copilot panel</h1>
-        <p className="max-w-3xl text-[15px] text-muted-foreground">
+        <div className="text-eyebrow uppercase text-subtle-foreground">BACKLOG I1</div>
+        <h1 className="text-display text-foreground">Live copilot panel</h1>
+        <p className="max-w-3xl text-read text-muted-foreground">
           This row is the shell alone — a window, a global shortcut and an honest statement of what
           the operating system will do about screen sharing — with the insight region switched off,
           which is exactly how it renders before a mode offers anything. The panel has no capture of
@@ -211,9 +212,9 @@ export default function CopilotDesignRoute() {
       </div>
 
       <header className="mb-6 mt-10 space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">BACKLOG I3b</div>
-        <h2 className="text-xl font-semibold text-foreground">On-demand insights</h2>
-        <p className="max-w-3xl text-[15px] text-muted-foreground">
+        <div className="text-eyebrow uppercase text-subtle-foreground">BACKLOG I3b</div>
+        <h2 className="text-title-lg text-foreground">On-demand insights</h2>
+        <p className="max-w-3xl text-read text-muted-foreground">
           Four actions, each answer tied to something that was actually said. The marking under the
           buttons is present in every one of these frames and has no way to be dismissed — that is
           the Art. 50(2) obligation, and a test fails if it disappears from any single state.
@@ -234,6 +235,8 @@ export default function CopilotDesignRoute() {
             onOpenMainWindow={() => {}}
             onRequestInsight={() => {}}
             onCancelInsight={() => {}}
+            onPinClaim={() => {}}
+            onUnpinClaim={() => {}}
           />
         </Frame>
         <Frame
@@ -281,6 +284,32 @@ export default function CopilotDesignRoute() {
             onCancelInsight={() => {}}
           />
         </Frame>
+      </div>
+
+      <header className="mb-6 mt-10 space-y-1">
+        <div className="text-eyebrow uppercase text-subtle-foreground">FLOATING HUD OVERLAY</div>
+        <h2 className="text-title-lg text-foreground">Floating glassmorphic HUD stage</h2>
+        <p className="max-w-3xl text-read text-muted-foreground">
+          The floating control pill bar paired with the 380px translucent HUD window, showing
+          tabular elapsed time, honest platform capture posture, and source-grounded live insights.
+        </p>
+      </header>
+
+      <div className="flex flex-wrap gap-8 rounded-xl border border-border bg-surface-2 p-6">
+        <CopilotOverlay
+          status={WINDOWS_RECORDING}
+          lines={LINES}
+          insight={ANSWERED}
+          elapsedSeconds={147}
+          onHideOverlay={() => {}}
+          onClose={() => {}}
+          onPause={() => {}}
+          onOpenMainWindow={() => {}}
+          onRequestInsight={() => {}}
+          onCancelInsight={() => {}}
+          onPinClaim={() => {}}
+          onUnpinClaim={() => {}}
+        />
       </div>
     </main>
   );

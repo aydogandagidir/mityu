@@ -78,7 +78,7 @@ export default function CopilotSettings() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 p-4 text-body text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading copilot settings…
       </div>
     );
@@ -86,7 +86,7 @@ export default function CopilotSettings() {
 
   if (loadFailed || !status) {
     return (
-      <div className="flex items-start gap-2 p-4 text-sm text-muted-foreground">
+      <div className="flex items-start gap-2 p-4 text-body text-muted-foreground">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <span>Copilot settings could not be loaded.</span>
       </div>
@@ -97,11 +97,11 @@ export default function CopilotSettings() {
 
   return (
     <div className="space-y-6 p-1">
-      <section className="space-y-3 rounded-lg border border-border p-4">
+      <section className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-elev-0">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <h3 className="text-sm font-medium text-foreground">Live copilot panel</h3>
-            <p className="max-w-xl text-xs text-muted-foreground">
+            <h3 className="text-label font-semibold text-foreground">Live copilot panel</h3>
+            <p className="max-w-xl text-caption text-muted-foreground">
               A small always-on-top panel that follows a recording you start and mirrors the live
               transcript. It never records on its own, and it is off until you turn it on.
             </p>
@@ -115,15 +115,15 @@ export default function CopilotSettings() {
         </div>
 
         {config.enabled && (
-          <div className="space-y-2">
+          <div className="space-y-2 border-t border-border/60 pt-2">
             {/* The one instruction a user actually needs, with the binding they
                 actually have. "I could not work out how to use the Copilot" was
                 the report; a switch with no next step is what produced it. The
                 panel is empty without a recording, so say that here rather than
                 letting the user discover it by opening an empty panel. */}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Start a recording, then press{' '}
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">
+              <kbd className="rounded-xs border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-micro text-foreground">
                 {config.keybinds.togglePanel.replace('CommandOrControl', 'Ctrl')}
               </kbd>{' '}
               to open the panel. It answers only from the meeting you are recording, so it stays
@@ -133,7 +133,7 @@ export default function CopilotSettings() {
               variant="outline"
               size="sm"
               onClick={() => void copilotService.togglePanel()}
-              className="gap-1"
+              className="gap-1.5"
             >
               <PanelRight className="h-3.5 w-3.5" /> Show the panel
             </Button>
@@ -154,13 +154,13 @@ export default function CopilotSettings() {
           * on means, because a live insight fires from a hotkey mid-sentence:
           * the user is authorising something that then happens without another
           * prompt. */}
-      <section className="space-y-3 rounded-lg border border-border p-4">
+      <section className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-elev-0">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <h3 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-              <Cloud className="h-4 w-4" /> Allow cloud insights
+            <h3 className="flex items-center gap-1.5 text-label font-semibold text-foreground">
+              <Cloud className="h-4 w-4 text-muted-foreground" /> Allow cloud insights
             </h3>
-            <p className="max-w-xl text-xs text-muted-foreground">
+            <p className="max-w-xl text-caption text-muted-foreground">
               Off by default. While it is off, the copilot answers only with a model running on this
               computer, and refuses rather than sending anything away. Turning it on lets the last
               few minutes of the conversation be sent to the AI provider you configured under
@@ -176,13 +176,13 @@ export default function CopilotSettings() {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-border p-4">
+      <section className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-elev-0">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <h3 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-              <ShieldCheck className="h-4 w-4" /> Keep the panel out of screen shares
+            <h3 className="flex items-center gap-1.5 text-label font-semibold text-foreground">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" /> Keep the panel out of screen shares
             </h3>
-            <p className="max-w-xl text-xs text-muted-foreground">
+            <p className="max-w-xl text-caption text-muted-foreground">
               So your private notes do not appear when you share your screen. Mityu never hides
               itself from you or from anyone looking at your computer — the app stays in the
               taskbar and the recording indicator stays visible.
@@ -198,7 +198,7 @@ export default function CopilotSettings() {
 
         {/* The platform's own answer, in the backend's words. Shown whatever the
             switch says, because it is a fact about this computer. */}
-        <p className="flex items-start gap-2 rounded-md bg-muted/60 p-3 text-xs text-muted-foreground">
+        <p className="flex items-start gap-2 rounded-md border border-border/60 bg-surface-2 p-3 text-caption text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             <span className="font-medium text-foreground">{protection.headline}.</span>{' '}
@@ -207,11 +207,11 @@ export default function CopilotSettings() {
         </p>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-border p-4">
+      <section className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-elev-0">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <h3 className="text-sm font-medium text-foreground">Keyboard shortcuts</h3>
-            <p className="max-w-xl text-xs text-muted-foreground">
+            <h3 className="text-label font-semibold text-foreground">Keyboard shortcuts</h3>
+            <p className="max-w-xl text-caption text-muted-foreground">
               A global shortcut works while any application is in front, so Mityu asks the system
               to reserve the combination. Turn them all off if you would rather not.
             </p>
@@ -225,7 +225,7 @@ export default function CopilotSettings() {
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="copilot-toggle-keybind" className="text-xs font-medium text-foreground">
+          <label htmlFor="copilot-toggle-keybind" className="text-caption font-medium text-foreground">
             Show or hide the panel
           </label>
           <div className="flex items-center gap-2">
@@ -235,7 +235,7 @@ export default function CopilotSettings() {
               spellCheck={false}
               disabled={isSaving}
               onChange={(e) => setDraftKeybind(e.target.value)}
-              className="max-w-xs font-mono text-xs"
+              className="max-w-xs font-mono text-caption"
               placeholder="CommandOrControl+Shift+M"
             />
             <Button
@@ -253,21 +253,25 @@ export default function CopilotSettings() {
             </Button>
           </div>
           {error && (
-            <p role="alert" className="text-xs text-destructive">
+            <p role="alert" className="text-caption text-destructive-ink">
               {error}
             </p>
           )}
         </div>
 
-        <ul className="space-y-1 text-xs text-muted-foreground">
+        <ul className="space-y-1.5 text-caption text-muted-foreground">
           {shortcuts.map((shortcut) => (
             <li key={shortcut.action} className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[11px] text-foreground">{shortcut.keybind}</span>
+              <span className="rounded-xs border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-micro text-foreground">
+                {shortcut.keybind}
+              </span>
               <span>{shortcut.label}</span>
               {shortcut.registered ? (
-                <span className="text-emerald-600 dark:text-emerald-400">· active</span>
+                <span className="inline-flex items-center rounded-full border border-success-border bg-success-surface px-1.5 py-0.5 text-micro font-medium text-success-ink">
+                  · active
+                </span>
               ) : (
-                <span>
+                <span className="text-caption text-muted-foreground">
                   · not active{shortcut.unavailableReason ? ` — ${shortcut.unavailableReason}` : ''}
                 </span>
               )}

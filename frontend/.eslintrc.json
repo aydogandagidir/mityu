@@ -86,8 +86,6 @@
       // type size, a bare ring-ring or an unreplaced outline-none before its WP arrives.
       "files": [
         "src/app/_components/SettingsModal.tsx",
-        "src/app/design/copilot/page.tsx",
-        "src/app/design/speakers/page.tsx",
         "src/app/meeting-details/page.tsx",
         "src/app/notes/**",
         "src/components/AISummary/Block.tsx",
@@ -121,21 +119,17 @@
         "src/components/ParakeetModelManager.tsx",
         "src/components/PermissionWarning.tsx",
         "src/components/RecordingConsentSettings.tsx",
-        "src/components/RecordingControls.tsx",
         "src/components/RecordingSettings.tsx",
         "src/components/RedactionSettings.tsx",
-        "src/components/TranscriptSettings.tsx",
         "src/components/UpdateDialog.tsx",
         "src/components/UpdateNotification.tsx",
         "src/components/VirtualizedTranscriptView.tsx",
         "src/components/WhisperModelManager.tsx",
-        "src/components/copilot/CopilotSettings.tsx",
         "src/components/copilot/ModesSettings.tsx",
         "src/components/onboarding/shared/ProgressIndicator.tsx",
         "src/components/onboarding/steps/DownloadProgressStep.tsx",
         "src/components/onboarding/steps/PermissionsStep.tsx",
         "src/components/report/ReportHeader.tsx",
-        "src/components/report/SpeakerTurns.tsx",
         "src/components/report/TopicsTimeline.tsx",
         "src/components/shared/DownloadProgressToast.tsx",
         "src/lib/recordingNotification.tsx"
@@ -161,17 +155,11 @@
     {
       // Guardrail 2 exemption — the arbitrary type sizes these files still carry.
       "files": [
-        "src/app/design/copilot/page.tsx",
         "src/app/design/report/page.tsx",
-        "src/app/design/speakers/page.tsx",
         "src/components/Logo.tsx",
         "src/components/VirtualizedTranscriptView.tsx",
-        "src/components/copilot/CopilotInsights.tsx",
-        "src/components/copilot/CopilotPanel.tsx",
-        "src/components/copilot/CopilotSettings.tsx",
         "src/components/copilot/ModesSettings.tsx",
         "src/components/report/ReportHeader.tsx",
-        "src/components/report/SpeakerTurns.tsx",
         "src/components/report/TopicsTimeline.tsx"
       ],
       "rules": {

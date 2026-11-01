@@ -4,6 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
+import { focusRing } from './ui/focus-ring';
 import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import { ModelManager } from './WhisperModelManager';
 import { ParakeetModelManager } from './ParakeetModelManager';
@@ -214,7 +215,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     }
                                 }}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger className={focusRing('card')}>
                                     <SelectValue placeholder="Select provider" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -232,7 +233,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                         setTranscriptModelConfig({ ...transcriptModelConfig, provider: uiProvider, model });
                                     }}
                                 >
-                                    <SelectTrigger>
+                                    <SelectTrigger className={focusRing('card')}>
                                         <SelectValue placeholder="Select model" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -285,18 +286,19 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                         description="Promptable Speech-Audio-Language Model (~4B active parameters) with 40-language transcription, live 8-speaker attribution, 31-language translation, and contextual prompting."
                     >
                         <div className="space-y-4">
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-1.5" aria-label="Nemotron 3.5 SALM capabilities">
                                 {[
+                                    '30B-A4B MoE SALM',
                                     '40 languages',
-                                    'Up to 8 speakers (live)',
+                                    '8-Speaker Live Diarization',
                                     'Overlap-aware Sortformer',
-                                    '31-language translation',
-                                    'Contextual prompting',
-                                    'Inline PII redaction',
+                                    '31-Language Translation',
+                                    'Inline PII Guard',
+                                    'Domain Context Prompt',
                                 ].map((pill) => (
                                     <span
                                         key={pill}
-                                        className="inline-flex items-center rounded-full border border-border bg-surface-2 px-2.5 py-0.5 text-caption text-foreground"
+                                        className="inline-flex items-center rounded-full border border-border bg-surface-2 px-2.5 py-0.5 text-micro font-medium text-foreground"
                                     >
                                         {pill}
                                     </span>
@@ -306,7 +308,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
                                     <Label className="mb-1 block text-label text-foreground">
-                                        Endpoint URL (Local vLLM / NIM or Cloud)
+                                        vLLM / NVIDIA NIM OpenAI-compatible endpoint
                                     </Label>
                                     <Input
                                         value={nemotronCfg.endpoint}
@@ -345,7 +347,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
 
                             <div className="divide-y [&>*+*]:border-t-border">
                                 <SwitchRow
-                                    label="Live speaker attribution (Speaker 1–8)"
+                                    label="8-Speaker Live Diarization (Speaker 1–8)"
                                     description="Separates up to 8 speakers and marks overlapping speech in real time. Labels stay anonymous (Speaker 1–8) to avoid storing biometric voice-to-name mappings."
                                     checked={nemotronCfg.speaker_attribution}
                                     onCheckedChange={(checked) =>
@@ -356,8 +358,8 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     }
                                 />
                                 <SwitchRow
-                                    label="Inline PII redaction during transcription"
-                                    description="Instructs Nemotron 3.5 Transcribe to replace personal emails, phone numbers, and IDs with [REDACTED] at decode time."
+                                    label="Inline PII Guard ([REDACTED_*])"
+                                    description="Instructs Nemotron 3.5 Transcribe to replace personal emails, phone numbers, and IDs with [REDACTED_*] tokens at decode time."
                                     checked={nemotronCfg.inline_pii_redaction}
                                     onCheckedChange={(checked) =>
                                         void persistNemotronConfig({
@@ -371,7 +373,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
                                     <Label className="mb-1 block text-label text-foreground">
-                                        Simultaneous translation (optional, 31 languages)
+                                        31-Language Translation (optional)
                                     </Label>
                                     <Select
                                         value={nemotronCfg.target_language || 'none'}
@@ -382,7 +384,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                             })
                                         }
                                     >
-                                        <SelectTrigger>
+                                        <SelectTrigger className={focusRing('card')}>
                                             <SelectValue placeholder="Keep spoken language" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -397,7 +399,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
 
                                 <div>
                                     <Label className="mb-1 block text-label text-foreground">
-                                        Domain &amp; vocabulary context prompt
+                                        Domain Context Prompt
                                     </Label>
                                     <Input
                                         value={nemotronCfg.context_prompt || ''}
@@ -457,7 +459,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                 className="absolute inset-0 flex items-center justify-center rounded-md bg-muted/50 cursor-not-allowed"
                             />
                         )}
-                        <div className="absolute inset-y-0 right-0 pr-1 flex items-center">
+                        <div className="absolute inset-y-0 right-0 pr-1 flex items-center gap-0.5">
                             <Button
                                 type="button"
                                 variant="ghost"
@@ -466,18 +468,22 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     setShowLockedHint(false);
                                     setIsApiKeyLocked(!isApiKeyLocked);
                                 }}
-                                className={`transition-colors duration-fast ${showLockedHint ? 'text-destructive-ink' : ''}`}
+                                aria-label={isApiKeyLocked ? 'Unlock API key' : 'Lock API key'}
                                 title={isApiKeyLocked ? "Unlock to edit" : "Lock to prevent editing"}
+                                className={`transition-colors duration-fast ${focusRing('card')} ${showLockedHint ? 'text-destructive-ink' : ''}`}
                             >
-                                {isApiKeyLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                                {isApiKeyLocked ? <Lock className="h-4 w-4" aria-hidden="true" /> : <Unlock className="h-4 w-4" aria-hidden="true" />}
                             </Button>
                             <Button
                                 type="button"
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => setShowApiKey(!showApiKey)}
+                                aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                                title={showApiKey ? 'Hide API key' : 'Show API key'}
+                                className={`transition-colors duration-fast ${focusRing('card')}`}
                             >
-                                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                {showApiKey ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                             </Button>
                         </div>
                     </div>

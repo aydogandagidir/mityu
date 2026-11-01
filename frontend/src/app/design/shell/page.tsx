@@ -41,7 +41,9 @@ import { Button } from '@/components/ui/button';
 import { StatTile } from '@/components/ui/stat-tile';
 import { SpeakerChips, TalkTimePanel } from '@/components/report/SpeakerTurns';
 import { type SpeakerTurn } from '@/lib/speakerTurns';
-import { Clock, FileText, ListChecks, Users } from 'lucide-react';
+import { Clock, Cpu, FileText, ListChecks, Quote, Sparkles, Users } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { focusRing } from '@/components/ui/focus-ring';
 
 const SHELL_TURNS: SpeakerTurn[] = [
   { start_ms: 0, end_ms: 14_000, speaker_label: 'Speaker 1', confidence: 0.96 },
@@ -57,13 +59,90 @@ const MEETINGS: CurrentMeeting[] = [
   { id: 'meeting-0004-vendor', title: 'Vendor call — conveyor line quote' },
 ];
 
+const EVIDENCE_SEGMENTS = [
+  {
+    id: 'seg-1',
+    time: '00:04',
+    speakers: ['Speaker 1'],
+    text: 'We agreed the Ankara pilot starts first so the regional compliance sign-off is isolated.',
+    highlighted: false,
+    crosstalk: false,
+  },
+  {
+    id: 'seg-2',
+    time: '00:14',
+    speakers: ['Speaker 2'],
+    text: 'Retention stays locked at 90 days on local encrypted storage until the audit closes.',
+    highlighted: true,
+    crosstalk: false,
+  },
+  {
+    id: 'seg-3',
+    time: '00:40',
+    speakers: ['Speaker 2', 'Speaker 3'],
+    text: 'Can we share the retention schedule with the Ankara operations lead before Friday?',
+    highlighted: false,
+    crosstalk: true,
+  },
+];
+
+function EvidenceDrawerSample() {
+  return (
+    <aside
+      aria-label="Transcript"
+      className="flex w-72 shrink-0 flex-col border-l border-border bg-card"
+    >
+      <header className="flex items-center justify-between border-b border-border bg-surface-2/50 px-3 py-2.5">
+        <div className="space-y-0.5">
+          <div className="text-eyebrow uppercase text-subtle-foreground">Zone 4 · Evidence</div>
+          <h3 className="text-label font-semibold text-foreground">Transcript drawer</h3>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full border border-verified-border bg-verified-surface px-2 py-0.5 font-mono text-micro font-medium tabular-nums text-verified-ink">
+          <Quote className="h-2.5 w-2.5" aria-hidden />
+          Source · 00:14
+        </span>
+      </header>
+      <div className="flex-1 space-y-2 overflow-y-auto p-3">
+        {EVIDENCE_SEGMENTS.map((seg) => (
+          <div
+            key={seg.id}
+            className={cn(
+              'rounded-md border p-2.5 transition-colors duration-fast',
+              seg.highlighted
+                ? 'border-verified-border border-l-2 border-l-primary bg-accent/60 shadow-elev-0'
+                : 'border-border/60 bg-surface-2/30'
+            )}
+          >
+            <div className="mb-1 flex items-center justify-between gap-1.5">
+              <span className="font-mono text-micro font-medium tabular-nums text-primary-ink">
+                [{seg.time}]
+              </span>
+              <SpeakerChips
+                speakers={seg.speakers}
+                order={['Speaker 1', 'Speaker 2', 'Speaker 3', 'Speaker 4']}
+                crosstalk={seg.crosstalk}
+              />
+            </div>
+            <p className="text-caption leading-snug text-foreground">{seg.text}</p>
+          </div>
+        ))}
+      </div>
+      <footer className="border-t border-border bg-surface-2/40 px-3 py-2 text-micro text-muted-foreground">
+        Non-modal evidence drawer (`modal=false`) keeps the report interactive while verifying citations.
+      </footer>
+    </aside>
+  );
+}
+
 function ShellHarness({
   recording = false,
   paneOpen = true,
+  drawerOpen = true,
   children,
 }: {
   recording?: boolean;
   paneOpen?: boolean;
+  drawerOpen?: boolean;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(!paneOpen);
@@ -135,12 +214,13 @@ function ShellHarness({
         <ConfigContext.Provider value={config}>
           <ImportDialogContext.Provider value={importDialog}>
             <TooltipProvider>
-              <div className="flex h-[560px] overflow-hidden rounded-lg border border-border">
+              <div className="flex h-[580px] overflow-hidden rounded-xl border border-border bg-card shadow-elev-2">
                 <AppRail />
                 <MeetingsPane />
                 <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
                   {children}
                 </main>
+                {drawerOpen && <EvidenceDrawerSample />}
               </div>
             </TooltipProvider>
           </ImportDialogContext.Provider>
@@ -175,12 +255,42 @@ function ContentSample() {
           <StatTile icon={Users} label="Speakers" value="4" sub="Nemotron 3.5" />
           <StatTile icon={ListChecks} label="Approved" value="3 / 7" />
         </div>
+
+        {/* Source-linked AI draft block connected to Zone 4 Evidence Drawer */}
+        <div className="space-y-2 rounded-lg border border-border bg-card p-3.5 shadow-elev-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-ai-border bg-ai-surface px-2 py-0.5 text-caption font-medium text-ai-ink">
+              <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+              AI-generated · review required
+            </span>
+            <button
+              type="button"
+              aria-label="Jump to source transcript segment at 00:14"
+              className={cn(
+                'inline-flex min-h-[28px] items-center gap-1 rounded-full border border-verified-border bg-verified-surface px-2.5 py-0.5 font-mono text-caption font-medium tabular-nums text-verified-ink transition-colors duration-fast ease-out hover:bg-verified-surface/80',
+                focusRing('card')
+              )}
+            >
+              <Quote className="h-2.5 w-2.5" aria-hidden />
+              Source · 00:14
+            </button>
+          </div>
+          <p className="text-body text-foreground">
+            The Ankara site pilot launches first with a strict 90-day local encrypted retention
+            window before expanding to the second facility.
+          </p>
+        </div>
+
         <TalkTimePanel
           state={{ kind: 'done', diarizedAt: '2026-11-01T10:00:00Z', turns: SHELL_TURNS }}
         />
-        <div className="rounded-lg border border-border bg-card p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-label text-foreground">Live speaker attribution · NVIDIA Nemotron 3.5 Transcribe</span>
+
+        <div className="space-y-2 rounded-lg border border-border bg-card p-3.5 shadow-elev-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-label font-semibold text-foreground">
+              <Cpu className="h-3.5 w-3.5 text-primary-ink" aria-hidden />
+              Live speaker attribution · NVIDIA Nemotron 3.5 Transcribe
+            </span>
             <SpeakerChips
               speakers={['Speaker 2', 'Speaker 3']}
               order={['Speaker 1', 'Speaker 2', 'Speaker 3', 'Speaker 4']}
@@ -188,9 +298,9 @@ function ContentSample() {
             />
           </div>
           <p className="text-body text-muted-foreground">
-            The content pane owns its own scroll and its own header. The rail never moves,
-            and the meetings pane is the user&rsquo;s choice — opening it narrows this pane
-            rather than pushing the window around.
+            The 4-zone desktop shell isolates navigation (`AppRail`), library search
+            (`MeetingsPane`), primary reading (`Workspace`), and source-linked transcript
+            verification (`EvidenceDrawer`) with zero layout shift.
           </p>
         </div>
       </div>
@@ -206,21 +316,21 @@ function Panel({ theme }: { theme: 'light' | 'dark' }) {
           <div className="text-eyebrow uppercase text-subtle-foreground">{theme} theme</div>
           <h1 className="text-display">Application shell</h1>
           <p className="text-body text-muted-foreground">
-            §5.1 rail · §5.2 meetings pane · §5.3 page header. Real components, fixture
-            data.
+            4-Zone Desktop Architecture: §5.1 AppRail · §5.2 MeetingsPane · §5.3 Workspace · §6.3
+            EvidenceDrawer. Real components, fixture data.
           </p>
         </header>
 
         <section className="space-y-2">
-          <h2 className="text-title">Pane open · idle</h2>
-          <ShellHarness>
+          <h2 className="text-title">4-Zone shell · Pane open · Evidence drawer active</h2>
+          <ShellHarness drawerOpen>
             <ContentSample />
           </ShellHarness>
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-title">Pane closed · recording</h2>
-          <ShellHarness paneOpen={false} recording>
+          <h2 className="text-title">Pane closed · recording active · Evidence drawer open</h2>
+          <ShellHarness paneOpen={false} recording drawerOpen>
             <ContentSample />
           </ShellHarness>
         </section>
