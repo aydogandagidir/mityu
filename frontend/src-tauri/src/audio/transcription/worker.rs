@@ -39,6 +39,9 @@ pub struct TranscriptUpdate {
     pub audio_start_time: f64, // Seconds from recording start (e.g., 125.3)
     pub audio_end_time: f64,   // Seconds from recording start (e.g., 128.6)
     pub duration: f64,         // Segment duration in seconds (e.g., 3.3)
+    /// Optional speaker attribution turns (ms from recording start) emitted by Nemotron 3.5 Transcribe
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub speaker_turns: Vec<crate::database::repositories::speaker_turn::SpeakerTurn>,
 }
 
 // NOTE: get_transcript_history and get_recording_meeting_name functions
@@ -187,7 +190,7 @@ pub fn start_transcription_task<R: Runtime>(
                             match transcribe_chunk_with_provider(&engine_clone, chunk, &app_clone)
                                 .await
                             {
-                                Ok((transcript, confidence_opt, is_partial)) => {
+                                Ok((transcript, confidence_opt, is_partial, speaker_turns)) => {
                                     let confidence_str = match confidence_opt {
                                         Some(c) => format!("{:.2}", c),
                                         None => "N/A".to_string(),
@@ -260,6 +263,7 @@ pub fn start_transcription_task<R: Runtime>(
                                             audio_start_time,
                                             audio_end_time,
                                             duration: chunk_duration,
+                                            speaker_turns,
                                         };
 
                                         if let Err(e) = app_clone.emit("transcript-update", &update)
@@ -452,12 +456,21 @@ pub fn start_transcription_task<R: Runtime>(
 }
 
 /// Transcribe audio chunk using the appropriate provider (Whisper, Parakeet, or trait-based)
-/// Returns: (text, confidence Option, is_partial)
+/// Returns: (text, confidence Option, is_partial, speaker_turns)
 async fn transcribe_chunk_with_provider<R: Runtime>(
     engine: &TranscriptionEngine,
     chunk: AudioChunk,
     app: &AppHandle<R>,
-) -> std::result::Result<(String, Option<f32>, bool), TranscriptionError> {
+) -> std::result::Result<
+    (
+        String,
+        Option<f32>,
+        bool,
+        Vec<crate::database::repositories::speaker_turn::SpeakerTurn>,
+    ),
+    TranscriptionError,
+> {
+    let chunk_offset_ms = (chunk.timestamp * 1000.0).round() as i64;
     // Convert to 16kHz mono for transcription
     let transcription_data = if chunk.sample_rate != 16000 {
         crate::audio::audio_processing::resample_audio(&chunk.data, chunk.sample_rate, 16000)
@@ -503,7 +516,7 @@ async fn transcribe_chunk_with_provider<R: Runtime>(
                 Ok((text, confidence, is_partial)) => {
                     let cleaned_text = text.trim().to_string();
                     if cleaned_text.is_empty() {
-                        return Ok((String::new(), Some(confidence), is_partial));
+                        return Ok((String::new(), Some(confidence), is_partial, Vec::new()));
                     }
 
                     info!(
@@ -514,7 +527,7 @@ async fn transcribe_chunk_with_provider<R: Runtime>(
                         is_partial
                     );
 
-                    Ok((cleaned_text, Some(confidence), is_partial))
+                    Ok((cleaned_text, Some(confidence), is_partial, Vec::new()))
                 }
                 Err(e) => {
                     error!(
@@ -541,7 +554,7 @@ async fn transcribe_chunk_with_provider<R: Runtime>(
                 Ok(text) => {
                     let cleaned_text = text.trim().to_string();
                     if cleaned_text.is_empty() {
-                        return Ok((String::new(), None, false));
+                        return Ok((String::new(), None, false, Vec::new()));
                     }
 
                     info!(
@@ -551,7 +564,7 @@ async fn transcribe_chunk_with_provider<R: Runtime>(
                     );
 
                     // Parakeet doesn't provide confidence or partial results
-                    Ok((cleaned_text, None, false))
+                    Ok((cleaned_text, None, false, Vec::new()))
                 }
                 Err(e) => {
                     error!(
@@ -581,7 +594,20 @@ async fn transcribe_chunk_with_provider<R: Runtime>(
                 Ok(result) => {
                     let cleaned_text = result.text.trim().to_string();
                     if cleaned_text.is_empty() {
-                        return Ok((String::new(), result.confidence, result.is_partial));
+                        return Ok((
+                            String::new(),
+                            result.confidence,
+                            result.is_partial,
+                            Vec::new(),
+                        ));
+                    }
+
+                    let offset_turns = super::nemotron_provider::offset_speaker_turns(
+                        &result.speaker_turns,
+                        chunk_offset_ms,
+                    );
+                    if !offset_turns.is_empty() {
+                        super::nemotron_provider::append_live_speaker_turns(&offset_turns);
                     }
 
                     let confidence_str = match result.confidence {
@@ -590,15 +616,21 @@ async fn transcribe_chunk_with_provider<R: Runtime>(
                     };
 
                     info!(
-                        "{} transcription complete for chunk {} (chars={}, {}, partial={})",
+                        "{} transcription complete for chunk {} (chars={}, {}, partial={}, speaker_turns={})",
                         provider.provider_name(),
                         chunk.chunk_id,
                         cleaned_text.chars().count(),
                         confidence_str,
-                        result.is_partial
+                        result.is_partial,
+                        offset_turns.len()
                     );
 
-                    Ok((cleaned_text, result.confidence, result.is_partial))
+                    Ok((
+                        cleaned_text,
+                        result.confidence,
+                        result.is_partial,
+                        offset_turns,
+                    ))
                 }
                 Err(e) => {
                     error!(

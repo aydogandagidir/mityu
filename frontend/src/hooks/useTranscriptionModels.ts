@@ -8,7 +8,7 @@ export interface RawModelInfo {
 }
 
 export interface ModelOption {
-  provider: 'whisper' | 'parakeet';
+  provider: 'whisper' | 'parakeet' | 'nemotron';
   name: string;
   displayName: string;
   size_mb: number;
@@ -77,6 +77,18 @@ export function useTranscriptionModels(transcriptModelConfig: TranscriptModelCon
       console.error('Failed to fetch Parakeet models:', err);
     }
 
+    // Always offer NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE SALM)
+    const nemotronModelName =
+      transcriptModelConfig?.provider === 'nemotron' && transcriptModelConfig?.model
+        ? transcriptModelConfig.model
+        : 'nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B';
+    allModels.push({
+      provider: 'nemotron',
+      name: nemotronModelName,
+      displayName: '🟢 Nemotron 3.5 Transcribe (30B-A4B MoE · 8 speakers)',
+      size_mb: 0,
+    });
+
     setAvailableModels(allModels);
 
     // Set default model based on user's saved configuration
@@ -88,7 +100,8 @@ export function useTranscriptionModels(transcriptModelConfig: TranscriptModelCon
     const configuredMatch = allModels.find(
       (m) =>
         (configuredProvider === 'localWhisper' && m.provider === 'whisper' && m.name === configuredModel) ||
-        (configuredProvider === 'parakeet' && m.provider === 'parakeet' && m.name === configuredModel)
+        (configuredProvider === 'parakeet' && m.provider === 'parakeet' && m.name === configuredModel) ||
+        (configuredProvider === 'nemotron' && m.provider === 'nemotron')
     );
 
     // Only set default model if user hasn't manually selected one

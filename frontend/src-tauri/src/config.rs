@@ -12,6 +12,12 @@ pub const DEFAULT_WHISPER_MODEL: &str = "large-v3-turbo";
 /// This is the quantized version optimized for speed.
 pub const DEFAULT_PARAKEET_MODEL: &str = "parakeet-tdt-0.6b-v3-int8";
 
+/// Default NVIDIA Nemotron 3.5 Transcribe model identifier (30B-A4B MoE SALM).
+pub const DEFAULT_NEMOTRON_MODEL: &str = "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B";
+
+/// Default local OpenAI-compatible vLLM / NIM endpoint for Nemotron 3.5 Transcribe.
+pub const DEFAULT_NEMOTRON_ENDPOINT: &str = "http://127.0.0.1:8000/v1";
+
 /// Whisper model catalog with metadata for all supported models.
 /// Used by both WhisperEngine::discover_models() and discover_models_standalone().
 ///

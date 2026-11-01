@@ -7,10 +7,52 @@ import { Label } from './ui/label';
 import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import { ModelManager } from './WhisperModelManager';
 import { ParakeetModelManager } from './ParakeetModelManager';
+import { SettingsCard } from './settings/SettingsCard';
+import { SwitchRow } from './settings/SwitchRow';
+import {
+    DEFAULT_NEMOTRON_ENDPOINT,
+    DEFAULT_NEMOTRON_MODEL,
+} from '@/constants/modelDefaults';
 
+export interface NemotronSettingsPayload {
+    model: string;
+    endpoint: string;
+    speaker_attribution: boolean;
+    inline_pii_redaction: boolean;
+    target_language: string | null;
+    context_prompt: string | null;
+}
+
+export function parseNemotronModelConfig(rawModel: string | undefined): NemotronSettingsPayload {
+    const trimmed = (rawModel || '').trim();
+    if (trimmed.startsWith('{')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            return {
+                model: parsed.model || DEFAULT_NEMOTRON_MODEL,
+                endpoint: parsed.endpoint || DEFAULT_NEMOTRON_ENDPOINT,
+                speaker_attribution:
+                    typeof parsed.speaker_attribution === 'boolean' ? parsed.speaker_attribution : true,
+                inline_pii_redaction: Boolean(parsed.inline_pii_redaction),
+                target_language: parsed.target_language || null,
+                context_prompt: parsed.context_prompt || null,
+            };
+        } catch {
+            // Fall through to defaults
+        }
+    }
+    return {
+        model: trimmed || DEFAULT_NEMOTRON_MODEL,
+        endpoint: DEFAULT_NEMOTRON_ENDPOINT,
+        speaker_attribution: true,
+        inline_pii_redaction: false,
+        target_language: null,
+        context_prompt: null,
+    };
+}
 
 export interface TranscriptModelProps {
-    provider: 'localWhisper' | 'parakeet' | 'deepgram' | 'elevenLabs' | 'groq' | 'openai';
+    provider: 'localWhisper' | 'parakeet' | 'nemotron' | 'deepgram' | 'elevenLabs' | 'groq' | 'openai';
     model: string;
     apiKey?: string | null;
     hasApiKey?: boolean;
@@ -22,20 +64,40 @@ export interface TranscriptSettingsProps {
     onModelSelect?: () => void;
 }
 
+const NEMOTRON_TRANSLATION_TARGETS = [
+    { value: 'none', label: 'None — Keep original spoken language' },
+    { value: 'English', label: 'English' },
+    { value: 'Turkish', label: 'Turkish (Türkçe)' },
+    { value: 'Spanish', label: 'Spanish (Español)' },
+    { value: 'German', label: 'German (Deutsch)' },
+    { value: 'French', label: 'French (Français)' },
+    { value: 'Japanese', label: 'Japanese (日本語)' },
+    { value: 'Arabic', label: 'Arabic (العربية)' },
+    { value: 'Portuguese', label: 'Portuguese (Português)' },
+    { value: 'Italian', label: 'Italian (Italiano)' },
+    { value: 'Korean', label: 'Korean (한국어)' },
+    { value: 'Chinese', label: 'Chinese (中文)' },
+];
+
 export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelConfig, onModelSelect }: TranscriptSettingsProps) {
     const [apiKey, setApiKey] = useState<string | null>(transcriptModelConfig.apiKey || null);
     const [hasStoredApiKey, setHasStoredApiKey] = useState<boolean>(Boolean(transcriptModelConfig.hasApiKey));
     const [showApiKey, setShowApiKey] = useState<boolean>(false);
     const [isApiKeyLocked, setIsApiKeyLocked] = useState<boolean>(true);
-    // See ModelSettingsModal: the `animate-vibrate` shake was deleted as a vestibular
-    // trigger (ADR-H), so this feedback is a sentence rather than colour alone (SC 1.4.1).
     const [showLockedHint, setShowLockedHint] = useState<boolean>(false);
     const [uiProvider, setUiProvider] = useState<TranscriptModelProps['provider']>(transcriptModelConfig.provider);
+    const [nemotronCfg, setNemotronCfg] = useState<NemotronSettingsPayload>(() =>
+        parseNemotronModelConfig(
+            transcriptModelConfig.provider === 'nemotron' ? transcriptModelConfig.model : undefined
+        )
+    );
 
-    // Sync uiProvider when backend config changes (e.g., after model selection or initial load)
     useEffect(() => {
         setUiProvider(transcriptModelConfig.provider);
-    }, [transcriptModelConfig.provider]);
+        if (transcriptModelConfig.provider === 'nemotron') {
+            setNemotronCfg(parseNemotronModelConfig(transcriptModelConfig.model));
+        }
+    }, [transcriptModelConfig.provider, transcriptModelConfig.model]);
 
     useEffect(() => {
         if (transcriptModelConfig.provider === 'localWhisper' || transcriptModelConfig.provider === 'parakeet') {
@@ -54,15 +116,44 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
             setHasStoredApiKey(false);
         }
     };
-    const modelOptions = {
-        localWhisper: [], // Model selection handled by ModelManager component
-        parakeet: [], // Model selection handled by ParakeetModelManager component
+
+    const persistNemotronConfig = async (next: NemotronSettingsPayload, nextApiKey?: string | null) => {
+        setNemotronCfg(next);
+        const serialized = JSON.stringify(next);
+        const keyToSave = nextApiKey !== undefined ? nextApiKey : apiKey;
+        setTranscriptModelConfig({
+            ...transcriptModelConfig,
+            provider: 'nemotron',
+            model: serialized,
+            apiKey: keyToSave || null,
+            hasApiKey: hasStoredApiKey || Boolean(keyToSave && keyToSave.trim()),
+        });
+        try {
+            await invoke('api_save_transcript_config', {
+                provider: 'nemotron',
+                model: serialized,
+                apiKey: keyToSave && keyToSave.trim() ? keyToSave.trim() : null,
+            });
+        } catch {
+            // Non-Tauri browser preview safe no-op
+        }
+    };
+
+    const modelOptions: Record<TranscriptModelProps['provider'], string[]> = {
+        localWhisper: [],
+        parakeet: [],
+        nemotron: [DEFAULT_NEMOTRON_MODEL],
         deepgram: ['nova-2-phonecall'],
         elevenLabs: ['eleven_multilingual_v2'],
         groq: ['llama-3.3-70b-versatile'],
         openai: ['gpt-4o'],
     };
-    const requiresApiKey = transcriptModelConfig.provider === 'deepgram' || transcriptModelConfig.provider === 'elevenLabs' || transcriptModelConfig.provider === 'openai' || transcriptModelConfig.provider === 'groq';
+    const requiresApiKey =
+        uiProvider === 'nemotron' ||
+        uiProvider === 'deepgram' ||
+        uiProvider === 'elevenLabs' ||
+        uiProvider === 'openai' ||
+        uiProvider === 'groq';
 
     const handleInputClick = () => {
         if (isApiKeyLocked) {
@@ -72,69 +163,68 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
     };
 
     const handleWhisperModelSelect = (modelName: string) => {
-        // Always update config when model is selected, regardless of current provider
-        // This ensures the model is set when user switches back
         setTranscriptModelConfig({
             ...transcriptModelConfig,
-            provider: 'localWhisper', // Ensure provider is set correctly
+            provider: 'localWhisper',
             model: modelName
         });
-        // Close modal after selection
         if (onModelSelect) {
             onModelSelect();
         }
     };
 
     const handleParakeetModelSelect = (modelName: string) => {
-        // Always update config when model is selected, regardless of current provider
-        // This ensures the model is set when user switches back
         setTranscriptModelConfig({
             ...transcriptModelConfig,
-            provider: 'parakeet', // Ensure provider is set correctly
+            provider: 'parakeet',
             model: modelName
         });
-        // Close modal after selection
         if (onModelSelect) {
             onModelSelect();
         }
     };
 
     return (
-        <div>
-            <div>
-                {/* <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold text-foreground">Transcript Settings</h3>
-                </div> */}
-                <div className="space-y-4 pb-6">
+        <div className="space-y-4 pb-6">
+            <SettingsCard
+                title="Transcription engine"
+                description="Choose the speech recognition engine that processes your audio."
+            >
+                <div className="space-y-3">
                     <div>
-                        <Label className="block text-sm font-medium text-foreground mb-1">
+                        <Label className="mb-1.5 block text-label text-foreground">
                             Transcript Model
                         </Label>
-                        <div className="flex space-x-2 mx-1">
+                        <div className="flex gap-2">
                             <Select
                                 value={uiProvider}
                                 onValueChange={(value) => {
                                     const provider = value as TranscriptModelProps['provider'];
                                     setUiProvider(provider);
-                                    if (provider !== 'localWhisper' && provider !== 'parakeet') {
+                                    if (provider === 'nemotron') {
+                                        const initial = parseNemotronModelConfig(
+                                            transcriptModelConfig.provider === 'nemotron'
+                                                ? transcriptModelConfig.model
+                                                : undefined
+                                        );
+                                        void fetchApiKeyPresence('nemotron');
+                                        void persistNemotronConfig(initial);
+                                    } else if (provider !== 'localWhisper' && provider !== 'parakeet') {
                                         void fetchApiKeyPresence(provider);
                                     }
                                 }}
                             >
-                                <SelectTrigger className='focus:ring-1 focus:ring-blue-500 focus:border-blue-500'>
+                                <SelectTrigger>
                                     <SelectValue placeholder="Select provider" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="parakeet">⚡ Parakeet (Fast local transcription)</SelectItem>
                                     <SelectItem value="localWhisper">🏠 Local Whisper (Multiple model sizes)</SelectItem>
-                                    {/* <SelectItem value="deepgram">☁️ Deepgram (Backup)</SelectItem>
-                                    <SelectItem value="elevenLabs">☁️ ElevenLabs</SelectItem>
-                                    <SelectItem value="groq">☁️ Groq</SelectItem>
-                                    <SelectItem value="openai">☁️ OpenAI</SelectItem> */}
+                                    <SelectItem value="nemotron">🟢 NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE · 8 Speakers)</SelectItem>
                                 </SelectContent>
                             </Select>
 
-                            {uiProvider !== 'localWhisper' && uiProvider !== 'parakeet' && (
+                            {uiProvider !== 'localWhisper' && uiProvider !== 'parakeet' && uiProvider !== 'nemotron' && (
                                 <Select
                                     value={transcriptModelConfig.model}
                                     onValueChange={(value) => {
@@ -142,7 +232,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                         setTranscriptModelConfig({ ...transcriptModelConfig, provider: uiProvider, model });
                                     }}
                                 >
-                                    <SelectTrigger className='focus:ring-1 focus:ring-blue-500 focus:border-blue-500'>
+                                    <SelectTrigger>
                                         <SelectValue placeholder="Select model" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -152,109 +242,252 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     </SelectContent>
                                 </Select>
                             )}
-
                         </div>
-                        <p className="mt-2 text-xs text-muted-foreground">
+                        <p className="mt-2 text-caption text-muted-foreground">
                             Accuracy varies with language, speaker, microphone, overlap, and noise.
                             Target-environment validation has not been performed; verify important text
                             against the source audio.
                         </p>
                     </div>
+                </div>
+            </SettingsCard>
 
-                    {uiProvider === 'localWhisper' && (
-                        <div className="mt-6">
-                            <ModelManager
-                                selectedModel={transcriptModelConfig.provider === 'localWhisper' ? transcriptModelConfig.model : undefined}
-                                onModelSelect={handleWhisperModelSelect}
-                                autoSave={true}
-                            />
-                        </div>
-                    )}
+            {uiProvider === 'localWhisper' && (
+                <SettingsCard
+                    title="Local Whisper models"
+                    description="Models are downloaded once and run on your device."
+                >
+                    <ModelManager
+                        selectedModel={transcriptModelConfig.provider === 'localWhisper' ? transcriptModelConfig.model : undefined}
+                        onModelSelect={handleWhisperModelSelect}
+                        autoSave={true}
+                    />
+                </SettingsCard>
+            )}
 
-                    {uiProvider === 'parakeet' && (
-                        <div className="mt-6">
-                            <ParakeetModelManager
-                                selectedModel={transcriptModelConfig.provider === 'parakeet' ? transcriptModelConfig.model : undefined}
-                                onModelSelect={handleParakeetModelSelect}
-                                autoSave={true}
-                            />
-                        </div>
-                    )}
+            {uiProvider === 'parakeet' && (
+                <SettingsCard
+                    title="Parakeet models"
+                    description="Quantized on-device speech recognition models."
+                >
+                    <ParakeetModelManager
+                        selectedModel={transcriptModelConfig.provider === 'parakeet' ? transcriptModelConfig.model : undefined}
+                        onModelSelect={handleParakeetModelSelect}
+                        autoSave={true}
+                    />
+                </SettingsCard>
+            )}
 
+            {uiProvider === 'nemotron' && (
+                <>
+                    <SettingsCard
+                        title="NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE)"
+                        description="Promptable Speech-Audio-Language Model (~4B active parameters) with 40-language transcription, live 8-speaker attribution, 31-language translation, and contextual prompting."
+                    >
+                        <div className="space-y-4">
+                            <div className="flex flex-wrap gap-1.5">
+                                {[
+                                    '40 languages',
+                                    'Up to 8 speakers (live)',
+                                    'Overlap-aware Sortformer',
+                                    '31-language translation',
+                                    'Contextual prompting',
+                                    'Inline PII redaction',
+                                ].map((pill) => (
+                                    <span
+                                        key={pill}
+                                        className="inline-flex items-center rounded-full border border-border bg-surface-2 px-2.5 py-0.5 text-caption text-foreground"
+                                    >
+                                        {pill}
+                                    </span>
+                                ))}
+                            </div>
 
-                    {requiresApiKey && (
-                        <div>
-                            <Label className="block text-sm font-medium text-foreground mb-1">
-                                API Key
-                            </Label>
-                            <div className="relative mx-1">
-                                <Input
-                                    type={showApiKey ? "text" : "password"}
-                                    className={`pr-24 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isApiKeyLocked ? 'bg-muted cursor-not-allowed' : ''
-                                        }`}
-                                    value={apiKey || ''}
-                                    onChange={(e) => {
-                                        const value = e.target.value;
-                                        setApiKey(value);
-                                        setTranscriptModelConfig({
-                                            ...transcriptModelConfig,
-                                            provider: uiProvider,
-                                            apiKey: value || null,
-                                            hasApiKey: hasStoredApiKey || Boolean(value.trim()),
-                                        });
-                                    }}
-                                    disabled={isApiKeyLocked}
-                                    onClick={handleInputClick}
-                                    placeholder={hasStoredApiKey ? 'Stored securely — enter to replace' : 'Enter your API key'}
-                                />
-                                {isApiKeyLocked && (
-                                    <div
-                                        onClick={handleInputClick}
-                                        className="absolute inset-0 flex items-center justify-center bg-muted bg-opacity-50 rounded-md cursor-not-allowed"
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                    <Label className="mb-1 block text-label text-foreground">
+                                        Endpoint URL (Local vLLM / NIM or Cloud)
+                                    </Label>
+                                    <Input
+                                        value={nemotronCfg.endpoint}
+                                        onChange={(e) =>
+                                            void persistNemotronConfig({
+                                                ...nemotronCfg,
+                                                endpoint: e.target.value,
+                                            })
+                                        }
+                                        placeholder={DEFAULT_NEMOTRON_ENDPOINT}
                                     />
-                                )}
-                                <div className="absolute inset-y-0 right-0 pr-1 flex items-center">
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => {
-                                            setShowLockedHint(false);
-                                            setIsApiKeyLocked(!isApiKeyLocked);
-                                        }}
-                                        className={`transition-colors duration-200 ${showLockedHint ? 'text-destructive-ink' : ''
-                                            }`}
-                                        title={isApiKeyLocked ? "Unlock to edit" : "Lock to prevent editing"}
-                                    >
-                                        {isApiKeyLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => setShowApiKey(!showApiKey)}
-                                    >
-                                        {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                    </Button>
+                                    <p className="mt-1 text-caption text-muted-foreground">
+                                        Default <span className="font-mono">{DEFAULT_NEMOTRON_ENDPOINT}</span> keeps all audio on-device.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <Label className="mb-1 block text-label text-foreground">
+                                        Model Checkpoint ID
+                                    </Label>
+                                    <Input
+                                        value={nemotronCfg.model}
+                                        onChange={(e) =>
+                                            void persistNemotronConfig({
+                                                ...nemotronCfg,
+                                                model: e.target.value,
+                                            })
+                                        }
+                                        placeholder={DEFAULT_NEMOTRON_MODEL}
+                                    />
+                                    <p className="mt-1 text-caption text-muted-foreground">
+                                        Open-weights MoE SALM checkpoint.
+                                    </p>
                                 </div>
                             </div>
-                            {showLockedHint && (
-                                <p role="status" className="mt-1 text-caption text-destructive-ink">
-                                    This key is locked. Use the lock button to edit it.
-                                </p>
-                            )}
+
+                            <div className="divide-y [&>*+*]:border-t-border">
+                                <SwitchRow
+                                    label="Live speaker attribution (Speaker 1–8)"
+                                    description="Separates up to 8 speakers and marks overlapping speech in real time. Labels stay anonymous (Speaker 1–8) to avoid storing biometric voice-to-name mappings."
+                                    checked={nemotronCfg.speaker_attribution}
+                                    onCheckedChange={(checked) =>
+                                        void persistNemotronConfig({
+                                            ...nemotronCfg,
+                                            speaker_attribution: checked,
+                                        })
+                                    }
+                                />
+                                <SwitchRow
+                                    label="Inline PII redaction during transcription"
+                                    description="Instructs Nemotron 3.5 Transcribe to replace personal emails, phone numbers, and IDs with [REDACTED] at decode time."
+                                    checked={nemotronCfg.inline_pii_redaction}
+                                    onCheckedChange={(checked) =>
+                                        void persistNemotronConfig({
+                                            ...nemotronCfg,
+                                            inline_pii_redaction: checked,
+                                        })
+                                    }
+                                />
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                    <Label className="mb-1 block text-label text-foreground">
+                                        Simultaneous translation (optional, 31 languages)
+                                    </Label>
+                                    <Select
+                                        value={nemotronCfg.target_language || 'none'}
+                                        onValueChange={(val) =>
+                                            void persistNemotronConfig({
+                                                ...nemotronCfg,
+                                                target_language: val === 'none' ? null : val,
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Keep spoken language" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {NEMOTRON_TRANSLATION_TARGETS.map((t) => (
+                                                <SelectItem key={t.value} value={t.value}>
+                                                    {t.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div>
+                                    <Label className="mb-1 block text-label text-foreground">
+                                        Domain &amp; vocabulary context prompt
+                                    </Label>
+                                    <Input
+                                        value={nemotronCfg.context_prompt || ''}
+                                        onChange={(e) =>
+                                            void persistNemotronConfig({
+                                                ...nemotronCfg,
+                                                context_prompt: e.target.value || null,
+                                            })
+                                        }
+                                        placeholder="e.g., Mityu, SQLCipher, Sortformer, KVKK, Q3"
+                                    />
+                                    <p className="mt-1 text-caption text-muted-foreground">
+                                        Improves recognition of product names, acronyms, and technical terms.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
+                    </SettingsCard>
+                </>
+            )}
+
+            {requiresApiKey && (
+                <SettingsCard
+                    title={uiProvider === 'nemotron' ? 'API key (optional for local vLLM / NIM)' : 'API key'}
+                    description={
+                        uiProvider === 'nemotron'
+                            ? 'Leave empty when running on localhost (127.0.0.1). Required only for remote endpoints; stored in your OS credential store.'
+                            : 'Stored in your operating system credential store.'
+                    }
+                >
+                    <div className="relative">
+                        <Input
+                            type={showApiKey ? "text" : "password"}
+                            className={`pr-24 ${isApiKeyLocked ? 'bg-muted cursor-not-allowed' : ''}`}
+                            value={apiKey || ''}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setApiKey(value);
+                                if (uiProvider === 'nemotron') {
+                                    void persistNemotronConfig(nemotronCfg, value);
+                                } else {
+                                    setTranscriptModelConfig({
+                                        ...transcriptModelConfig,
+                                        provider: uiProvider,
+                                        apiKey: value || null,
+                                        hasApiKey: hasStoredApiKey || Boolean(value.trim()),
+                                    });
+                                }
+                            }}
+                            disabled={isApiKeyLocked}
+                            onClick={handleInputClick}
+                            placeholder={hasStoredApiKey ? 'Stored securely — enter to replace' : 'Enter your API key'}
+                        />
+                        {isApiKeyLocked && (
+                            <div
+                                onClick={handleInputClick}
+                                className="absolute inset-0 flex items-center justify-center rounded-md bg-muted/50 cursor-not-allowed"
+                            />
+                        )}
+                        <div className="absolute inset-y-0 right-0 pr-1 flex items-center">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                    setShowLockedHint(false);
+                                    setIsApiKeyLocked(!isApiKeyLocked);
+                                }}
+                                className={`transition-colors duration-fast ${showLockedHint ? 'text-destructive-ink' : ''}`}
+                                title={isApiKeyLocked ? "Unlock to edit" : "Lock to prevent editing"}
+                            >
+                                {isApiKeyLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setShowApiKey(!showApiKey)}
+                            >
+                                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                        </div>
+                    </div>
+                    {showLockedHint && (
+                        <p role="status" className="mt-1 text-caption text-destructive-ink">
+                            This key is locked. Use the lock button to edit it.
+                        </p>
                     )}
-                </div>
-            </div>
-        </div >
-    )
+                </SettingsCard>
+            )}
+        </div>
+    );
 }
-
-
-
-
-
-
-
-

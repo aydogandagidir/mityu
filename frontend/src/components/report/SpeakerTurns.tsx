@@ -48,6 +48,8 @@ const SWATCHES = [
   { dot: 'bg-teal-500', bar: 'bg-teal-500/70', text: 'text-teal-700 dark:text-teal-300' },
   { dot: 'bg-pink-500', bar: 'bg-pink-500/70', text: 'text-pink-700 dark:text-pink-300' },
   { dot: 'bg-lime-600', bar: 'bg-lime-600/70', text: 'text-lime-700 dark:text-lime-300' },
+  { dot: 'bg-indigo-500', bar: 'bg-indigo-500/70', text: 'text-indigo-700 dark:text-indigo-300' },
+  { dot: 'bg-cyan-600', bar: 'bg-cyan-600/70', text: 'text-cyan-700 dark:text-cyan-300' },
 ];
 
 /**

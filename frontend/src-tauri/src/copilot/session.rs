@@ -646,6 +646,7 @@ mod tests {
             audio_start_time: start,
             audio_end_time: start + dur,
             duration: dur,
+            speaker_turns: Vec::new(),
         }
     }
 

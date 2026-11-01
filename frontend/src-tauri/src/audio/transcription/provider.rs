@@ -43,6 +43,9 @@ pub struct TranscriptResult {
     pub text: String,
     pub confidence: Option<f32>, // None if provider doesn't support confidence scores
     pub is_partial: bool,
+    /// Optional chunk-relative speaker turns (in ms from start of chunk) emitted
+    /// by joint ASR + speaker-attribution SALM providers such as Nemotron 3.5 Transcribe.
+    pub speaker_turns: Vec<crate::database::repositories::speaker_turn::SpeakerTurn>,
 }
 
 /// Trait for transcription providers (Whisper, Parakeet, future providers)

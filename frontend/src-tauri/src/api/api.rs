@@ -999,6 +999,31 @@ pub async fn api_save_transcript<R: Runtime>(
                 crate::copilot::flush::flush_pins(pool, &ctx, &meeting_id, &saved.sequence_ids)
                     .await;
 
+            // Persist any live speaker turns attributed during recording by Nemotron 3.5 Transcribe
+            let live_turns =
+                crate::audio::transcription::nemotron_provider::take_live_speaker_turns();
+            if !live_turns.is_empty() {
+                if let Err(e) =
+                    crate::database::repositories::speaker_turn::SpeakerTurnsRepository::replace_for_meeting(
+                        pool,
+                        &ctx,
+                        &meeting_id,
+                        &live_turns,
+                    )
+                    .await
+                {
+                    log_warn!(
+                        "Failed to persist live speaker turns for meeting: {}",
+                        e
+                    );
+                } else {
+                    log_info!(
+                        "Persisted {} live speaker turn(s) for meeting",
+                        live_turns.len()
+                    );
+                }
+            }
+
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Transcript saved successfully",

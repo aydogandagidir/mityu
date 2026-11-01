@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { SpeakerChips, TalkTimePanel } from './SpeakerTurns';
+import { SpeakerChips, swatchFor, TalkTimePanel } from './SpeakerTurns';
 import type { SpeakerTurn } from '@/lib/speakerTurns';
 
 afterEach(cleanup);
@@ -161,5 +161,12 @@ describe('SpeakerChips', () => {
   it('renders nothing when there is nothing to say', () => {
     const { container } = render(<SpeakerChips speakers={[]} order={[]} />);
     expect(container.innerHTML).toBe('');
+  });
+
+  it('assigns distinct swatches to up to 8 speakers for Nemotron 3.5 Transcribe', () => {
+    const order = Array.from({ length: 8 }, (_, i) => `Speaker ${i + 1}`);
+    const dots = new Set(order.map((label) => swatchFor(label, order).dot));
+    expect(dots.size).toBe(8);
+    expect(swatchFor('Speaker 9', [...order, 'Speaker 9']).dot).toBe('bg-muted-foreground');
   });
 });

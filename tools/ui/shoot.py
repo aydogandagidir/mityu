@@ -67,9 +67,10 @@ import socket
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.realpath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 FRONTEND = os.path.join(REPO, "frontend")
 EXPORT = os.path.join(FRONTEND, "out")
 
@@ -215,40 +216,44 @@ def shoot(chrome: str, url: str, png: str, width: int, height: int) -> int:
     # is the exact failure it exists to prevent.
     if os.path.exists(png):
         os.remove(png)
-    r = subprocess.run(
-        [
-            chrome,
-            *chrome_flags(),
-            "--headless",
-            "--disable-gpu",
-            "--hide-scrollbars",
-            f"--window-size={width},{height}",
-            # Let hydration and client-side effects settle; without this the
-            # shot is of the pre-hydration markup.
-            "--virtual-time-budget=6000",
-            f"--screenshot={png}",
-            url,
-        ],
-        capture_output=True,
-    )
+    with tempfile.TemporaryDirectory() as profile_dir:
+        r = subprocess.run(
+            [
+                chrome,
+                *chrome_flags(),
+                "--headless=new",
+                "--disable-gpu",
+                "--hide-scrollbars",
+                f"--user-data-dir={profile_dir}",
+                f"--window-size={width},{height}",
+                # Let hydration and client-side effects settle; without this the
+                # shot is of the pre-hydration markup.
+                "--virtual-time-budget=6000",
+                f"--screenshot={os.path.realpath(png)}",
+                url,
+            ],
+            capture_output=True,
+        )
     return r.returncode
 
 
 def dump_dom(chrome: str, url: str) -> str:
-    r = subprocess.run(
-        [
-            chrome,
-            *chrome_flags(),
-            "--headless",
-            "--disable-gpu",
-            "--virtual-time-budget=6000",
-            "--dump-dom",
-            url,
-        ],
-        capture_output=True,
-        text=True,
-        errors="replace",
-    )
+    with tempfile.TemporaryDirectory() as profile_dir:
+        r = subprocess.run(
+            [
+                chrome,
+                *chrome_flags(),
+                "--headless=new",
+                "--disable-gpu",
+                f"--user-data-dir={profile_dir}",
+                "--virtual-time-budget=6000",
+                "--dump-dom",
+                url,
+            ],
+            capture_output=True,
+            text=True,
+            errors="replace",
+        )
     return r.stdout
 
 
