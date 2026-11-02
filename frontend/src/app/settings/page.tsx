@@ -110,6 +110,7 @@ function SettingsContent() {
         const config = (await invoke('api_get_transcript_config')) as any;
         if (config) {
           setTranscriptModelConfig({
+            ...config,
             provider: config.provider || 'localWhisper',
             model: config.model || 'large-v3',
             apiKey: config.apiKey || null,

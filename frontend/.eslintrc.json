@@ -92,7 +92,6 @@
         "src/components/AISummary/BlockNoteSummaryView.tsx",
         "src/components/AISummary/Section.tsx",
         "src/components/AISummary/index.tsx",
-        "src/components/About.tsx",
         "src/components/AnalyticsConsentSwitch.tsx",
         "src/components/AnalyticsDataModal.tsx",
         "src/components/AskThisMeeting/AskPanel.tsx",

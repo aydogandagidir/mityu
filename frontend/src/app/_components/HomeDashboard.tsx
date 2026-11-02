@@ -24,7 +24,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, FileText, Mic } from 'lucide-react';
+import { ChevronRight, Cpu, FileText, Languages, Mic, ShieldCheck, Sparkles, Users } from 'lucide-react';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import {
   summaryDraftService,
@@ -33,6 +33,7 @@ import {
 import { isTauri } from '@/lib/isTauri';
 import { PageHeader } from '@/components/shell/PageHeader';
 import { ActionItemRow, type ActionItemRowItem } from '@/components/actions/ActionItemRow';
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
 import { Button } from '@/components/ui/button';
@@ -135,6 +136,58 @@ export function HomeDashboard({ service, forceLoad = false }: HomeDashboardProps
       />
 
       <div className="space-y-6 p-gutter">
+        {/* Local AI Workstation & Nemotron 3.5 Transcribe Architecture Strip */}
+        <section
+          aria-label="Speech and review workstation status"
+          data-testid="home-workstation-strip"
+          className="rounded-lg border border-ai-border bg-ai-surface p-4"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge tone="ai">
+                  <Cpu className="size-3" aria-hidden="true" />
+                  NVIDIA Nemotron 3.5 Transcribe · 30B-A4B MoE
+                </Badge>
+                <Badge tone="neutral">Whisper large-v3 · Parakeet</Badge>
+                <Badge tone="neutral">
+                  <Users className="size-3" aria-hidden="true" />
+                  8-Speaker Attribution
+                </Badge>
+                <Badge tone="neutral">
+                  <Languages className="size-3" aria-hidden="true" />
+                  40-Lang ASR · 31-Lang Translation
+                </Badge>
+                <Badge tone="verified">
+                  <ShieldCheck className="size-3" aria-hidden="true" />
+                  SQLCipher · Inline PII Guard
+                </Badge>
+              </div>
+              <p className="text-caption text-ai-ink">
+                Every action item and summary block requires human review before export. Switch between local engines or connect a self-hosted NVIDIA NIM / vLLM endpoint anytime.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/settings?section=transcription')}
+              >
+                <Cpu className="size-3.5" aria-hidden="true" />
+                Speech Engine
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/settings?section=beta')}
+              >
+                <Sparkles className="size-3.5" aria-hidden="true" />
+                Live Copilot HUD
+              </Button>
+            </div>
+          </div>
+        </section>
+
         <section aria-labelledby="home-queue-heading" className="space-y-2">
           <h2 id="home-queue-heading" className="sr-only">
             Action items awaiting review
