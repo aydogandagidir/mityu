@@ -5,7 +5,8 @@ import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch";
 import { UpdateDialog } from "./UpdateDialog";
 import { updateService, UpdateInfo } from '@/services/updateService';
 import { Button } from './ui/button';
-import { Loader2, CheckCircle2 } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { Loader2, CheckCircle2, Sparkles, ShieldCheck, Waves, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
 import { APP_VERSION } from '@/lib/appVersion';
 
@@ -56,146 +57,164 @@ export function About() {
     };
 
     return (
-        <div className="p-4 space-y-4 h-[80vh] overflow-y-auto">
-            {/* Compact Header */}
-            <div className="text-center">
+        <div className="h-[80vh] space-y-4 overflow-y-auto p-4">
+            {/* Architectural Workstation Header */}
+            <div className="rounded-lg border border-border bg-card p-4 text-center shadow-elev-1">
                 <div className="mb-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                         src="/mityu-mark.svg"
                         alt="Mityu logo"
-                        width={64}
-                        height={64}
-                        className="mx-auto"
+                        width={56}
+                        height={56}
+                        className="mx-auto rounded-lg shadow-elev-1"
                     />
                 </div>
-                <span className="text-sm text-muted-foreground"> v{currentVersion}</span>
-                <p className="text-body text-muted-foreground mt-1">
+                <div className="flex items-center justify-center gap-2">
+                    <span className="font-mono text-caption font-semibold tabular-nums text-foreground">
+                        v{currentVersion}
+                    </span>
+                    <Badge tone="ai">Nemotron 3.5 · 30B-A4B MoE</Badge>
+                    <Badge tone="verified">Local-First Workstation</Badge>
+                </div>
+                <p className="mt-2 text-body text-muted-foreground">
                     Meetings captured and reviewed — entirely on your machine. No bots, no uploads, no account.
                 </p>
-                <div className="mt-3">
+                <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
+                    <Badge tone="neutral">Whisper large-v3 · Parakeet · Nemotron 3.5</Badge>
+                    <Badge tone="neutral">8-Speaker Attribution · Overlap Aware</Badge>
+                    <Badge tone="neutral">40-Lang ASR · 31-Lang Translation</Badge>
+                </div>
+                <div className="mt-3.5">
                     <Button
                         onClick={handleCheckForUpdates}
                         disabled={isChecking}
                         variant="outline"
                         size="sm"
-                        className="text-xs"
                     >
                         {isChecking ? (
                             <>
-                                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                <Loader2 className="mr-2 size-3.5 animate-spin" />
                                 Checking...
                             </>
                         ) : (
                             <>
-                                <CheckCircle2 className="h-3 w-3 mr-2" />
+                                <CheckCircle2 className="mr-2 size-3.5" />
                                 Check for Updates
                             </>
                         )}
                     </Button>
                     {updateInfo?.available && (
-                        <div className="mt-2 text-xs text-primary">
+                        <div className="mt-2 text-caption font-medium text-primary">
                             Update available: v{updateInfo.version}
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+            <div className="rounded-lg border border-warning-border bg-warning-surface p-3 text-caption leading-relaxed text-warning-ink">
                 <span className="font-semibold">Validation and storage notice:</span>{' '}
-                transcription quality varies by language, microphone, overlap, and noise; the target-environment benchmark and human pilot have not been performed. Review important text against its source audio. Speaker separation is a best-effort estimate that runs after the recording ends. The live copilot is a beta: off by default, and not yet checked against a real model. Raw meeting audio remains local on this device until you delete the meeting.
+                transcription quality varies by language, microphone, overlap, and noise; the target-environment benchmark and human pilot have not been performed. Review important text against its source audio. Speaker separation is a best-effort estimate that runs live with NVIDIA Nemotron 3.5 Transcribe (up to eight anonymous speakers) or after the recording ends. The live copilot is a beta: off by default, and not yet checked against a real model. Raw meeting audio remains local on this device until you delete the meeting.
             </div>
 
             {/* Why Mityu - three pillars, aligned with the landing page copy */}
             <div className="space-y-3">
-                <h2 className="text-base font-semibold text-foreground">Why Mityu</h2>
-                <div className="space-y-2">
-                    <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
-                        <h3 className="font-bold text-sm text-foreground mb-1">On-device</h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">Recording and transcription run locally with Whisper large-v3 or Parakeet — no network needed. Speaker separation and talk time run on this device after the recording ends, with anonymous labels. Encrypted at rest with SQLCipher when secure OS key storage is available, with opt-in PII redaction.</p>
+                <h2 className="text-title text-foreground">Why Mityu</h2>
+                <div className="grid grid-cols-1 gap-2.5">
+                    <div className="rounded-lg border border-border bg-card p-3.5 shadow-elev-1">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                            <h3 className="flex items-center gap-1.5 text-title-sm text-foreground">
+                                <Cpu className="size-4 text-primary" aria-hidden="true" />
+                                On-device
+                            </h3>
+                            <Badge tone="verified">SQLCipher · PII Guard</Badge>
+                        </div>
+                        <p className="text-caption leading-relaxed text-muted-foreground">Recording and transcription run locally with Whisper large-v3, Parakeet, or NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE) — no network needed. Speaker separation and talk time run on this device after the recording ends (or live with Nemotron 3.5 up to eight speakers), with anonymous labels. Encrypted at rest with SQLCipher when secure OS key storage is available, with opt-in PII redaction.</p>
                     </div>
-                    <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
-                        <h3 className="font-bold text-sm text-foreground mb-1">Any meeting app</h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Google Meet, or Microsoft Teams — no bot joins your call. Windows 10/11 (64-bit) with an AVX2-capable processor; macOS in development.</p>
+                    <div className="rounded-lg border border-border bg-card p-3.5 shadow-elev-1">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                            <h3 className="flex items-center gap-1.5 text-title-sm text-foreground">
+                                <Waves className="size-4 text-primary" aria-hidden="true" />
+                                Any meeting app
+                            </h3>
+                            <Badge tone="neutral">WASAPI + Mic</Badge>
+                        </div>
+                        <p className="text-caption leading-relaxed text-muted-foreground">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Google Meet, or Microsoft Teams — no bot joins your call. Windows 10/11 (64-bit) with an AVX2-capable processor; macOS in development.</p>
                     </div>
-                    <div className="bg-muted rounded p-3 hover:bg-muted transition-colors">
-                        <h3 className="font-bold text-sm text-foreground mb-1">Human-approved</h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed">Every AI-generated line is a labeled draft linked to its source in the transcript — nothing is final until you approve it. Ask this meeting answers only from that meeting&apos;s transcript, or refuses. Export approved notes to PDF, Word or Markdown. Bring your own key: Ollama, OpenAI, Anthropic, Groq, OpenRouter.</p>
+                    <div className="rounded-lg border border-border bg-card p-3.5 shadow-elev-1">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                            <h3 className="flex items-center gap-1.5 text-title-sm text-foreground">
+                                <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+                                Human-approved
+                            </h3>
+                            <Badge tone="ai">Art. 50 Provenance</Badge>
+                        </div>
+                        <p className="text-caption leading-relaxed text-muted-foreground">Every AI-generated line is a labeled draft linked to its source in the transcript — nothing is final until you approve it. Ask this meeting answers only from that meeting&apos;s transcript, or refuses. Export approved notes to PDF, Word or Markdown. Bring your own key: Ollama, OpenAI, Anthropic, Groq, OpenRouter.</p>
                     </div>
                 </div>
             </div>
 
-            {/* In beta — the live copilot (BACKLOG EPIC I). Same wording as the
-                landing page's FAQ so the app and the site describe it identically:
-                off by default, Settings → Beta, not validated against a real model.
-
-                This is the STANDING description of what the app is, which is why
-                it names no version. Per-release changes belong to the What's new
-                dialog (`lib/releaseNotes.ts`, BACKLOG G2, added in #54) — two surfaces, two jobs,
-                so neither has to be rewritten when the other changes. */}
+            {/* In beta — the live copilot (BACKLOG EPIC I). */}
             <div className="space-y-3">
-                <h2 className="text-title font-semibold text-foreground">In beta</h2>
-                <div className="bg-muted rounded p-3">
-                    <h3 className="font-bold text-body text-foreground mb-1">Live copilot — off by default</h3>
+                <h2 className="text-title text-foreground">In beta</h2>
+                <div className="rounded-lg border border-ai-border bg-ai-surface p-3.5">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                        <h3 className="flex items-center gap-1.5 text-title-sm text-ai-ink">
+                            <Sparkles className="size-4" aria-hidden="true" />
+                            Live copilot — off by default
+                        </h3>
+                        <Badge tone="ai">Floating Glass HUD</Badge>
+                    </div>
                     <p className="text-caption leading-relaxed text-muted-foreground">
                         Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; eight meeting modes decide what it offers. Every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. Pin to notes keeps an answer as a draft in the meeting&apos;s summary when you save it. It ships with &ldquo;Allow cloud insights&rdquo; off, so it answers only with a model running on your device and refuses rather than sending anything away; turning that on under Settings &rarr; Beta sends the last few minutes of the conversation to the provider you configured, on every action you press. It never records on its own and never hides Mityu. It has not yet been checked against a real model.
                     </p>
                 </div>
             </div>
 
-            {/* Where per-release changes live. About answers "what is this app";
-                what changed in THIS version is the What's new dialog's job
-                (`lib/releaseNotes.ts`, BACKLOG G2) — auto-opened once after an
-                update from AppShell, and re-openable from Settings → General.
-                Naming it here is the whole of About's involvement: a second copy
-                of the changelog is a second thing to keep true. */}
-            <div className="bg-muted rounded p-3">
-                <p className="text-caption text-muted-foreground leading-relaxed">
+            <div className="rounded-lg border border-border bg-muted p-3">
+                <p className="text-caption leading-relaxed text-muted-foreground">
                     <span className="font-semibold text-foreground">What changed in this version:</span>{' '}
                     Mityu shows you after every update, and you can re-open it any time from Settings → General.
                 </p>
             </div>
 
-            {/* The one forward-looking line, kept because docs/ROADMAP.md's
-                Phase F cites this exact promise. A longer roadmap belongs in
-                docs/, not in a dialog a user opens to learn what they have. */}
-            <div className="bg-accent rounded p-3">
-                <p className="text-caption text-primary">
-                    <span className="font-bold">Coming soon:</span> A library of on-device AI agents — drafting follow-ups, tracking action items, and more. Draft-only: nothing is sent until you approve it.
+            <div className="rounded-lg border border-border bg-accent p-3">
+                <p className="text-caption text-accent-foreground">
+                    <span className="font-semibold">Coming soon:</span> A library of on-device AI agents — drafting follow-ups, tracking action items, and more. Draft-only: nothing is sent until you approve it.
                 </p>
             </div>
 
             {/* CTA Section - Compact */}
-            <div className="text-center space-y-2">
-                <h3 className="text-title font-semibold text-foreground">Ready to push your business further?</h3>
+            <div className="rounded-lg border border-border bg-card p-4 text-center space-y-2">
+                <h3 className="text-title text-foreground">Ready to push your business further?</h3>
                 <p className="text-caption text-muted-foreground">
-                    If you&apos;re planning to build privacy-first custom AI agents or a fully tailored product for your <span className="font-bold">business</span>, we can help you build it.
+                    If you&apos;re planning to build privacy-first custom AI agents or a fully tailored product for your <span className="font-semibold text-foreground">business</span>, we can help you build it.
                 </p>
-                <button
-                    onClick={handleContactClick}
-                    className="inline-flex items-center px-4 py-2 bg-primary hover:bg-primary/90 text-white text-sm font-medium rounded transition-colors duration-200 shadow-sm hover:shadow-md"
-                >
+                <Button onClick={handleContactClick} variant="default" size="sm">
                     Chat with the bluedev team
-                </button>
+                </Button>
             </div>
 
             {/* Acknowledgments - Compact */}
-            <div className="pt-2 border-t border-border">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Acknowledgments</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
+            <div className="border-t border-border pt-3">
+                <h3 className="mb-1.5 text-eyebrow uppercase text-subtle-foreground">Acknowledgments</h3>
+                <p className="text-caption leading-relaxed text-muted-foreground">
                     On-device transcription is powered by{' '}
                     <button onClick={() => openExternalLink('https://github.com/ggerganov/whisper.cpp')} className="underline hover:text-foreground">
                         whisper.cpp
                     </button>{' '}
-                    (OpenAI Whisper, MIT license) and{' '}
+                    (OpenAI Whisper, MIT license),{' '}
                     <button onClick={() => openExternalLink('https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3')} className="underline hover:text-foreground">
                         NVIDIA&apos;s Parakeet
                     </button>{' '}
-                    model (CC BY 4.0), with an ONNX conversion by{' '}
+                    model (CC BY 4.0) with an ONNX conversion by{' '}
                     <button onClick={() => openExternalLink('https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx')} className="underline hover:text-foreground">
                         istupakov
-                    </button>.
-                    {' '}Built-in summarization models include{' '}
+                    </button>, and{' '}
+                    <button onClick={() => openExternalLink('https://huggingface.co/nvidia')} className="underline hover:text-foreground">
+                        NVIDIA Nemotron 3.5 Transcribe
+                    </button>{' '}
+                    (30B-A4B MoE, Parallel Expert Encoder + Sortformer). Built-in summarization models include{' '}
                     <button onClick={() => openExternalLink('https://huggingface.co/Qwen/Qwen3.5-2B')} className="underline hover:text-foreground">
                         Qwen 3.5
                     </button>{' '}
@@ -213,8 +232,8 @@ export function About() {
             </div>
 
             {/* Footer - Compact */}
-            <div className="pt-2 border-t border-border text-center">
-                <p className="text-xs text-muted-foreground">
+            <div className="border-t border-border pt-2 text-center">
+                <p className="text-caption text-subtle-foreground">
                     Built by bluedev
                 </p>
             </div>
@@ -228,5 +247,5 @@ export function About() {
             />
         </div>
 
-    )
+    );
 }

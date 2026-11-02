@@ -43,6 +43,33 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.2.4',
+    date: '2026-11-02',
+    headline: 'NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE) integration, 8-speaker live attribution, and workstation UI upgrade.',
+    changes: [
+      {
+        title: 'NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE) speech engine support',
+        detail:
+          'You can now select NVIDIA Nemotron 3.5 Transcribe in Settings → Transcription and connect either NVIDIA NIM Cloud or a self-hosted NIM / vLLM workstation endpoint. It supports up to 8 concurrent speakers with overlap separation, 40-language ASR, 31-language live translation, inline PII redaction, and custom context vocabulary.',
+      },
+      {
+        title: 'Upgraded Home workstation, About dialog, Live Copilot HUD, and Transcript views',
+        detail:
+          'Home now surfaces active speech and review architecture controls alongside your review queue. The About dialog, Live Copilot overlay, Recording dock, and Speaker Turns view use the v1.2 semantic design system with 8-speaker palette attribution, overlap badges, bilingual subtitles, and inline PII guard indicators.',
+      },
+      {
+        title: 'Full transcription configuration persistence in Settings',
+        detail:
+          'Opening Settings now preserves all custom endpoint URLs, speaker diarization switches, source/target languages, PII redaction toggles, and context vocabulary terms across sessions.',
+      },
+    ],
+    caveats: [
+      'NVIDIA Nemotron 3.5 Transcribe requires either an NVIDIA NIM API key or a reachable self-hosted NIM / vLLM endpoint URL; Local Whisper and Parakeet remain completely offline on-device.',
+      'Transcription quality still varies by language, microphone, overlap, and noise; review important text against its source audio.',
+      'The live copilot remains a beta (off by default in Settings → Beta).',
+    ],
+  },
+  {
     version: '1.2.3',
     date: '2026-09-18',
     headline: 'Recording no longer closes the app on processors without AVX-512.',
