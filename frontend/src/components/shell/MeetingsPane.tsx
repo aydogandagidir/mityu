@@ -21,12 +21,11 @@
  * - `Analytics.trackMeetingDeleted()` and
  *   `Analytics.trackButtonClick('edit_meeting_title', 'sidebar')`.
  *
- * WHAT IS DELIBERATELY NOT HERE YET. §5.2 asks for date-grouped rows. `api_get_meetings`
- * returns `{id, title}` only, so the only way to group by date today is to parse the
- * date out of the generated title — which is exactly the defect the audit recorded
- * (a renamed meeting loses its date, and the Home dashboard already does this). The
- * sticky-group machinery is therefore built and rendered with ONE group; when the list
- * payload carries `created_at`, grouping becomes a change to `groupMeetings()` alone.
+ * DATE GROUPS (v1.2.6). §5.2's date-grouped rows are live: `api_get_meetings` now
+ * carries `created_at`, and `groupMeetingsByDate()` buckets rows into Today / Yesterday /
+ * Previous 7 days / Earlier by that column alone — never by parsing the generated title,
+ * which is the defect the audit recorded (a renamed meeting lost its date). A backend
+ * that sends no dates still renders the old single "All meetings" group.
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -56,6 +55,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { focusRing } from '@/components/ui/focus-ring';
 import { FOCUS_MEETING_SEARCH_EVENT } from './AppRail';
 import { cn } from '@/lib/utils';
+import { formatMeetingDate, groupMeetingsByDate } from '@/lib/meetingDates';
 
 /** 🔒 ADR-0026. The disclosure a user reads before a meeting is destroyed. */
 const DELETE_DISCLOSURE =
@@ -67,14 +67,11 @@ function isMeetingRow(id: string) {
 }
 
 /**
- * One group today, by design (see the docblock). The shape is the contract: a label and
- * its rows, so a `created_at` on the payload turns this into a real date grouping
- * without touching the renderer.
+ * Calendar groups from `created_at` (see the docblock). The shape is the contract the
+ * renderer reads: a label and its rows.
  */
 function groupMeetings(meetings: CurrentMeeting[]) {
-  const rows = meetings.filter((m) => isMeetingRow(m.id));
-  if (rows.length === 0) return [];
-  return [{ label: 'All meetings', rows }];
+  return groupMeetingsByDate(meetings.filter((m) => isMeetingRow(m.id)));
 }
 
 export function MeetingsPane() {
@@ -310,6 +307,7 @@ export function MeetingsPane() {
                   <ul role="list" className="px-2 pb-2">
                     {group.rows.map((meeting) => {
                       const active = currentMeeting?.id === meeting.id;
+                      const dateLabel = formatMeetingDate(meeting.createdAt);
                       return (
                         <li key={meeting.id} className="group relative">
                           <button
@@ -326,6 +324,11 @@ export function MeetingsPane() {
                             )}
                           >
                             <span className="line-clamp-2 break-words">{meeting.title}</span>
+                            {dateLabel && (
+                              <span className="mt-0.5 block text-caption tabular-nums text-subtle-foreground">
+                                {dateLabel}
+                              </span>
+                            )}
                           </button>
                           {/* Row actions are revealed on hover or keyboard focus, and are
                               ALWAYS visible on a coarse pointer, where there is no hover

@@ -18,7 +18,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { House, ListChecks, Mic, Search, Settings2, FileText } from 'lucide-react';
+import { House, ListChecks, Mic, Pause, Play, Search, Settings2, FileText } from 'lucide-react';
 import {
   CommandDialog,
   CommandEmpty,
@@ -38,6 +38,8 @@ import {
 } from '@/components/ui/dialog';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
+import { useRecordingPauseToggle } from '@/hooks/useRecordingPauseToggle';
+import { formatMeetingDate } from '@/lib/meetingDates';
 import { FOCUS_MEETING_SEARCH_EVENT } from './AppRail';
 
 const SETTINGS_SECTIONS = [
@@ -81,6 +83,7 @@ export function CommandPalette() {
   const { meetings, setCurrentMeeting, handleRecordingToggle, isCollapsed, toggleCollapse } =
     useSidebar();
   const { isRecording } = useRecordingState();
+  const { togglePause, isPauseBusy, isPaused } = useRecordingPauseToggle();
   const [open, setOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
@@ -179,6 +182,17 @@ export function CommandPalette() {
               {isRecording ? 'Open the recording' : 'Start recording'}
               <CommandShortcut>⌘⇧R</CommandShortcut>
             </CommandItem>
+            {/* The same pause the session dock offers, for the keyboard. */}
+            {isRecording && (
+              <CommandItem disabled={isPauseBusy} onSelect={() => run(() => void togglePause())}>
+                {isPaused ? (
+                  <Play className="size-4" aria-hidden="true" />
+                ) : (
+                  <Pause className="size-4" aria-hidden="true" />
+                )}
+                {isPaused ? 'Resume recording' : 'Pause recording'}
+              </CommandItem>
+            )}
             <CommandItem onSelect={() => run(openSearch)}>
               <Search className="size-4" aria-hidden="true" />
               Search meeting evidence
@@ -202,7 +216,12 @@ export function CommandPalette() {
                     }
                   >
                     <FileText className="size-4" aria-hidden="true" />
-                    {meeting.title}
+                    <span className="min-w-0 flex-1 truncate">{meeting.title}</span>
+                    {formatMeetingDate(meeting.createdAt) && (
+                      <span className="ml-auto shrink-0 text-caption tabular-nums text-muted-foreground">
+                        {formatMeetingDate(meeting.createdAt)}
+                      </span>
+                    )}
                   </CommandItem>
                 ))}
               </CommandGroup>

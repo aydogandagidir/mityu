@@ -12,6 +12,7 @@ import {
 } from '@/services/recordingCompletionMailbox';
 import { transcriptService } from '@/services/transcriptService';
 import Analytics from '@/lib/analytics';
+import { attachLiveNotesToMeeting } from '@/lib/liveMeetingNotes';
 import {
   applyPinnedSummaryLanguageToMeeting,
   detectAndCacheSummaryLanguage,
@@ -373,6 +374,10 @@ export function useRecordingStop(
 
           console.log('Successfully saved the complete meeting');
           console.log('   Transcripts:', freshTranscripts.length);
+
+          // Quick notes typed during the recording become this meeting's summary
+          // context. In memory only, never logged (lib/liveMeetingNotes.ts).
+          attachLiveNotesToMeeting(meetingId);
 
           // Notes pinned during the meeting (BACKLOG I3c). Told, not swallowed:
           // the user pressed Pin believing the note would be kept, so a pin

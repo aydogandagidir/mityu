@@ -203,9 +203,9 @@ export default function Home() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.12, ease: 'easeOut' }}
       className="flex h-full flex-col bg-muted"
     >
       {/* All Modals supported*/}
@@ -258,11 +258,22 @@ export default function Home() {
             </div>
           )}
 
-        {/* Recording controls - only show when permissions are granted or already recording and not showing status messages */}
+        {/* Recording controls - only show when permissions are granted or already recording and not showing status messages.
+            While a recording is live the pill is `hidden` but stays MOUNTED: the shell's
+            SessionDock is the one Pause/Stop surface (no second Stop, no second clock), and
+            RecordingControls still owns the transcript-error listeners that end a failed
+            capture. Unmounting it would drop those listeners mid-recording. */}
         {(hasMicrophone || isRecording) &&
           status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
           status !== RecordingStatus.SAVING && (
-            <div className="absolute inset-x-0 bottom-12 z-10 flex justify-center px-gutter">
+            <div
+              className={
+                recordingState.isRecording
+                  ? 'hidden'
+                  : 'absolute inset-x-0 bottom-12 z-10 flex justify-center px-gutter'
+              }
+              aria-hidden={recordingState.isRecording ? true : undefined}
+            >
               <div className="flex justify-center">
                 <div className="flex items-center rounded-full border border-border bg-card shadow-elev-2">
                   <div className="flex items-center">

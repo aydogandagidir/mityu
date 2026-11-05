@@ -73,4 +73,64 @@ describe('SessionDock', () => {
     const glyph = container.querySelector('span[aria-hidden="true"]');
     expect(glyph?.className).toContain('motion-safe:animate-pulse');
   });
+
+  describe('single source of control (v1.2.6)', () => {
+    it('draws no pause control and no meter when the wiring omits them', () => {
+      const { container } = render(
+        <SessionDock isRecording isPaused={false} activeDuration={5} onStop={() => {}} />
+      );
+      expect(screen.queryByRole('button', { name: 'Pause recording' })).toBeNull();
+      expect(container.querySelector('[data-testid="dock-level"]')).toBeNull();
+    });
+
+    it('pauses when recording and resumes when paused', () => {
+      const onTogglePause = vi.fn();
+      const { rerender } = render(
+        <SessionDock isRecording isPaused={false} activeDuration={5} onStop={() => {}} onTogglePause={onTogglePause} />
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Pause recording' }));
+      expect(onTogglePause).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <SessionDock isRecording isPaused activeDuration={5} onStop={() => {}} onTogglePause={onTogglePause} />
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Resume recording' }));
+      expect(onTogglePause).toHaveBeenCalledTimes(2);
+    });
+
+    it('disables pause while a pause round-trip or a stop is in flight, but never Stop', () => {
+      render(
+        <SessionDock
+          isRecording
+          isPaused={false}
+          activeDuration={5}
+          isStopping
+          onStop={() => {}}
+          onTogglePause={() => {}}
+        />
+      );
+      expect(screen.getByRole('button', { name: 'Pause recording' }).hasAttribute('disabled')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Stop recording' }).hasAttribute('disabled')).toBe(false);
+    });
+
+    it('says in words whether audio is reaching the meter', () => {
+      const { rerender } = render(
+        <SessionDock isRecording isPaused={false} activeDuration={5} onStop={() => {}} level={null} />
+      );
+      expect(screen.getByText('No audio level reading yet')).toBeTruthy();
+      rerender(<SessionDock isRecording isPaused={false} activeDuration={5} onStop={() => {}} level={0.4} />);
+      expect(screen.getByText('Audio is being captured')).toBeTruthy();
+      rerender(<SessionDock isRecording isPaused={false} activeDuration={5} onStop={() => {}} level={0} />);
+      expect(screen.getByText('No sound is being picked up')).toBeTruthy();
+    });
+
+    it('flattens the meter while paused, whatever the last reading was', () => {
+      const { container } = render(
+        <SessionDock isRecording isPaused activeDuration={5} onStop={() => {}} level={1} />
+      );
+      const bars = container.querySelectorAll<HTMLElement>('[data-testid="dock-level"] > span');
+      expect(bars).toHaveLength(3);
+      bars.forEach((bar) => expect(bar.style.height).toBe('4px'));
+    });
+  });
 });

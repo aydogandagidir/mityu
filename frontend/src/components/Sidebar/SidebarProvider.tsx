@@ -25,6 +25,8 @@ interface SidebarItem {
 export interface CurrentMeeting {
   id: string;
   title: string;
+  /** RFC 3339 creation time from `api_get_meetings` (v1.2.6+); absent on placeholders. */
+  createdAt?: string;
 }
 
 // Search result type for transcript search: single typed definition lives in
@@ -106,10 +108,11 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const fetchMeetings = React.useCallback(async () => {
     if (ready) {
       try {
-        const meetings = await invoke('api_get_meetings') as Array<{ id: string, title: string }>;
-        const transformedMeetings = meetings.map((meeting: any) => ({
+        const meetings = await invoke('api_get_meetings') as Array<{ id: string, title: string, created_at?: string }>;
+        const transformedMeetings = meetings.map((meeting) => ({
           id: meeting.id,
-          title: meeting.title
+          title: meeting.title,
+          createdAt: meeting.created_at,
         }));
         setMeetings(transformedMeetings);
         Analytics.trackBackendConnection(true);

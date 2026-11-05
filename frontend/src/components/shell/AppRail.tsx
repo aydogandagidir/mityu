@@ -57,6 +57,7 @@ function RailButton({
   onClick,
   children,
   className,
+  shortcut,
   ...rest
 }: {
   label: string;
@@ -64,6 +65,8 @@ function RailButton({
   onClick?: () => void;
   children: React.ReactNode;
   className?: string;
+  /** Keyboard hint shown in the tooltip only — the accessible name stays `label`. */
+  shortcut?: string;
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'children' | 'className'>) {
   return (
     <Tooltip>
@@ -85,7 +88,14 @@ function RailButton({
           {children}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+      <TooltipContent side="right">
+        {label}
+        {shortcut && (
+          <kbd className="ml-2 rounded-sm border border-border px-1 font-mono text-micro text-muted-foreground">
+            {shortcut}
+          </kbd>
+        )}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -234,6 +244,7 @@ export function AppRail() {
 
       <RailButton
         label="Search meetings"
+        shortcut="/ · Ctrl+K"
         onClick={() => {
           if (isCollapsed) toggleCollapse();
           // The pane may be mounting this frame; let it commit before focusing.
