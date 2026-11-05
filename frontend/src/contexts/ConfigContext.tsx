@@ -221,6 +221,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
           console.error('[ConfigContext] Failed to sync language preference to Rust on startup:', err);
         });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
   // Load model configuration on mount
@@ -288,6 +289,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     fetchModelConfig();
   }, []);
 
+  // Update individual provider API key
+  const updateProviderApiKey = useCallback((provider: string, apiKey: string | null) => {
+    setProviderApiKeys(prev => ({ ...prev, [provider]: apiKey }));
+  }, []);
+
   // Listen for model config updates from other components
   useEffect(() => {
     const setupListener = async () => {
@@ -310,7 +316,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     return () => {
       cleanup?.();
     };
-  }, []);
+  }, [updateProviderApiKey]);
 
   // Load device preferences on mount
   useEffect(() => {
@@ -331,8 +337,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     loadDevicePreferences();
   }, []);
 
-  // Calculate model options based on available models
-  const modelOptions: Record<ModelConfig['provider'], string[]> = {
+  // Calculate model options based on available models (memoized so ConfigContext consumers don't re-render on every tick)
+  const modelOptions = useMemo<Record<ModelConfig['provider'], string[]>>(() => ({
     ollama: models.map(model => model.name),
     claude: ['claude-3-5-sonnet-latest'],
     groq: ['llama-3.3-70b-versatile'],
@@ -340,7 +346,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     openai: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'],
     'builtin-ai': [],
     'custom-openai': [],
-  };
+  }), [models]);
 
   // Toggle confidence indicator with localStorage persistence
   const toggleConfidenceIndicator = useCallback((checked: boolean) => {
@@ -357,7 +363,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') {
       localStorage.setItem('isAutoSummary', checked.toString());
     }
-  }, [])
+  }, []);
 
   // Toggle beta feature with localStorage persistence and analytics
   const toggleBetaFeature = useCallback((featureKey: BetaFeatureKey, enabled: boolean) => {
@@ -373,11 +379,6 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
       return updated;
     });
-  }, []);
-
-  // Update individual provider API key
-  const updateProviderApiKey = useCallback((provider: string, apiKey: string | null) => {
-    setProviderApiKeys(prev => ({ ...prev, [provider]: apiKey }));
   }, []);
 
   // Lazy load preference settings (only loads if not already cached)

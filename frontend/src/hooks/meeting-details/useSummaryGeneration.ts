@@ -423,6 +423,7 @@ export function useSummaryGeneration({
     updateMeetingTitle,
     onMeetingUpdated,
     onStructuredGenerated,
+    onOpenModelSettings,
   ]);
 
   // Helper function to fetch ALL transcripts for summary generation
@@ -639,7 +640,7 @@ export function useSummaryGeneration({
       // Kept for wire compatibility; Rust enforces structured HITL generation.
       structured: structuredSummaries,
     });
-  }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary, modelConfig, isModelConfigLoading, selectedTemplate, structuredSummaries]);
+  }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary, modelConfig, isModelConfigLoading, structuredSummaries, onOpenModelSettings]);
 
   // Public API: Regenerate summary from the current saved transcript
   const handleRegenerateSummary = useCallback(async () => {

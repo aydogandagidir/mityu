@@ -212,7 +212,7 @@ export function useRecordingStart(
       // Re-throw so RecordingControls can handle device-specific errors
       throw error;
     }
-  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkTranscriptionReady, reportNotReady, selectedDevices, showModal, setStatus, ensureRecordingConsent, openActivateDialog]);
+  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkTranscriptionReady, reportNotReady, selectedDevices, setStatus, ensureRecordingConsent, openActivateDialog]);
 
   // Check for autoStartRecording flag and start recording automatically
   useEffect(() => {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Analytics from '@/lib/analytics';
 import { invoke } from '@tauri-apps/api/core';
@@ -152,7 +152,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     setIsCollapsed(collapsed);
   }, []);
 
-  const baseItems: SidebarItem[] = [
+  const baseItems: SidebarItem[] = useMemo(() => [
     {
       id: 'meetings',
       title: 'Meeting Notes',
@@ -161,7 +161,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         ...meetings.map(meeting => ({ id: meeting.id, title: meeting.title, type: 'file' as const }))
       ]
     },
-  ];
+  ], [meetings]);
 
 
   const toggleCollapse = useCallback(() => {
@@ -182,12 +182,12 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       setCurrentMeeting({ id: 'intro-call', title: '+ New Call' });
     }
     setSidebarItems(baseItems);
-  }, [pathname]);
+  }, [pathname, baseItems]);
 
   // Update sidebar items when meetings change
   useEffect(() => {
     setSidebarItems(baseItems);
-  }, [meetings]);
+  }, [baseItems]);
 
   // Function to handle recording toggle from sidebar
   const handleRecordingToggle = () => {

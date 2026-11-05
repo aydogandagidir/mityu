@@ -35,6 +35,16 @@ static METADATA_CACHE: Lazy<ModelMetadataCache> =
 static CANCELLATION_REGISTRY: Lazy<Arc<Mutex<HashMap<String, CancellationToken>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
+// Shared HTTP client with connection pooling for LLM providers (Copilot HUD, Ask, Summary)
+static SHARED_LLM_HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .pool_max_idle_per_host(8)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .tcp_nodelay(true)
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+});
+
 /// Strips the first `#` heading line; returns "" if no `#` is found.
 fn strip_leading_title(markdown: &str) -> String {
     if let Some(hash_pos) = markdown.find('#') {
@@ -286,9 +296,8 @@ impl AssembledProvider {
         user_prompt: &str,
         cancellation_token: Option<&CancellationToken>,
     ) -> Result<String, String> {
-        let client = reqwest::Client::new();
         let params = ProviderParams {
-            client: &client,
+            client: &SHARED_LLM_HTTP_CLIENT,
             provider: &self.provider,
             model_name: &self.model_name,
             api_key: &self.api_key,
@@ -775,9 +784,8 @@ impl SummaryService {
             }),
         };
 
-        let client = reqwest::Client::new();
         let result = generate_meeting_summary(
-            &client,
+            &SHARED_LLM_HTTP_CLIENT,
             &provider,
             &model_name,
             &final_api_key,
@@ -969,9 +977,8 @@ impl SummaryService {
             })
             .collect();
 
-        let client = reqwest::Client::new();
         let params = ProviderParams {
-            client: &client,
+            client: &SHARED_LLM_HTTP_CLIENT,
             provider,
             model_name,
             api_key,
