@@ -72,6 +72,16 @@ impl Default for NemotronConfig {
 static LIVE_SPEAKER_TURNS: LazyLock<Mutex<Vec<SpeakerTurn>>> =
     LazyLock::new(|| Mutex::new(Vec::new()));
 
+static SHARED_NEMOTRON_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .pool_max_idle_per_host(8)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .tcp_nodelay(true)
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+});
+
 /// Clear accumulated live speaker turns at the start of a recording session.
 pub fn clear_live_speaker_turns() {
     if let Ok(mut guard) = LIVE_SPEAKER_TURNS.lock() {
@@ -181,14 +191,22 @@ pub fn encode_pcm16_wav_data_uri(
     }
 
     let wav_bytes = cursor.into_inner();
-    let encoded = encode_base64(&wav_bytes);
-    Ok(format!("data:audio/wav;base64,{}", encoded))
+    const PREFIX: &str = "data:audio/wav;base64,";
+    let mut uri = String::with_capacity(PREFIX.len() + ((wav_bytes.len() + 2) / 3) * 4);
+    uri.push_str(PREFIX);
+    encode_base64_into(&wav_bytes, &mut uri);
+    Ok(uri)
 }
 
 /// Pure RFC 4648 standard Base64 encoder (avoids adding external crate dependencies).
 pub fn encode_base64(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(((input.len() + 2) / 3) * 4);
+    encode_base64_into(input, &mut out);
+    out
+}
+
+fn encode_base64_into(input: &[u8], out: &mut String) {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -210,8 +228,6 @@ pub fn encode_base64(input: &[u8]) -> String {
             out.push('=');
         }
     }
-
-    out
 }
 
 /// Build the structured instruction prompt for NVIDIA Nemotron 3.5 Transcribe.
@@ -517,10 +533,7 @@ pub struct NemotronTranscribeProvider {
 
 impl NemotronTranscribeProvider {
     pub fn new(config: NemotronConfig) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-            .build()
-            .map_err(|e| format!("Failed to build Nemotron HTTP client: {}", e))?;
+        let client = SHARED_NEMOTRON_HTTP_CLIENT.clone();
 
         let api_key = config
             .api_key

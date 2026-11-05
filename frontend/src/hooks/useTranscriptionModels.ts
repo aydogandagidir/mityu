@@ -85,7 +85,7 @@ export function useTranscriptionModels(transcriptModelConfig: TranscriptModelCon
     allModels.push({
       provider: 'nemotron',
       name: nemotronModelName,
-      displayName: '🟢 Nemotron 3.5 Transcribe (30B-A4B MoE · 8 speakers)',
+      displayName: '🟢 NVIDIA Nemotron 3.5 (Multi-speaker & translation)',
       size_mb: 0,
     });
 

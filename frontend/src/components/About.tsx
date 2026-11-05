@@ -5,7 +5,6 @@ import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch";
 import { UpdateDialog } from "./UpdateDialog";
 import { updateService, UpdateInfo } from '@/services/updateService';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { Loader2, CheckCircle2, Sparkles, ShieldCheck, Waves, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
 import { APP_VERSION } from '@/lib/appVersion';
@@ -74,17 +73,10 @@ export function About() {
                     <span className="font-mono text-caption font-semibold tabular-nums text-foreground">
                         v{currentVersion}
                     </span>
-                    <Badge tone="ai">Nemotron 3.5 · 30B-A4B MoE</Badge>
-                    <Badge tone="verified">Local-First Workstation</Badge>
                 </div>
                 <p className="mt-2 text-body text-muted-foreground">
                     Meetings captured and reviewed — entirely on your machine. No bots, no uploads, no account.
                 </p>
-                <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
-                    <Badge tone="neutral">Whisper large-v3 · Parakeet · Nemotron 3.5</Badge>
-                    <Badge tone="neutral">8-Speaker Attribution · Overlap Aware</Badge>
-                    <Badge tone="neutral">40-Lang ASR · 31-Lang Translation</Badge>
-                </div>
                 <div className="mt-3.5">
                     <Button
                         onClick={handleCheckForUpdates}
@@ -127,9 +119,8 @@ export function About() {
                                 <Cpu className="size-4 text-primary" aria-hidden="true" />
                                 On-device
                             </h3>
-                            <Badge tone="verified">SQLCipher · PII Guard</Badge>
                         </div>
-                        <p className="text-caption leading-relaxed text-muted-foreground">Recording and transcription run locally with Whisper large-v3, Parakeet, or NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE) — no network needed. Speaker separation and talk time run on this device after the recording ends (or live with Nemotron 3.5 up to eight speakers), with anonymous labels. Encrypted at rest with SQLCipher when secure OS key storage is available, with opt-in PII redaction.</p>
+                        <p className="text-caption leading-relaxed text-muted-foreground">Recording and transcription run locally with Whisper large-v3, Parakeet, or NVIDIA Nemotron 3.5 Transcribe — no network needed. Speaker separation and talk time run on this device after the recording ends (or live with Nemotron 3.5 up to eight speakers), with anonymous labels. Encrypted at rest with SQLCipher when secure OS key storage is available, with opt-in PII redaction.</p>
                     </div>
                     <div className="rounded-lg border border-border bg-card p-3.5 shadow-elev-1">
                         <div className="mb-1 flex items-center justify-between gap-2">
@@ -137,7 +128,6 @@ export function About() {
                                 <Waves className="size-4 text-primary" aria-hidden="true" />
                                 Any meeting app
                             </h3>
-                            <Badge tone="neutral">WASAPI + Mic</Badge>
                         </div>
                         <p className="text-caption leading-relaxed text-muted-foreground">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Google Meet, or Microsoft Teams — no bot joins your call. Windows 10/11 (64-bit) with an AVX2-capable processor; macOS in development.</p>
                     </div>
@@ -147,7 +137,6 @@ export function About() {
                                 <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
                                 Human-approved
                             </h3>
-                            <Badge tone="ai">Art. 50 Provenance</Badge>
                         </div>
                         <p className="text-caption leading-relaxed text-muted-foreground">Every AI-generated line is a labeled draft linked to its source in the transcript — nothing is final until you approve it. Ask this meeting answers only from that meeting&apos;s transcript, or refuses. Export approved notes to PDF, Word or Markdown. Bring your own key: Ollama, OpenAI, Anthropic, Groq, OpenRouter.</p>
                     </div>
@@ -163,7 +152,6 @@ export function About() {
                             <Sparkles className="size-4" aria-hidden="true" />
                             Live copilot — off by default
                         </h3>
-                        <Badge tone="ai">Floating Glass HUD</Badge>
                     </div>
                     <p className="text-caption leading-relaxed text-muted-foreground">
                         Turn it on under Settings → Beta and a small always-on-top panel follows a recording you start. When you ask, it drafts a recap, a suggestion, a definition or follow-up questions from the last few minutes of the transcript; eight meeting modes decide what it offers. Every answer is labelled AI-generated and cites the transcript segment it came from, or is refused. Pin to notes keeps an answer as a draft in the meeting&apos;s summary when you save it. It ships with &ldquo;Allow cloud insights&rdquo; off, so it answers only with a model running on your device and refuses rather than sending anything away; turning that on under Settings &rarr; Beta sends the last few minutes of the conversation to the provider you configured, on every action you press. It never records on its own and never hides Mityu. It has not yet been checked against a real model.
@@ -213,8 +201,7 @@ export function About() {
                     </button>, and{' '}
                     <button onClick={() => openExternalLink('https://huggingface.co/nvidia')} className="underline hover:text-foreground">
                         NVIDIA Nemotron 3.5 Transcribe
-                    </button>{' '}
-                    (30B-A4B MoE, Parallel Expert Encoder + Sortformer). Built-in summarization models include{' '}
+                    </button>. Built-in summarization models include{' '}
                     <button onClick={() => openExternalLink('https://huggingface.co/Qwen/Qwen3.5-2B')} className="underline hover:text-foreground">
                         Qwen 3.5
                     </button>{' '}

@@ -75,22 +75,34 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
 
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // NEW: Status setter with logging
+  // NEW: Status setter with logging (stable identity via functional setState)
   const setStatus = useCallback((status: RecordingStatus, message?: string) => {
-    console.log(`[RecordingState] Status: ${state.status} → ${status}`, message || '');
+    setState(prev => {
+      console.log(`[RecordingState] Status: ${prev.status} → ${status}`, message || '');
+      return {
+        ...prev,
+        status,
+        statusMessage: message,
+      };
+    });
+  }, []);
 
-    setState(prev => ({
-      ...prev,
-      status,
-      statusMessage: message,
-    }));
-  }, [state.status, state.isRecording, state.isPaused]);
+  /**
+   * Stop polling backend state (called when recording stops)
+   */
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      console.log('[RecordingStateContext] Stopping state polling');
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
 
   /**
    * Sync recording state with backend
    * Called on mount (fixes refresh desync) and periodically while recording
    */
-  const syncWithBackend = async () => {
+  const syncWithBackend = useCallback(async () => {
     try {
       const backendState = await recordingService.getRecordingState();
 
@@ -119,7 +131,8 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
       // stop when it says idle.
       if (backendState.is_recording) {
         if (!pollingIntervalRef.current) {
-          startPolling();
+          console.log('[RecordingStateContext] Starting state polling (500ms interval)');
+          pollingIntervalRef.current = setInterval(syncWithBackend, 500);
         }
       } else if (pollingIntervalRef.current) {
         stopPolling();
@@ -128,30 +141,19 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
       console.error('[RecordingStateContext] Failed to sync with backend:', error);
       // Don't update state on error - keep current state
     }
-  };
+  }, [stopPolling]);
 
   /**
    * Start polling backend state (called when recording starts)
    */
-  const startPolling = () => {
+  const startPolling = useCallback(() => {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
     }
 
     console.log('[RecordingStateContext] Starting state polling (500ms interval)');
     pollingIntervalRef.current = setInterval(syncWithBackend, 500);
-  };
-
-  /**
-   * Stop polling backend state (called when recording stops)
-   */
-  const stopPolling = () => {
-    if (pollingIntervalRef.current) {
-      console.log('[RecordingStateContext] Stopping state polling');
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-  };
+  }, [syncWithBackend]);
 
   /**
    * Set up event listeners for backend state changes
@@ -240,7 +242,7 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
       unsubscribers.forEach(unsub => unsub());
       stopPolling();
     };
-  }, []);
+  }, [startPolling, stopPolling]);
 
   /**
    * Initial sync on mount - CRITICAL for fixing refresh desync bug
@@ -249,7 +251,7 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
   useEffect(() => {
     console.log('[RecordingStateContext] Initial mount - syncing with backend');
     syncWithBackend();
-  }, []);
+  }, [syncWithBackend]);
 
   // NEW: Computed helpers from status
   const contextValue = useMemo(() => ({

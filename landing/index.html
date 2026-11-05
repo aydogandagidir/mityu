@@ -768,14 +768,14 @@ a{color:inherit;text-decoration:none}
       <div class="hero-left">
         <div class="hero-eyebrow">
           <span class="p-dot"></span>
-          <span>Whisper · Parakeet · NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE)</span>
+          <span>On-device meeting notes · Whisper · Parakeet · NVIDIA Nemotron 3.5</span>
         </div>
         <h1 class="headline">
           <span class="sr-only">Meetings, captured locally.</span>
           <span aria-hidden="true"><span class="typed" id="typed">Meetings, captured locally.</span><span class="caret"></span></span>
         </h1>
         <div class="hero-sub" id="heroSub">
-          <p class="sub">Mityu records and transcribes meetings on your machine, with local reporting by default, live 8-speaker attribution on overlapping speech, 40-language ASR, and source-linked notes you approve line by line. No bots. No audio uploads. No account.</p>
+          <p class="sub">Mityu records and transcribes meetings on your machine, with local reporting by default, live 8-speaker attribution on overlapping speech, 40-language transcription, and source-linked notes you approve line by line. No bots. No audio uploads. No account.</p>
           <div class="hero-badges">
             <span class="h-chip">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -783,11 +783,11 @@ a{color:inherit;text-decoration:none}
             </span>
             <span class="h-chip">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-              40-lang ASR · 31-lang translation
+              40 languages · 31-language translation
             </span>
             <span class="h-chip">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              Inline PII redaction · SQLCipher
+              Encrypted local storage · Privacy guard
             </span>
           </div>
           <div class="hero-ctas">
@@ -806,7 +806,7 @@ a{color:inherit;text-decoration:none}
           <div class="hud-pill-left">
             <span class="hud-timer"><span class="rec-dot"></span>00:42 · Live Capture</span>
             <span style="color:rgba(255,255,255,.35)">|</span>
-            <span style="color:#93C5FD">WASAPI + Mic</span>
+            <span style="color:#93C5FD">System + Mic Audio</span>
           </div>
           <div class="hud-pill-right">
             <span>Copilot HUD</span>
@@ -816,28 +816,28 @@ a{color:inherit;text-decoration:none}
         <div class="hero-card">
           <div class="hc-top">
             <span class="hc-title"><span class="rec-dot"></span>Live Session · Multi-Speaker Audio Stream</span>
-            <span class="hc-engine-pill">Nemotron 3.5 Transcribe · 30B-A4B MoE</span>
+            <span class="hc-engine-pill">NVIDIA Nemotron 3.5 Transcribe</span>
           </div>
           <div class="hc-body">
             <div class="hc-engines" aria-label="Supported Local Transcription Engines">
               <div class="hc-eng">
                 <span class="hc-eng-name">Whisper large-v3</span>
-                <span class="hc-eng-sub">GGML · On-device</span>
+                <span class="hc-eng-sub">On-device · Accurate</span>
               </div>
               <div class="hc-eng">
                 <span class="hc-eng-name">Parakeet</span>
-                <span class="hc-eng-sub">ONNX · Fast CPU</span>
+                <span class="hc-eng-sub">On-device · Fast CPU</span>
               </div>
               <div class="hc-eng active">
                 <span class="hc-eng-name">Nemotron 3.5</span>
-                <span class="hc-eng-sub">30B MoE · ~4B active</span>
+                <span class="hc-eng-sub">8 speakers · Translation</span>
               </div>
             </div>
 
             <div class="hc-diar">
               <div class="hc-diar-head">
-                <strong>Parallel Expert Encoder + Sortformer</strong>
-                <span>8-Speaker Attribution · Crosstalk Resolved</span>
+                <strong>Live Speaker Attribution</strong>
+                <span>Up to 8 Speakers · Overlapping Speech Separated</span>
               </div>
               <canvas class="hc-wave-canvas" id="nemotronWaveCanvas" width="460" height="88" aria-hidden="true"></canvas>
               <div class="hc-tracks">
@@ -923,7 +923,7 @@ a{color:inherit;text-decoration:none}
               <div class="step" data-node="recall"><span class="s-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.5 16.5"/></svg></span><span class="s-label">Recall</span></div>
             </div>
             <div class="bar-badges">
-              <span class="nemotron-badge"><span class="n-dot"></span>NVIDIA Nemotron 3.5 Transcribe · 30B-A4B MoE</span>
+              <span class="nemotron-badge"><span class="n-dot"></span>NVIDIA Nemotron 3.5 Transcribe</span>
               <span class="local-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Local · On-device</span>
             </div>
           </div>
@@ -1148,18 +1148,18 @@ a{color:inherit;text-decoration:none}
       <div class="sec-head">
         <span class="sec-eyebrow">Speech &amp; Intelligence Architecture</span>
         <h2>Built for complex rooms, overlapping voices, and strict privacy.</h2>
-        <p>Combine fast on-device Whisper and Parakeet engines with NVIDIA Nemotron 3.5 Transcribe — a promptable 30B MoE audio-language model with ~4B active parameters.</p>
+        <p>Combine fast on-device Whisper and Parakeet engines with NVIDIA Nemotron 3.5 Transcribe for multi-speaker separation, translation, and custom domain vocabulary.</p>
       </div>
 
       <div class="bento-grid">
-        <!-- Bento 1: Nemotron 3.5 Transcribe 30B-A4B MoE (6 cols) -->
+        <!-- Bento 1: Nemotron 3.5 Transcribe (6 cols) -->
         <article class="bento-card bento-6">
           <div class="b-top">
             <span class="badge violet">NVIDIA Nemotron 3.5 Transcribe</span>
-            <span class="b-meta">30B Total · ~4B Active MoE</span>
+            <span class="b-meta">Multi-Speaker · Translation</span>
           </div>
-          <h3>One checkpoint for ASR, diarization, and translation.</h3>
-          <p class="desc">Powered by a Parallel Expert Encoder (Canary-1B ASR + Sortformer diarization) and a Nemotron-3-Nano MoE decoder, delivering 40-language transcription, 31-language translation, and up to 1-hour continuous audio context.</p>
+          <h3>One engine for transcription, speaker separation, and translation.</h3>
+          <p class="desc">Separates up to 8 speakers even when people talk at the same time, supports 40 spoken languages, and translates into 31 languages during live or post-meeting passes.</p>
           <div class="b-visual">
             <div class="b-swatch-grid">
               <div class="b-sw"><span class="v-sp-dot" style="background:#2563EB"></span>Speaker 1</div>
@@ -1218,7 +1218,7 @@ a{color:inherit;text-decoration:none}
         <article class="bento-card bento-4">
           <div class="b-top">
             <span class="badge amber">Any meeting app</span>
-            <span class="b-meta">WASAPI Loopback + Mic</span>
+            <span class="b-meta">System + Mic Audio</span>
           </div>
           <h3>No bot joins your call.</h3>
           <p class="desc">Mityu captures your microphone and system audio on the machine itself, so it works with Zoom, Google Meet, or Microsoft Teams without joining the meeting.</p>
@@ -1234,7 +1234,7 @@ a{color:inherit;text-decoration:none}
         <article class="bento-card bento-4">
           <div class="b-top">
             <span class="badge">Human-approved</span>
-            <span class="b-meta">Art. 50 Provenance</span>
+            <span class="b-meta">Source-Linked</span>
           </div>
           <h3>Drafts until you approve.</h3>
           <p class="desc">Every AI-generated line is a labeled draft linked to its source in the transcript. Nothing is final until you sign it off — and questions are answered from that transcript alone.</p>

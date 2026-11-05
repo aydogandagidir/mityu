@@ -75,17 +75,22 @@ function formatRecordingTime(seconds: number | undefined): string {
     return `[${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}]`;
 }
 
+// Pre-compiled filler word regexes so virtualized rows never allocate RegExp objects on render
+const STOP_WORDS_REGEX = /\b(?:uh|um|er|ah|hmm|hm|eh|oh)\b[,\s]*/gi;
+const WHITESPACE_COLLAPSE_REGEX = /\s+/g;
+
 // Helper function to remove filler words and repetitions
 function cleanStopWords(text: string): string {
-    const stopWords = ['uh', 'um', 'er', 'ah', 'hmm', 'hm', 'eh', 'oh'];
+    return text.replace(STOP_WORDS_REGEX, ' ').replace(WHITESPACE_COLLAPSE_REGEX, ' ').trim();
+}
 
-    let cleanedText = text;
-    stopWords.forEach(word => {
-        const pattern = new RegExp(`\\b${word}\\b[,\\s]*`, 'gi');
-        cleanedText = cleanedText.replace(pattern, ' ');
-    });
-
-    return cleanedText.replace(/\s+/g, ' ').trim();
+function areStringArraysEqual(a?: string[], b?: string[]): boolean {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
 }
 
 // Memoized transcript segment component
@@ -175,7 +180,19 @@ const TranscriptSegment = memo(function TranscriptSegment({
             </div>
         </div>
     );
-});
+}, (prev, next) =>
+    prev.id === next.id &&
+    prev.timestamp === next.timestamp &&
+    prev.text === next.text &&
+    prev.confidence === next.confidence &&
+    prev.isStreaming === next.isStreaming &&
+    prev.showConfidence === next.showConfidence &&
+    prev.isHighlighted === next.isHighlighted &&
+    prev.onSeek === next.onSeek &&
+    prev.crosstalk === next.crosstalk &&
+    areStringArraysEqual(prev.speakers, next.speakers) &&
+    areStringArraysEqual(prev.speakerOrder, next.speakerOrder)
+);
 
 export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps> = ({
     segments,

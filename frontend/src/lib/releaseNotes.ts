@@ -43,6 +43,32 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.2.5',
+    date: '2026-11-05',
+    headline: 'Cleaner Needs review screen, simplified settings and About copy, and faster transcript rendering and HTTP connection reuse.',
+    changes: [
+      {
+        title: 'Removed the confusing top banner on Home / Needs review',
+        detail:
+          'Home / Needs review now opens directly to your pending action items and recent meetings without a technical status strip or extra navigation buttons at the top of the page.',
+      },
+      {
+        title: 'Plain-language labels in Transcription Settings and About',
+        detail:
+          'Removed internal model architecture badges and developer jargon across Settings → Transcription and the About dialog so options read clearly in plain language.',
+      },
+      {
+        title: 'Faster virtualized transcript scrolling and shared HTTP connection pools',
+        detail:
+          'Eliminated per-row regular expression recompilation and unnecessary row re-renders when scrolling diarized transcripts, memoized global configuration context updates, and added persistent HTTP connection pooling for transcription and summary requests.',
+      },
+    ],
+    caveats: [
+      'Transcription quality varies by language, microphone, overlap, and noise; review important text against its source audio.',
+      'The live copilot remains a beta (off by default in Settings → Beta).',
+    ],
+  },
+  {
     version: '1.2.4',
     date: '2026-11-02',
     headline: 'NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE) integration, 8-speaker live attribution, and workstation UI upgrade.',

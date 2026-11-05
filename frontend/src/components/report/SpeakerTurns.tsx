@@ -96,15 +96,22 @@ export function InlinePiiBadge({ token }: { token: string }) {
   );
 }
 
+const REDACTED_SPLIT_REGEX = /(\[REDACTED(?:_[A-Z0-9_]+)?\])/g;
+const REDACTED_EXACT_REGEX = /^\[REDACTED(?:_[A-Z0-9_]+)?\]$/;
+
 /**
  * Renders transcript text while highlighting any inline `[REDACTED*]` markers as semantic chips.
  */
 export function RedactedText({ text }: { text: string }) {
-  const parts = text.split(/(\[REDACTED(?:_[A-Z0-9_]+)?\])/g);
+  // Fast-path: 99%+ of transcript lines have no redaction marker; skip regex split & array allocation.
+  if (!text.includes('[REDACTED')) {
+    return <>{text}</>;
+  }
+  const parts = text.split(REDACTED_SPLIT_REGEX);
   return (
     <>
       {parts.map((part, idx) =>
-        /^\[REDACTED(?:_[A-Z0-9_]+)?\]$/.test(part) ? (
+        REDACTED_EXACT_REGEX.test(part) ? (
           <InlinePiiBadge key={`${idx}-${part}`} token={part} />
         ) : (
           <span key={idx}>{part}</span>

@@ -221,7 +221,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                 <SelectContent>
                                     <SelectItem value="parakeet">⚡ Parakeet (Fast local transcription)</SelectItem>
                                     <SelectItem value="localWhisper">🏠 Local Whisper (Multiple model sizes)</SelectItem>
-                                    <SelectItem value="nemotron">🟢 NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE · 8 Speakers)</SelectItem>
+                                    <SelectItem value="nemotron">🟢 NVIDIA Nemotron 3.5 (Multi-speaker &amp; translation)</SelectItem>
                                 </SelectContent>
                             </Select>
 
@@ -282,33 +282,14 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
             {uiProvider === 'nemotron' && (
                 <>
                     <SettingsCard
-                        title="NVIDIA Nemotron 3.5 Transcribe (30B-A4B MoE)"
-                        description="Promptable Speech-Audio-Language Model (~4B active parameters) with 40-language transcription, live 8-speaker attribution, 31-language translation, and contextual prompting."
+                        title="NVIDIA Nemotron 3.5 Transcribe"
+                        description="Multi-speaker transcription (up to 8 speakers), optional translation, and custom vocabulary."
                     >
                         <div className="space-y-4">
-                            <div className="flex flex-wrap gap-1.5" aria-label="Nemotron 3.5 SALM capabilities">
-                                {[
-                                    '30B-A4B MoE SALM',
-                                    '40 languages',
-                                    '8-Speaker Live Diarization',
-                                    'Overlap-aware Sortformer',
-                                    '31-Language Translation',
-                                    'Inline PII Guard',
-                                    'Domain Context Prompt',
-                                ].map((pill) => (
-                                    <span
-                                        key={pill}
-                                        className="inline-flex items-center rounded-full border border-border bg-surface-2 px-2.5 py-0.5 text-micro font-medium text-foreground"
-                                    >
-                                        {pill}
-                                    </span>
-                                ))}
-                            </div>
-
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
                                     <Label className="mb-1 block text-label text-foreground">
-                                        vLLM / NVIDIA NIM OpenAI-compatible endpoint
+                                        Server URL
                                     </Label>
                                     <Input
                                         value={nemotronCfg.endpoint}
@@ -321,13 +302,13 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                         placeholder={DEFAULT_NEMOTRON_ENDPOINT}
                                     />
                                     <p className="mt-1 text-caption text-muted-foreground">
-                                        Default <span className="font-mono">{DEFAULT_NEMOTRON_ENDPOINT}</span> keeps all audio on-device.
+                                        Default <span className="font-mono">{DEFAULT_NEMOTRON_ENDPOINT}</span> keeps all audio on your machine.
                                     </p>
                                 </div>
 
                                 <div>
                                     <Label className="mb-1 block text-label text-foreground">
-                                        Model Checkpoint ID
+                                        Model name
                                     </Label>
                                     <Input
                                         value={nemotronCfg.model}
@@ -340,15 +321,15 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                         placeholder={DEFAULT_NEMOTRON_MODEL}
                                     />
                                     <p className="mt-1 text-caption text-muted-foreground">
-                                        Open-weights MoE SALM checkpoint.
+                                        Model identifier served by your endpoint.
                                     </p>
                                 </div>
                             </div>
 
                             <div className="divide-y [&>*+*]:border-t-border">
                                 <SwitchRow
-                                    label="8-Speaker Live Diarization (Speaker 1–8)"
-                                    description="Separates up to 8 speakers and marks overlapping speech in real time. Labels stay anonymous (Speaker 1–8) to avoid storing biometric voice-to-name mappings."
+                                    label="Speaker separation (Speaker 1–8)"
+                                    description="Separates up to 8 speakers and marks overlapping speech in real time. Labels stay anonymous (Speaker 1–8)."
                                     checked={nemotronCfg.speaker_attribution}
                                     onCheckedChange={(checked) =>
                                         void persistNemotronConfig({
@@ -358,8 +339,8 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     }
                                 />
                                 <SwitchRow
-                                    label="Inline PII Guard ([REDACTED_*])"
-                                    description="Instructs Nemotron 3.5 Transcribe to replace personal emails, phone numbers, and IDs with [REDACTED_*] tokens at decode time."
+                                    label="Hide personal details (emails, phone numbers, IDs)"
+                                    description="Replaces personal emails, phone numbers, and IDs with [REDACTED] markers during transcription."
                                     checked={nemotronCfg.inline_pii_redaction}
                                     onCheckedChange={(checked) =>
                                         void persistNemotronConfig({
@@ -373,7 +354,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
                                     <Label className="mb-1 block text-label text-foreground">
-                                        31-Language Translation (optional)
+                                        Translate transcript into (optional)
                                     </Label>
                                     <Select
                                         value={nemotronCfg.target_language || 'none'}
@@ -399,7 +380,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
 
                                 <div>
                                     <Label className="mb-1 block text-label text-foreground">
-                                        Domain Context Prompt
+                                        Custom vocabulary
                                     </Label>
                                     <Input
                                         value={nemotronCfg.context_prompt || ''}
@@ -409,7 +390,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                                 context_prompt: e.target.value || null,
                                             })
                                         }
-                                        placeholder="e.g., Mityu, SQLCipher, Sortformer, KVKK, Q3"
+                                        placeholder="e.g., Mityu, product names, team acronyms"
                                     />
                                     <p className="mt-1 text-caption text-muted-foreground">
                                         Improves recognition of product names, acronyms, and technical terms.
