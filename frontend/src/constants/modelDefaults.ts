@@ -34,3 +34,25 @@ export const MODEL_DEFAULTS = {
   parakeet: DEFAULT_PARAKEET_MODEL,
   nemotron: DEFAULT_NEMOTRON_MODEL,
 } as const;
+
+/**
+ * Transcription provider used when nothing has been saved yet. ConfigContext and the
+ * Settings page both fall back through `resolveTranscriptDefaults`, so opening Settings
+ * can no longer swap an unsaved Parakeet default for Whisper (v1.2.5 and earlier).
+ */
+export const DEFAULT_TRANSCRIPT_PROVIDER = 'parakeet' as const;
+
+/**
+ * Fill a possibly-empty saved provider/model pair with the shared defaults. The model
+ * default follows the PROVIDER, so a saved `localWhisper` with no model gets a Whisper
+ * model rather than the Parakeet one.
+ */
+export function resolveTranscriptDefaults(
+  provider: string | null | undefined,
+  model: string | null | undefined,
+): { provider: string; model: string } {
+  const resolvedProvider = provider || DEFAULT_TRANSCRIPT_PROVIDER;
+  const providerDefault =
+    (MODEL_DEFAULTS as Record<string, string>)[resolvedProvider] ?? DEFAULT_PARAKEET_MODEL;
+  return { provider: resolvedProvider, model: model || providerDefault };
+}

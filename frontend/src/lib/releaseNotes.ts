@@ -43,6 +43,48 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.2.6',
+    date: '2026-11-05',
+    headline: 'One recording control, dated meeting lists, renaming from the report, and quick notes that feed the summary.',
+    changes: [
+      {
+        title: 'One place to pause and stop a recording',
+        detail:
+          'The bar at the bottom of the window now has Pause/Resume, Stop and a live sound level. The second floating Stop button and the extra timer above the transcript are gone.',
+      },
+      {
+        title: 'Meetings grouped by date',
+        detail:
+          'The meetings pane groups recordings into Today, Yesterday, Previous 7 days and Earlier, and Home shows when each meeting was recorded. Dates come from when the meeting was saved, so renaming keeps them.',
+      },
+      {
+        title: 'Rename a meeting from its report',
+        detail:
+          'Click the title at the top of a report to rename it. The report header also shows how many action items the summary found.',
+      },
+      {
+        title: 'Quick notes while you record',
+        detail:
+          'Type notes under the live transcript. They are used as context when the summary is written and appear in the report’s context field. They are kept in memory only and are lost if the app is closed before the meeting is saved.',
+      },
+      {
+        title: 'The transcript opens when there is no summary yet',
+        detail:
+          'A report with no summary opens with the transcript visible, and the app remembers whether you keep the transcript open.',
+      },
+      {
+        title: 'Settings no longer changes the speech engine on its own',
+        detail:
+          'Opening Settings before saving a transcription choice used to switch the default from Parakeet to Whisper. Both now use the same default.',
+      },
+    ],
+    caveats: [
+      'Meetings saved by older versions are dated by when they were stored in the database.',
+      'Transcription quality varies by language, microphone, overlap, and noise; review important text against its source audio.',
+      'The live copilot remains a beta (off by default in Settings → Beta).',
+    ],
+  },
+  {
     version: '1.2.5',
     date: '2026-11-05',
     headline: 'Cleaner Needs review screen, simplified settings and About copy, and faster transcript rendering and HTTP connection reuse.',

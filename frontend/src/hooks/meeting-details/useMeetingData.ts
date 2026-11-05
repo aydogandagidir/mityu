@@ -116,9 +116,9 @@ export function useMeetingData({ meeting, summaryData, onMeetingUpdated }: UseMe
       console.log('Save meeting title success');
       setIsTitleDirty(false);
 
-      // Update meetings with new title
+      // Update meetings with new title (keeping created_at, so the row keeps its date group)
       const updatedMeetings = sidebarMeetings.map((m: CurrentMeeting) =>
-        m.id === meeting.id ? { id: m.id, title: meetingTitle } : m
+        m.id === meeting.id ? { ...m, title: meetingTitle } : m
       );
       setMeetings(updatedMeetings);
       setCurrentMeeting({ id: meeting.id, title: meetingTitle });
@@ -207,7 +207,7 @@ export function useMeetingData({ meeting, summaryData, onMeetingUpdated }: UseMe
     console.log('Updating meeting title');
     setMeetingTitle(newTitle);
     const updatedMeetings = sidebarMeetings.map((m: CurrentMeeting) =>
-      m.id === meeting.id ? { id: m.id, title: newTitle } : m
+      m.id === meeting.id ? { ...m, title: newTitle } : m
     );
     setMeetings(updatedMeetings);
     setCurrentMeeting({ id: meeting.id, title: newTitle });

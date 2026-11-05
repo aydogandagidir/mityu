@@ -12,7 +12,13 @@ import { usePermissionCheck } from '@/hooks/usePermissionCheck';
 import { ModalType } from '@/hooks/useModalState';
 import { useIsLinux } from '@/hooks/usePlatform';
 import { formatTalkTime, hasCrosstalk, talkTime } from '@/lib/speakerTurns';
-import { useMemo } from 'react';
+import { getLiveNotes, setLiveNotes } from '@/lib/liveMeetingNotes';
+import { focusRing } from '@/components/ui/focus-ring';
+import { cn } from '@/lib/utils';
+import { useEffect, useId, useMemo, useState } from 'react';
+
+/** Notes are context for the summary, not a document; a cap keeps the prompt sane. */
+const MAX_LIVE_NOTES_LENGTH = 4000;
 
 /**
  * TranscriptPanel Component
@@ -48,6 +54,19 @@ export function TranscriptPanel({
   const { isRecording, isPaused } = useRecordingState();
   const { checkPermissions, isChecking, hasSystemAudio, hasMicrophone } = usePermissionCheck();
   const isLinux = useIsLinux();
+  // Seeded from the in-memory buffer so notes survive a trip to Settings mid-recording.
+  const [notes, setNotes] = useState<string>(getLiveNotes);
+  const notesFieldId = useId();
+  const onNotesChange = (value: string) => {
+    const next = value.slice(0, MAX_LIVE_NOTES_LENGTH);
+    setNotes(next);
+    setLiveNotes(next);
+  };
+  // A new recording starts from the (now empty) buffer, not from the last meeting's
+  // notes still held in this mounted component's state.
+  useEffect(() => {
+    if (isRecording) setNotes(getLiveNotes());
+  }, [isRecording]);
 
   // Convert transcripts to segments for virtualized view
   const segments = useMemo(
@@ -222,6 +241,35 @@ export function TranscriptPanel({
           </div>
         </div>
       </div>
+
+      {/* Quick notes (Granola-style hybrid notepad). Pinned to the bottom of the live
+          view; what is typed here becomes the summary's context for this meeting. The
+          floating record pill no longer occupies this space while recording — the
+          shell's session dock is the one control. */}
+      {isRecording && (
+        <div className="sticky bottom-0 z-10 mt-auto border-t border-border bg-card/95 px-4 py-2 backdrop-blur">
+          <div className="mx-auto w-2/3 max-w-[750px]">
+            <label htmlFor={notesFieldId} className="mb-1 flex items-baseline justify-between gap-2">
+              <span className="text-label font-medium text-foreground">Your notes</span>
+              <span className="text-caption text-subtle-foreground">
+                Added to the summary as context · stays on this device
+              </span>
+            </label>
+            <textarea
+              id={notesFieldId}
+              value={notes}
+              onChange={(e) => onNotesChange(e.target.value)}
+              rows={2}
+              maxLength={MAX_LIVE_NOTES_LENGTH}
+              placeholder="Jot what matters — a decision, a name, a follow-up…"
+              className={cn(
+                'w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-body text-foreground placeholder:text-muted-foreground/70',
+                focusRing('background')
+              )}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

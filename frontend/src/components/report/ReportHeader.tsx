@@ -8,10 +8,21 @@
  * All metrics are computed locally from the already-loaded transcript — nothing
  * leaves the device, no charisma/bias inference (per the four guardrails). Styled
  * entirely with semantic tokens, so it adapts light/dark.
+ *
+ * Since v1.2.6 the title is the ONE place a meeting is renamed (Linear/Granola inline
+ * edit): click it, type, Enter or blur saves, Escape cancels. Before that the title
+ * here was read-only and the edit props threaded into SummaryPanel rendered nothing,
+ * so a report could not be renamed at all.
  */
 
-import { Clock, FileText, Hash, ListChecks } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Clock, FileText, Hash, ListChecks, Pencil } from 'lucide-react';
 import type { Transcript } from '@/types';
+import { cn } from '@/lib/utils';
+import { focusRing } from '@/components/ui/focus-ring';
+
+/** Generous cap so a pasted paragraph cannot become a meeting title. */
+const MAX_TITLE_LENGTH = 200;
 
 function formatDuration(sec: number): string {
   if (!sec || sec < 1) return '—';
@@ -48,12 +59,61 @@ export function ReportHeader({
   createdAt,
   transcripts,
   actionItemCount,
+  onRename,
 }: {
   title: string;
   createdAt?: string;
   transcripts: Transcript[];
   actionItemCount?: number;
+  /** Persist a new title. Omitted → the title is read-only. Resolve `false` to keep editing. */
+  onRename?: (nextTitle: string) => Promise<boolean> | boolean;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(title);
+  const [isSaving, setIsSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  /** Escape blurs the input too; this stops that blur from saving what was cancelled. */
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    if (!isEditing) setDraftTitle(title);
+  }, [title, isEditing]);
+
+  useEffect(() => {
+    if (isEditing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  const startEditing = () => {
+    if (!onRename) return;
+    cancelledRef.current = false;
+    setDraftTitle(title);
+    setIsEditing(true);
+  };
+
+  const commit = async () => {
+    if (cancelledRef.current || isSaving) return;
+    const next = draftTitle.trim().slice(0, MAX_TITLE_LENGTH);
+    if (!next || next === title.trim() || !onRename) {
+      setIsEditing(false);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const ok = await onRename(next);
+      if (ok !== false) setIsEditing(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const cancel = () => {
+    cancelledRef.current = true;
+    setDraftTitle(title);
+    setIsEditing(false);
+  };
   const durationSec =
     transcripts.reduce((max, t) => Math.max(max, t.audio_end_time ?? 0), 0) ||
     transcripts.reduce((sum, t) => sum + (t.duration ?? 0), 0);
@@ -82,7 +142,52 @@ export function ReportHeader({
       <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
         <div className="min-w-0">
           <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-primary">Meeting report</div>
-          <h1 className="mt-0.5 truncate text-xl font-semibold tracking-tight text-foreground">{title || 'Untitled meeting'}</h1>
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              value={draftTitle}
+              maxLength={MAX_TITLE_LENGTH}
+              disabled={isSaving}
+              onChange={(e) => setDraftTitle(e.target.value)}
+              onBlur={() => void commit()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void commit();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancel();
+                }
+              }}
+              aria-label="Meeting title"
+              className={cn(
+                'mt-0.5 w-full min-w-[16rem] rounded-md border border-input bg-background px-1.5 py-0.5 text-xl font-semibold tracking-tight text-foreground',
+                focusRing('background')
+              )}
+            />
+          ) : onRename ? (
+            <h1 className="mt-0.5 min-w-0">
+              <button
+                type="button"
+                onClick={startEditing}
+                title="Rename meeting"
+                className={cn(
+                  'group -mx-1.5 inline-flex max-w-full items-center gap-2 rounded-md px-1.5 py-0.5 text-left',
+                  'text-xl font-semibold tracking-tight text-foreground hover:bg-muted',
+                  focusRing('background')
+                )}
+              >
+                <span className="truncate">{title || 'Untitled meeting'}</span>
+                <Pencil
+                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-visible:opacity-100"
+                  aria-hidden="true"
+                />
+                <span className="sr-only">(rename)</span>
+              </button>
+            </h1>
+          ) : (
+            <h1 className="mt-0.5 truncate text-xl font-semibold tracking-tight text-foreground">{title || 'Untitled meeting'}</h1>
+          )}
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted-foreground">
             {dateLabel && <span>{dateLabel}</span>}
             {dateLabel && durationSec > 0 && <span aria-hidden>·</span>}

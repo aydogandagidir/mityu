@@ -9,12 +9,17 @@
  * fixed chrome (the sonner offset in `layout.tsx`, page bodies' bottom padding) uses to
  * stay clear of the dock — set as an inline style on `<html>` so a toast rendered in a
  * portal outside the shell can still read it.
+ *
+ * Since v1.2.6 this is also where Pause/Resume and the capture level are wired, so the
+ * dock is the single live-session control on every route.
  */
 
 import React, { useEffect } from 'react';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useRecordingSession } from '@/contexts/RecordingSessionContext';
 import { SessionDock } from '@/components/shell/SessionDock';
+import { useAudioLevels } from '@/hooks/useAudioLevels';
+import { useRecordingPauseToggle } from '@/hooks/useRecordingPauseToggle';
 
 export function ShellSessionDock() {
   const { isRecording, isPaused, activeDuration, isStopping } = useRecordingState();
@@ -22,6 +27,8 @@ export function ShellSessionDock() {
   // only and never ends the capture, which is why this button used to do nothing on every
   // route but `/`.
   const { stopRecordingSession } = useRecordingSession();
+  const levels = useAudioLevels(isRecording);
+  const { togglePause, isPauseBusy } = useRecordingPauseToggle();
 
   useEffect(() => {
     const root = document.documentElement;
@@ -38,6 +45,9 @@ export function ShellSessionDock() {
       activeDuration={activeDuration}
       isStopping={isStopping}
       onStop={() => void stopRecordingSession()}
+      onTogglePause={() => void togglePause()}
+      isPauseBusy={isPauseBusy}
+      level={levels.hasReading ? levels.rms : null}
     />
   );
 }

@@ -12,11 +12,11 @@
  * It is now a review queue. What needs a human decision is first and reviewable in
  * place; the library is a digest below it, and the pane beside it holds the rest.
  *
- * DATA HONESTY. `api_get_meetings` carries `{id, title}` and nothing else, so no date is
- * printed and no metric tile is drawn for a number this app cannot actually produce
- * today. The regex is deleted rather than kept behind a guard: a date that is right most
- * of the time is worse than no date, because nothing tells the reader which kind they
- * are looking at.
+ * DATA HONESTY. Dates come only from the database's `created_at`, which `api_get_meetings`
+ * carries since v1.2.6; a row without one prints no date. No metric tile is drawn for a
+ * number this app cannot actually produce today. The title regex is deleted rather than
+ * kept behind a guard: a date that is right most of the time is worse than no date,
+ * because nothing tells the reader which kind they are looking at.
  *
  * 🔒 `Analytics.trackPageView('home')` stays in `app/page.tsx`, and nothing on this
  * surface reports anything about the content it shows.
@@ -41,6 +41,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { focusRing } from '@/components/ui/focus-ring';
 import { sampleMeetingHref } from '@/lib/tour';
 import { cn } from '@/lib/utils';
+import { formatMeetingDate } from '@/lib/meetingDates';
 
 /** How many drafts the queue asks for. The backend caps and orders; this only bounds. */
 const QUEUE_LIMIT = 8;
@@ -249,7 +250,9 @@ export function HomeDashboard({ service, forceLoad = false }: HomeDashboardProps
               </span>
             </div>
             <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {digest.map((m) => (
+              {digest.map((m) => {
+                const dateLabel = formatMeetingDate(m.createdAt);
+                return (
                 <li key={m.id}>
                   <button
                     type="button"
@@ -266,13 +269,19 @@ export function HomeDashboard({ service, forceLoad = false }: HomeDashboardProps
                     <span className="min-w-0 flex-1 truncate text-body text-foreground">
                       {m.title}
                     </span>
+                    {dateLabel && (
+                      <span className="shrink-0 text-caption tabular-nums text-subtle-foreground">
+                        {dateLabel}
+                      </span>
+                    )}
                     <ChevronRight
                       className="size-4 shrink-0 text-subtle-foreground"
                       aria-hidden="true"
                     />
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         )}

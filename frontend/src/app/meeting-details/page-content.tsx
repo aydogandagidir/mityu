@@ -25,6 +25,27 @@ import { useMeetingOperations } from '@/hooks/meeting-details/useMeetingOperatio
 import { useConfig } from '@/contexts/ConfigContext';
 import { useTour } from '@/components/tour';
 import { TOUR_ANCHORS } from '@/lib/tour';
+import { peekNotesForMeeting } from '@/lib/liveMeetingNotes';
+
+/** The transcript drawer is a user preference, not a per-meeting accident. */
+const EVIDENCE_DRAWER_STORAGE_KEY = 'mityu.ui.evidenceDrawer';
+
+function readEvidencePreference(): boolean {
+  try {
+    return typeof window !== 'undefined' && localStorage.getItem(EVIDENCE_DRAWER_STORAGE_KEY) === 'open';
+  } catch {
+    // Private mode or blocked site data: start closed, as before.
+    return false;
+  }
+}
+
+function writeEvidencePreference(open: boolean): void {
+  try {
+    localStorage.setItem(EVIDENCE_DRAWER_STORAGE_KEY, open ? 'open' : 'closed');
+  } catch {
+    // Not being able to remember the preference must never break the toggle.
+  }
+}
 
 export default function PageContent({
   meeting,
@@ -66,7 +87,13 @@ export default function PageContent({
   });
 
   // State
-  const [customPrompt, setCustomPrompt] = useState<string>('');
+  // Seeded with the quick notes typed during this meeting's recording, if any
+  // (lib/liveMeetingNotes.ts), so they become the summary's context and are visible —
+  // and editable — in the transcript drawer's context field.
+  const [customPrompt, setCustomPrompt] = useState<string>(() => peekNotesForMeeting(meeting.id));
+  useEffect(() => {
+    setCustomPrompt(peekNotesForMeeting(meeting.id));
+  }, [meeting.id]);
   const [isRecording] = useState(false);
   const [summaryResponse] = useState<SummaryResponse | null>(null);
 
@@ -86,8 +113,20 @@ export default function PageContent({
   // transcript loses its scroll position and breaks jump-to-source, which retries its
   // scroll after pagination brings the segment in. The drawer hides by width, never by
   // unmounting.
-  const [isEvidenceOpen, setIsEvidenceOpen] = useState(false);
+  //
+  // v1.2.6: the open/closed state is a remembered preference (like the meetings pane),
+  // and a meeting with no summary yet opens it — otherwise the report is an empty
+  // "No summary yet" column with the only content hidden behind a toolbar button.
+  const [isEvidenceOpen, setIsEvidenceOpen] = useState<boolean>(readEvidencePreference);
   const evidenceToggleRef = useRef<HTMLButtonElement>(null);
+  /** Meeting id the no-summary auto-open already ran for, so it runs once per meeting. */
+  const autoOpenedForMeetingRef = useRef<string | null>(null);
+
+  /** A toggle the USER made: apply it and remember it. Programmatic opens do not persist. */
+  const setEvidenceOpenByUser = (open: boolean) => {
+    setIsEvidenceOpen(open);
+    writeEvidencePreference(open);
+  };
 
   // Product-tour step 2 points at a source-linked summary block. Reveal the
   // summary before the coach-mark looks for it: expand it if collapsed and, on
@@ -152,6 +191,40 @@ export default function PageContent({
   // Only evidence-linked rows enter the HITL review surface. Pre-v1.0.4 summaries
   // remain visible through an explicitly unverified, read-only upgrade view.
   const structuredEnabled = meetingData.hasSummaryDraft;
+
+  // No summary yet (and the draft lookup has answered): the transcript IS the report
+  // for now, so show it. Once per meeting, and never persisted — it is a fallback, not
+  // the user's choice.
+  const hasAnySummary = structuredEnabled || !!meetingData.aiSummary;
+  useEffect(() => {
+    if (meetingData.isDraftLoading) return;
+    if (autoOpenedForMeetingRef.current === meeting.id) return;
+    autoOpenedForMeetingRef.current = meeting.id;
+    if (!hasAnySummary && meetingData.transcripts.length > 0) {
+      setIsEvidenceOpen(true);
+    }
+  }, [meeting.id, meetingData.isDraftLoading, hasAnySummary, meetingData.transcripts.length]);
+
+  // Rename from the report header. Saves the value it is given rather than reading
+  // `meetingTitle` state, which would still hold the previous title in this closure.
+  const handleRenameMeeting = async (nextTitle: string): Promise<boolean> => {
+    try {
+      await invoke('api_save_meeting_title', { meetingId: meeting.id, title: nextTitle });
+      meetingData.updateMeetingTitle(nextTitle);
+      toast.success('Meeting renamed');
+      return true;
+    } catch (error) {
+      console.error('Failed to rename meeting:', error);
+      toast.error('Could not rename the meeting', {
+        description: 'The previous title is kept. Try again.',
+      });
+      return false;
+    }
+  };
+
+  const actionItemCount = structuredEnabled
+    ? meetingData.draftResponse?.action_items.length
+    : undefined;
 
   // BACKLOG C1.6 — jump from a draft block/action item to its transcript segment.
   const handleJumpToSource = (sourceChunkId: string) => {
@@ -230,7 +303,8 @@ export default function PageContent({
     const autoGenerate = async () => {
       if (shouldAutoGenerate && meetingData.transcripts.length > 0 && !cancelled) {
         console.log(`🤖 Auto-generating summary with ${modelConfig.provider}/${modelConfig.model}...`);
-        await summaryGeneration.handleGenerateSummary('');
+        // The live notes (if any) ride along as context — the reason they were typed.
+        await summaryGeneration.handleGenerateSummary(customPrompt);
 
         // Notify parent that auto-generation is complete (only if not cancelled)
         if (onAutoGenerateComplete && !cancelled) {
@@ -249,9 +323,9 @@ export default function PageContent({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.12, ease: 'easeOut' }}
       className="flex h-full flex-col bg-background"
     >
       {/* read.ai-style report header: title, date/duration meta, and an on-device
@@ -260,6 +334,8 @@ export default function PageContent({
         title={meetingData.meetingTitle}
         createdAt={meeting.created_at}
         transcripts={meetingData.transcripts}
+        actionItemCount={actionItemCount}
+        onRename={handleRenameMeeting}
       />
 
       {/* On-device chapters strip (pause-based, deterministic). Clicking a chapter
@@ -284,7 +360,7 @@ export default function PageContent({
           ref={evidenceToggleRef}
           variant="outline"
           size="sm"
-          onClick={() => setIsEvidenceOpen((open) => !open)}
+          onClick={() => setEvidenceOpenByUser(!isEvidenceOpen)}
           aria-expanded={isEvidenceOpen}
           aria-controls="evidence-drawer"
         >
@@ -340,7 +416,7 @@ export default function PageContent({
         {/* THE EVIDENCE — always mounted, opened beside the claim. */}
         <EvidenceDrawer
           open={isEvidenceOpen}
-          onClose={() => setIsEvidenceOpen(false)}
+          onClose={() => setEvidenceOpenByUser(false)}
           returnFocusTo={evidenceToggleRef}
         >
           <TranscriptPanel

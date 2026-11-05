@@ -49,6 +49,7 @@ import { PageHeader } from '@/components/shell/PageHeader';
 import { useConfig } from '@/contexts/ConfigContext';
 import { focusRing } from '@/components/ui/focus-ring';
 import { cn } from '@/lib/utils';
+import { resolveTranscriptDefaults } from '@/constants/modelDefaults';
 import { resolveTabFromSearch } from './tabs';
 
 const SECTIONS = [
@@ -103,7 +104,10 @@ function SettingsContent() {
     if (mapped) router.replace(`/settings?section=${mapped}`);
   }, [params, router]);
 
-  // Load saved transcript configuration on mount (unchanged behaviour).
+  // Load saved transcript configuration on mount. The extra saved fields are kept (the
+  // spread), but empty provider/model fall back through the SAME defaults ConfigContext
+  // uses — this used to say 'localWhisper'/'large-v3' and silently switch an unsaved
+  // Parakeet default to Whisper the moment Settings opened.
   useEffect(() => {
     const loadTranscriptConfig = async () => {
       try {
@@ -111,8 +115,7 @@ function SettingsContent() {
         if (config) {
           setTranscriptModelConfig({
             ...config,
-            provider: config.provider || 'localWhisper',
-            model: config.model || 'large-v3',
+            ...resolveTranscriptDefaults(config.provider, config.model),
             apiKey: config.apiKey || null,
           });
         }

@@ -8,6 +8,7 @@ import { getOllamaModels, type OllamaModel } from '@/services/providerModelsServ
 import { invoke } from '@tauri-apps/api/core';
 import Analytics from '@/lib/analytics';
 import { BetaFeatures, BetaFeatureKey, loadBetaFeatures, saveBetaFeatures } from '@/types/betaFeatures';
+import { resolveTranscriptDefaults } from '@/constants/modelDefaults';
 
 // OllamaModel now has a single definition, in providerModelsService. Re-exported here
 // so existing `import { OllamaModel } from '@/contexts/ConfigContext'` keeps working.
@@ -198,10 +199,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         if (config) {
           console.log('[ConfigContext] Loaded saved transcript config');
           setTranscriptModelConfig({
-            provider: config.provider || 'parakeet',
-            model: config.model || 'parakeet-tdt-0.6b-v3-int8',
+            ...resolveTranscriptDefaults(config.provider, config.model),
             apiKey: config.apiKey || null
-          });
+          } as TranscriptModelProps);
         }
       } catch {
         console.error('[ConfigContext] Failed to load transcript config');
